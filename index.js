@@ -113,7 +113,8 @@ Você está rodando num servidor novo, não mais no OpenClaw. As regras de atend
 - Sua resposta em texto é enviada ao cliente no WhatsApp. Para mandar mais de uma mensagem separada, coloque uma linha só com --- entre elas. Se não for para responder nada, responda exatamente NO_REPLY.
 - Para mandar foto, vídeo ou arquivo use a ferramenta enviar_arquivo (caminho relativo à pasta do catálogo, ex.: "escritorio/fachada.jpg" ou "rua lapa - boa vista (ref 913)/foto.jpg"; ou um link https de imagem). Onde as regras falam em ferramenta message, tool_call openclaw, ou caminhos C:\\Users\\Public\\catalogo\\..., use enviar_arquivo com o caminho a partir da pasta do catálogo. Mídia e texto saem na ordem em que você escreve e chama as ferramentas.
 - Antes de oferecer um imóvel, chame ler_ficha com a ref (ou nome da rua) para pegar a descrição pronta do CRM e a lista de fotos/vídeos. Nunca invente dados.
-- Avisos para o Djhonata: ferramenta avisar_djhonata (vai para o WhatsApp pessoal dele). Não use a ferramenta de envio para isso.
+- Avisos para o Djhonata: ferramenta avisar_djhonata (vai para o WhatsApp pessoal dele). Não use a ferramenta de envio para isso. O aviso é INTERNO: depois de avisar, SEMPRE responda o cliente na mesma vez, de forma natural e sem dizer que foi consultar alguém (por exemplo, fazendo uma pergunta para entender melhor o que ele procura: bairro, quartos, faixa de valor, se é pronto ou na planta). Nunca deixe o cliente sem resposta. Use NO_REPLY só quando a mensagem do cliente não pede resposta (ex.: "ok", "👍", "obrigado" no fim da conversa).
+- Quem escreve é um CLIENTE (lead), a não ser que o sistema diga explicitamente que é o Djhonata. Trate a pessoa como cliente: nunca fale com ela como se fosse o dono, o chefe ou o corretor.
 - Eventos e resumo do CRM (mudança de status, resumo do cliente, cliente pausado): ferramenta registrar_crm. Não escreva arquivos .jsonl.
 - Lembretes de visita, retomadas e comandos do CRM NÃO são feitos aqui por enquanto: ignore essas rotinas. Só atenda a conversa atual.
 - Áudio: por enquanto você não consegue ouvir áudios. Se o cliente mandar áudio, diga de forma natural que agora não consegue ouvir e peça para ele escrever (sem dizer que é IA).
@@ -169,8 +170,14 @@ async function executar(nome, entrada, ctx) {
       return r;
     }
     if (nome === 'avisar_djhonata') {
-      await enviarTexto(DONO + '@s.whatsapp.net', entrada.texto || '');
-      return 'Aviso enviado ao Djhonata.';
+      const txt = String(entrada.texto || '').trim(); if (!txt) return 'Aviso vazio: nada enviado.';
+      if (estado.teste && estado.teste.ativo) {   // no teste o "cliente" é o próprio Djhonata: o aviso fica só no CRM
+        registrarEspelho(ctx.jid, { id: 'av' + Date.now().toString(36), autor: 'aviso', tipo: 'text', texto: '🔔 Aviso ao Djhonata (não enviado, modo teste): ' + txt, ts: Date.now() });
+        log('teste: aviso ao Djhonata ficou só no CRM');
+        return 'Aviso registrado para o Djhonata. Continue atendendo o cliente normalmente.';
+      }
+      await enviarTexto(DONO + '@s.whatsapp.net', '🔔 ' + txt, 'aviso');
+      return 'Aviso enviado ao Djhonata. Continue atendendo o cliente normalmente.';
     }
     if (nome === 'registrar_crm' && estado.teste && estado.teste.ativo) { log('teste: registrar_crm ignorado', JSON.stringify(entrada).slice(0, 200)); return 'Registrado.'; }
     if (nome === 'registrar_crm') {
@@ -249,6 +256,7 @@ function resumoMsg(m) {
 // autor: cliente | ia | voce (painel) | celular (escrito no celular/outro aparelho)
 function registrarEspelho(jid, m, { silencioso = false } = {}) {
   if (!jid) return;
+  jid = acharJid(jid);
   const lista = lerEsp(jid);
   if (m.id) {
     const i = lista.findIndex(x => x.id === m.id);
@@ -611,6 +619,7 @@ async function iniciarWhatsApp() {
       let n = 0;
       for (const m of messages || []) { try { await aoReceber(m, 'historico'); n++; } catch (e) { } }
       resolverLids(s).catch(() => { });
+      unirDuplicadas();
       log('histórico', syncType, progress == null ? '' : progress + '%', (lista || []).length, 'conversas', (contacts || []).length, 'contatos', n, 'mensagens');
       emitir('recarregar', {});
     });
@@ -677,6 +686,7 @@ async function resolverTelefones(lista) {
     await new Promise(r => setTimeout(r, 600));
   }
   log('telefones ligados às conversas', achou, 'de', nums.length);
+  unirDuplicadas();
   return { consultados: nums.length, ligados: achou, conversasComTelefone: Object.keys(chats).filter(j => chats[j].telefone || lidPn[j]).length };
 }
 function acharJid(j) {   // telefone (5547...@s.whatsapp.net) -> conversa existente (muitas vêm como código @lid)
@@ -686,6 +696,26 @@ function acharJid(j) {   // telefone (5547...@s.whatsapp.net) -> conversa existe
   let melhor = '', ult = -1;
   for (const k of Object.keys(chats)) { const tel = String(chats[k].telefone || pnDe(k).split('@')[0] || ''); if (tel.replace(/\D/g, '').endsWith(t8) && (chats[k].ult || 0) > ult) { melhor = k; ult = chats[k].ult || 0; } }
   return melhor || j;
+}
+function unirDuplicadas() {   // mesma pessoa em duas conversas (número e código interno): junta na do código
+  let n = 0;
+  for (const pnj of Object.keys(chats).filter(k => k.endsWith('@s.whatsapp.net'))) {
+    const t8 = pnj.split('@')[0].replace(/\D/g, '').slice(-8); if (t8.length < 8) continue;
+    const alvo = Object.keys(chats).find(k => k !== pnj && k.endsWith('@lid') && String(chats[k].telefone || pnDe(k).split('@')[0] || '').replace(/\D/g, '').endsWith(t8));
+    if (!alvo) continue;
+    try {
+      const juntos = [...lerEsp(alvo)]; const ids = new Set(juntos.map(x => x.id));
+      for (const x of lerEsp(pnj)) if (!x.id || !ids.has(x.id)) juntos.push(x);
+      juntos.sort((a, b) => a.ts - b.ts); gravarJson(arqEsp(alvo), juntos.slice(-1000));
+      const a = chats[alvo], b = chats[pnj];
+      if ((b.ult || 0) > (a.ult || 0)) { a.ult = b.ult; a.ultTexto = b.ultTexto; a.ultAutor = b.ultAutor; }
+      if (!a.telefone && b.telefone) a.telefone = b.telefone; if (!a.nome && b.nome) a.nome = b.nome;
+      delete chats[pnj]; try { fs.unlinkSync(arqEsp(pnj)); } catch (e) { }
+      n++;
+    } catch (e) { log('unir conversas', e.message); }
+  }
+  if (n) { salvarChats(); log('conversas duplicadas unidas:', n); }
+  return n;
 }
 async function arquivarChat(jid, arquivar) {
   if (!sock || !conectado) throw new Error('WhatsApp desconectado');
@@ -1198,4 +1228,5 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
 }).listen(PORTA, () => log('painel na porta', PORTA));
 
 if (!API_KEY) log('ATENÇÃO: falta ANTHROPIC_API_KEY no .env');
+try { unirDuplicadas(); } catch (e) { log('unir conversas', e.message); }
 iniciarWhatsApp().catch(e => log('erro ao iniciar WhatsApp', e.message));
