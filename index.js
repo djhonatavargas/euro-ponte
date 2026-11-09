@@ -167,6 +167,27 @@ async function executar(nome, entrada, ctx) {
 const CHATS_F = path.join(DADOS, 'chats.json');
 const chats = lerJson(CHATS_F, {});      // jid -> { nome, telefone, ult, ultTexto, naoLidas }
 let salvarChatsTimer = null;
+const CONTATOS_F = path.join(DADOS, 'contatos.json');
+const contatos = lerJson(CONTATOS_F, {});  // jid -> nome salvo na agenda / nome do perfil
+let salvarContatosTimer = null;
+function salvarContatos() { clearTimeout(salvarContatosTimer); salvarContatosTimer = setTimeout(() => gravarJson(CONTATOS_F, contatos), 1500); }
+function guardarContato(c) {
+  if (!c || !c.id) return;
+  if (c.name) contatos[c.id] = c.name; else if (!contatos[c.id] && (c.notify || c.verifiedName)) contatos[c.id] = c.notify || c.verifiedName;
+  if (c.lid && contatos[c.id]) contatos[c.lid] = contatos[c.lid] || contatos[c.id];
+  salvarContatos();
+}
+function guardarChat(ch) {
+  if (!ch || !jidValido(ch.id || '')) return;
+  const c = chats[ch.id] || (chats[ch.id] = {});
+  if (ch.name && !c.nome) c.nome = ch.name;
+  if ('archived' in ch && ch.archived != null) c.arquivado = !!ch.archived;
+  const ts = (Number(ch.conversationTimestamp && (ch.conversationTimestamp.low || ch.conversationTimestamp)) || 0) * 1000;
+  if (ts > (c.ult || 0)) c.ult = ts;
+  if (!c.telefone && ch.id.endsWith('@s.whatsapp.net')) c.telefone = ch.id.split('@')[0];
+  if (typeof ch.unreadCount === 'number' && ch.unreadCount >= 0) c.naoLidas = ch.unreadCount;
+  salvarChats();
+}
 function salvarChats() { clearTimeout(salvarChatsTimer); salvarChatsTimer = setTimeout(() => gravarJson(CHATS_F, chats), 800); }
 function arqEsp(jid) { return path.join(ESPELHO, jid.replace(/[^0-9a-zA-Z@._-]/g, '_') + '.json'); }
 function lerEsp(jid) { return lerJson(arqEsp(jid), []); }
@@ -177,7 +198,8 @@ function emitir(tipo, dados) {
 }
 function chatPublico(jid) {
   const c = chats[jid] || {};
-  return { jid, nome: c.nome || '', telefone: c.telefone || '', ult: c.ult || 0, ultTexto: c.ultTexto || '', ultAutor: c.ultAutor || '', naoLidas: c.naoLidas || 0, iaOff: (estado.pausas[jid] || 0) > Date.now() };
+  const cl = (estado.classes || {})[jid];
+  return { jid, nome: c.nome || contatos[jid] || '', arquivado: !!c.arquivado, cat: cl ? cl.cat : '', catMotivo: cl ? cl.motivo : '', telefone: c.telefone || '', ult: c.ult || 0, ultTexto: c.ultTexto || '', ultAutor: c.ultAutor || '', naoLidas: c.naoLidas || 0, iaOff: (estado.pausas[jid] || 0) > Date.now() };
 }
 function resumoMsg(m) {
   const rot = { image: '📷 Foto', audio: '🎤 Áudio', video: '🎬 Vídeo', document: '📄 Arquivo', sticker: 'Figurinha', contact: '👤 Contato', location: '📍 Localização' }[m.tipo];
@@ -194,6 +216,7 @@ function registrarEspelho(jid, m, { silencioso = false } = {}) {
   const c = chats[jid] || (chats[jid] = {});
   if (m.nome && m.autor === 'cliente') c.nome = m.nome;
   if (m.telefone) c.telefone = m.telefone;
+  if (m.id && (!c.ultKey || m.ts >= (c.ultKeyTs || 0))) { c.ultKey = { id: m.id, fromMe: m.autor !== 'cliente' }; c.ultKeyTs = m.ts; }
   if (!c.ult || m.ts >= c.ult) { c.ult = m.ts; c.ultTexto = resumoMsg(m).slice(0, 120); c.ultAutor = m.autor; }
   if (m.autor === 'cliente' && !silencioso) c.naoLidas = (c.naoLidas || 0) + 1;
   salvarChats();
@@ -451,7 +474,7 @@ async function iniciarWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState(AUTH);
     let version;
     try { version = (await fetchLatestBaileysVersion()).version; } catch (e) { }
-    const s = makeWASocket({ version, auth: state, logger: pino({ level: 'silent' }), browser: Browsers.ubuntu('Euro Ponte'), markOnlineOnConnect: false, syncFullHistory: false });
+    const s = makeWASocket({ version, auth: state, logger: pino({ level: 'silent' }), browser: Browsers.macOS('Desktop'), markOnlineOnConnect: false, syncFullHistory: true });
     sock = s;
     s.ev.on('creds.update', saveCreds);
     s.ev.on('connection.update', (u) => {
@@ -472,18 +495,73 @@ async function iniciarWhatsApp() {
       for (const m of messages) { try { await aoReceber(m, type); } catch (e) { log('erro mensagem', e.message); } }
     });
     // histórico recente que o WhatsApp manda ao conectar: só vai para o espelho
-    s.ev.on('messaging-history.set', async ({ messages, contacts }) => {
-      for (const c of contacts || []) { if (c.id && chats[c.id] && (c.name || c.notify)) chats[c.id].nome = chats[c.id].nome || c.name || c.notify; }
+    s.ev.on('messaging-history.set', async ({ chats: lista, messages, contacts, syncType, progress }) => {
+      for (const c of contacts || []) guardarContato(c);
+      for (const ch of lista || []) guardarChat(ch);
       let n = 0;
       for (const m of messages || []) { try { await aoReceber(m, 'historico'); n++; } catch (e) { } }
-      if (n) { log('histórico recebido', n, 'mensagens'); emitir('recarregar', {}); }
+      log('histórico', syncType, progress == null ? '' : progress + '%', (lista || []).length, 'conversas', (contacts || []).length, 'contatos', n, 'mensagens');
+      emitir('recarregar', {});
     });
-    s.ev.on('contacts.upsert', (lista) => {
-      let mudou = false;
-      for (const c of lista || []) { if (c.id && chats[c.id] && c.name && chats[c.id].nome !== c.name) { chats[c.id].nome = c.name; mudou = true; } }
-      if (mudou) salvarChats();
-    });
+    s.ev.on('chats.upsert', (lista) => { for (const ch of lista || []) guardarChat(ch); });
+    s.ev.on('chats.update', (lista) => { for (const ch of lista || []) guardarChat(ch); });
+    s.ev.on('contacts.upsert', (lista) => { for (const c of lista || []) guardarContato(c); });
+    s.ev.on('contacts.update', (lista) => { for (const c of lista || []) guardarContato(c); });
   } finally { iniciando = false; }
+}
+async function arquivarChat(jid, arquivar) {
+  if (!sock || !conectado) throw new Error('WhatsApp desconectado');
+  const c = chats[jid] || (chats[jid] = {});
+  let k = c.ultKey, ts = c.ultKeyTs;
+  if (!k) { const l = lerEsp(jid); const u = l[l.length - 1]; if (u && u.id) { k = { id: u.id, fromMe: u.autor !== 'cliente' }; ts = u.ts; } }
+  const lastMessages = k ? [{ key: { remoteJid: jid, id: k.id, fromMe: !!k.fromMe }, messageTimestamp: Math.floor((ts || c.ult || Date.now()) / 1000) }] : [];
+  await sock.chatModify({ archive: !!arquivar, lastMessages }, jid);
+  c.arquivado = !!arquivar; salvarChats();
+}
+async function claudeTexto(system, texto, maxTokens = 3000) {
+  for (let t = 0; t < 3; t++) {
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: JSON.stringify({ model: MODELO, max_tokens: maxTokens, system, messages: [{ role: 'user', content: texto }] }) });
+    if (r.ok) { const j = await r.json(); if (j.usage) registrarUso(j.usage); return (j.content || []).map(x => x.text || '').join(''); }
+    if (![429, 500, 502, 503, 529].includes(r.status)) throw new Error('API ' + r.status + ' ' + (await r.text()).slice(0, 200));
+    await new Promise(res => setTimeout(res, 5000 * (t + 1)));
+  }
+  throw new Error('API indisponível');
+}
+const classif = { rodando: false, feitos: 0, total: 0, erro: '' };
+const SIS_CLASSE = `Você organiza o WhatsApp de Djhonata, corretor de imóveis da Euro Consultoria (Joinville/SC), que vende casas geminadas e apartamentos na planta.
+Para cada conversa, escolha UMA categoria:
+- cliente: pessoa interessada em comprar imóvel que AINDA NÃO comprou (lead de anúncio, pediu valores, visita, simulação, documentos para financiamento em andamento). Leads antigos ou que sumiram continuam "cliente".
+- comprou: já comprou imóvel com ele (marcado no CRM como comprador, ou a conversa mostra contrato assinado, financiamento assinado, entrega de chaves, pagamento de honorários/sinal já feito).
+- corretor: outro corretor, imobiliária, parceiro de vendas, captador.
+- construtor: construtora, incorporadora, engenheiro, empreiteiro, loteadora, fornecedor de obra.
+- pessoal: família, amigos, assuntos pessoais, serviços pessoais (oficina, médico, loja, banco pessoal), colegas sem relação com venda.
+- duvida: não dá para saber (sem mensagens e nome sem pista).
+Na dúvida entre "cliente" e outra categoria, escolha "cliente". Responda SOMENTE com JSON: [{"n":número,"cat":"categoria","motivo":"até 8 palavras"}].`;
+async function classificarTudo(compradores, refazer, crm = {}) {
+  if (classif.rodando) return;
+  estado.classes = estado.classes || {};
+  const tel8 = (t) => String(t || '').replace(/\D/g, '').slice(-8);
+  const comp = new Set((compradores || []).map(tel8).filter(x => x.length === 8));
+  const crmCat = new Map(); for (const k of ['corretor', 'construtor', 'pessoal', 'cliente']) for (const t of (crm[k] || [])) { const x = tel8(t); if (x.length === 8) crmCat.set(x, k); }
+  const lista = Object.keys(chats).filter(j => !chats[j].arquivado && (refazer || !estado.classes[j])).sort((a, b) => (chats[b].ult || 0) - (chats[a].ult || 0));
+  Object.assign(classif, { rodando: true, feitos: 0, total: lista.length, erro: '' });
+  try {
+    for (let i = 0; i < lista.length; i += 15) {
+      const lote = lista.slice(i, i + 15);
+      const blocos = lote.map((jid, k) => {
+        const c = chats[jid]; const tel = c.telefone || (jid.endsWith('@s.whatsapp.net') ? jid.split('@')[0] : '');
+        const msgs = lerEsp(jid).filter(m => m.texto || m.tipo !== 'text').slice(-12).map(m => (m.autor === 'cliente' ? 'C: ' : 'D: ') + (m.texto ? m.texto.replace(/\s+/g, ' ').slice(0, 160) : '[' + m.tipo + ']')).join('\n');
+        return `#${k + 1} nome: ${c.nome || contatos[jid] || '(sem nome)'} | telefone: ${tel || '?'} | comprador no CRM: ${tel && comp.has(tel8(tel)) ? 'SIM' : 'não'}${tel && crmCat.has(tel8(tel)) ? ' | marcado no CRM como: ' + crmCat.get(tel8(tel)) : ''}\n${msgs || '(sem mensagens)'}`;
+      }).join('\n\n');
+      let resp = '';
+      try { resp = await claudeTexto(SIS_CLASSE, blocos); } catch (e) { classif.erro = e.message; log('classificar', e.message); continue; }
+      const a = resp.indexOf('['), b = resp.lastIndexOf(']');
+      let arr = []; try { arr = JSON.parse(resp.slice(a, b + 1)); } catch (e) { }
+      for (const r of arr) { const jid = lote[(Number(r.n) || 0) - 1]; if (jid && r.cat) estado.classes[jid] = { cat: String(r.cat), motivo: String(r.motivo || '').slice(0, 80) }; }
+      for (const jid of lote) { const t = chats[jid].telefone || ''; if (!t) continue; if (comp.has(tel8(t))) estado.classes[jid] = { cat: 'comprou', motivo: 'comprador no CRM' }; else if (crmCat.has(tel8(t))) estado.classes[jid] = { cat: crmCat.get(tel8(t)), motivo: 'marcado no CRM' }; }
+      classif.feitos = Math.min(lista.length, i + lote.length); salvarEstado();
+    }
+  } finally { classif.rodando = false; salvarEstado(); log('classificação terminou', classif.feitos, 'conversas'); }
 }
 async function desconectarWhatsApp() {
   estado.whatsDesligado = true; salvarEstado();
@@ -628,7 +706,31 @@ http.createServer(async (req, res) => {
         } else if (ac === 'desconectar') { await desconectarWhatsApp(); }
         else if (ac === 'conectar') { await conectarWhatsApp(); await new Promise(r => setTimeout(r, 2500)); }
         else if (ac === 'lido') { if (chats[jid]) { chats[jid].naoLidas = 0; salvarChats(); } }
-        const out = { estado: estadoPublico(), chats: Object.keys(chats).map(chatPublico).sort((a, b) => b.ult - a.ult).slice(0, 60) };
+        else if (ac === 'arquivar') {
+          let alvos = []; try { alvos = JSON.parse(b.texto || '[]'); } catch (e) { }
+          if (!Array.isArray(alvos)) alvos = []; if (jidValido(jid)) alvos.push(jid);
+          const ok = [], falhas = [];
+          for (const j of alvos.filter(jidValido)) { try { await arquivarChat(j, b.on); ok.push(j); } catch (e) { falhas.push(j + ': ' + e.message); } await new Promise(r => setTimeout(r, 350)); }
+          log(b.on ? 'arquivadas' : 'desarquivadas', ok.length, 'conversas', falhas.length ? 'falhas ' + falhas.length : '');
+          const o = { feitos: ok.length, falhas };
+          if (!alvos.length) o.falhas.push('nenhuma conversa');
+          b._resultado = o;
+        }
+        else if (ac === 'classificar') {
+          let p = {}; try { p = JSON.parse(b.texto || '{}'); } catch (e) { }
+          if (!API_KEY) return json(res, { erro: 'falta a chave da Anthropic no servidor' }, 400);
+          classificarTudo(p.compradores || [], !!p.refazer, p).catch(e => log('classificar', e.message));
+          await new Promise(r => setTimeout(r, 500));
+        }
+        else if (ac === 'log') {
+          let t = ''; try { t = fs.readFileSync(path.join(DADOS, 'ponte.log'), 'utf8'); } catch (e) { }
+          return json(res, { log: t.split('\n').slice(-60).join('\n') });
+        }
+        const verArq = ac === 'ver' && b.texto === 'arquivados';
+        const todos = Object.keys(chats).map(chatPublico);
+        const out = { estado: estadoPublico(), classif, totais: { ativos: todos.filter(c => !c.arquivado).length, arquivados: todos.filter(c => c.arquivado).length },
+          chats: todos.filter(c => verArq ? c.arquivado : !c.arquivado).sort((a, b) => b.ult - a.ult).slice(0, 400) };
+        if (b._resultado) out.resultado = b._resultado;
         if (jidValido(jid)) { out.chat = chatPublico(jid); out.msgs = lerEsp(jid).slice(-60).map(m => ({ id: m.id, autor: m.autor, tipo: m.tipo, texto: m.texto, ts: m.ts })); }
         if (ultimoQR && !conectado) { try { out.qr = await QRCode.toString(ultimoQR, { type: 'svg', margin: 1, width: 240 }); } catch (e) { } }
         return json(res, out);
