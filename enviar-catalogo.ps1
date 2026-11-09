@@ -49,6 +49,7 @@ foreach ($f in $lista) {
   $mt = [int64][math]::Floor(($f.LastWriteTimeUtc - $epoch.ToUniversalTime()).TotalSeconds)
   $atual = $man[$rel]
   if ($atual -and [int64]$atual[0] -eq $f.Length -and [math]::Abs([int64]$atual[1] - $mt) -le 2) { continue }
+  if ($atual -and ($regras -contains $rel) -and ([int64]$atual[1] -gt ($mt + 2))) { Write-Host "Mantido no servidor (editado pelo CRM, mais novo): $rel" -ForegroundColor Cyan; continue }
   Write-Progress -Activity 'Enviando catalogo' -Status $rel -PercentComplete ([int](100 * $i / $lista.Count))
   try {
     $uri = "$servidor/arquivo?t=$token&m=$mt&p=" + [uri]::EscapeDataString($rel)
