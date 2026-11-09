@@ -579,6 +579,18 @@ async function iniciarWhatsApp() {
       if (!a || !a.chatId || a.labelId == null) return;
       const l = new Set(etq.chats[a.chatId] || []); if (type === 'remove') l.delete(String(a.labelId)); else l.add(String(a.labelId));
       etq.chats[a.chatId] = [...l]; salvarEtq();
+      const k = a.chatId + '|' + String(a.labelId), meu = meusRotulos.get(k); meusRotulos.delete(k);
+      if (type !== 'remove' && !(meu && Date.now() - meu < 120e3)) {   // você trocou a etiqueta no celular -> muda o status no CRM
+        const nome = String((etq.labels[String(a.labelId)] || {}).nome || '').toLowerCase();
+        const c = CATS_ETQ.find(x => x.re.test(nome));
+        const pn = pnDe(a.chatId); const tel = (chats[a.chatId] || {}).telefone || (pn.endsWith('@s.whatsapp.net') ? pn.split('@')[0] : '');
+        if (c && tel) {
+          const NS = { atendimento: 'atendimento', novo: 'remarcar', visita: 'visita_marcada', negociacao: 'negociacao', fechado: 'fechado', pausado: 'pausado', perdido: 'perdido', desistiu: 'desistiu', corretor: 'corretor', construtor: 'construtor', pessoal: 'pessoal' };
+          fs.appendFileSync(path.join(DADOS, 'eventos-crm.jsonl'), JSON.stringify({ rid: 'et' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), telefone: formatoBR(tel), nome: (chats[a.chatId] || {}).nome || '', novoStatus: NS[c.cat], resultado: 'Etiqueta "' + (etq.labels[String(a.labelId)] || {}).nome + '" colocada no WhatsApp' }) + '\n');
+          estado.crmStatus = estado.crmStatus || {}; estado.crmStatus[String(tel).replace(/\D/g, '').slice(-8)] = c.cat; salvarEstado();
+          setTimeout(() => garantirEtiquetas().then(ids => definirEtiqueta(a.chatId, c.cat, ids)).catch(() => { }), 3000);   // tira a etiqueta de status antiga
+        }
+      }
     });
     s.ev.on('chats.upsert', (lista) => { for (const ch of lista || []) guardarChat(ch); });
     s.ev.on('chats.update', (lista) => { for (const ch of lista || []) guardarChat(ch); });
@@ -707,14 +719,18 @@ async function classificarTudo(compradores, refazer, crm = {}) {
 }
 // ---------- etiquetas por categoria ----------
 // Uma etiqueta por conversa: Cliente, Visita marcada, Negociando, Já comprou, Corretor, Construtor, Pessoal.
-const CATS_ETQ = [
-  { cat: 'cliente', nome: 'Cliente', re: /^client/, cor: 1 },
-  { cat: 'visita', nome: 'Visita marcada', re: /visita/, cor: 3 },
-  { cat: 'negociando', nome: 'Negociando', re: /negoci|import/, cor: 5 },
-  { cat: 'comprou', nome: 'Já comprou', re: /comprou|finaliz|pago/, cor: 8 },
-  { cat: 'corretor', nome: 'Corretor', re: /corret/, cor: 10 },
-  { cat: 'construtor', nome: 'Construtor', re: /constru|capta/, cor: 12 },
-  { cat: 'pessoal', nome: 'Pessoal', re: /pessoal|famil|amig/, cor: 15 }
+const CATS_ETQ = [   // espelho das colunas do CRM (status do cliente)
+  { cat: 'atendimento', nome: 'Atendimento online', re: /atendim|^client/, cor: 1 },
+  { cat: 'novo', nome: 'Remarcar visita', re: /remarc/, cor: 2 },
+  { cat: 'visita', nome: 'Visita marcada', re: /^visita|visita marc|agend/, cor: 3 },
+  { cat: 'negociacao', nome: 'Em negociação', re: /negocia|import/, cor: 5 },
+  { cat: 'fechado', nome: 'Negócio fechado', re: /fechad|finaliz|comprou|pago/, cor: 8 },
+  { cat: 'pausado', nome: 'Pausado', re: /pausad/, cor: 9 },
+  { cat: 'perdido', nome: 'Perdido', re: /perdid/, cor: 11 },
+  { cat: 'desistiu', nome: 'Desistiu / comprou com outro', re: /desist/, cor: 13 },
+  { cat: 'corretor', nome: 'Corretores', re: /corret/, cor: 10 },
+  { cat: 'construtor', nome: 'Construtores', re: /constru|capta/, cor: 12 },
+  { cat: 'pessoal', nome: 'Pessoais', re: /pessoa|famil|amig/, cor: 15 }
 ];
 async function garantirEtiquetas() {
   const ids = {};
@@ -729,16 +745,12 @@ async function garantirEtiquetas() {
   }
   return ids;
 }
-function catEtiqueta(jid) {    // categoria da etiqueta a partir da organização + status do CRM
-  const cl = (estado.classes || {})[jid]; let cat = cl ? cl.cat : '';
+function catEtiqueta(jid) {    // status do CRM manda; sem CRM, usa a organização (comprou -> fechado, cliente -> atendimento)
   const t = String((chats[jid] || {}).telefone || pnDe(jid).split('@')[0] || '').replace(/\D/g, '').slice(-8);
   const st = (estado.crmStatus || {})[t] || '';
-  if (st === 'visita') return 'visita';
-  if (st === 'negociacao') return 'negociando';
-  if (st === 'fechado') return 'comprou';
-  if (['corretor', 'construtor', 'pessoal'].includes(st)) return st;
-  if (cat === 'perdido' || cat === 'duvida') cat = 'cliente';
-  return cat;
+  if (CATS_ETQ.some(c => c.cat === st)) return st;
+  const cl = (estado.classes || {})[jid]; const cat = cl ? cl.cat : '';
+  return { comprou: 'fechado', cliente: 'atendimento', duvida: 'atendimento', perdido: 'perdido', corretor: 'corretor', construtor: 'construtor', pessoal: 'pessoal' }[cat] || '';
 }
 async function definirEtiqueta(jid, cat, ids) {
   if (!cat || !ids[cat]) return false;
@@ -748,6 +760,7 @@ async function definirEtiqueta(jid, cat, ids) {
     const id = ids[c.cat]; if (!id) continue;
     const quer = c.cat === cat;
     if (quer === tem.has(id)) continue;
+    meusRotulos.set(jid + '|' + id, Date.now());
     if (quer) await sock.addChatLabel(jid, id); else await sock.removeChatLabel(jid, id);
     quer ? tem.add(id) : tem.delete(id); mudou = true;
     await dorme(acaso(350, 700));
@@ -756,6 +769,7 @@ async function definirEtiqueta(jid, cat, ids) {
   return mudou;
 }
 const etiquetando = { rodando: false, feitos: 0, total: 0 };
+const meusRotulos = new Map();   // trocas de etiqueta feitas pela ponte (para não confundir com as feitas no celular)
 async function etiquetarTudo() {
   if (etiquetando.rodando || !sock || !conectado) return;
   const ids = await garantirEtiquetas();
@@ -765,16 +779,28 @@ async function etiquetarTudo() {
   finally { etiquetando.rodando = false; log('etiquetas aplicadas', etiquetando.feitos, 'conversas'); }
 }
 async function aplicarEtiquetaStatus(jid, novoStatus) {
-  // A assistente registrou um evento: troca a etiqueta da conversa (visita marcada / negociando / cliente).
+  // A assistente registrou um evento: a etiqueta da conversa acompanha o novo status do CRM.
   if (!sock || !conectado || !jid) return;
   const st = String(novoStatus || '').toLowerCase();
-  const cat = (st === 'visita_marcada' || st === 'visita') ? 'visita' : st === 'negociacao' ? 'negociando' : (st === 'atendimento' || st === 'remarcar' || st === 'sem_interesse') ? 'cliente' : '';
+  const cat = { atendimento: 'atendimento', visita_marcada: 'visita', visita: 'visita', negociacao: 'negociacao', remarcar: 'novo', pausado: 'pausado', sem_interesse: 'desistiu', desistiu: 'desistiu' }[st];
   if (!cat) return;
-  const t = String((chats[jid] || {}).telefone || '').replace(/\D/g, '').slice(-8);
-  if (t) { estado.crmStatus = estado.crmStatus || {}; estado.crmStatus[t] = cat === 'visita' ? 'visita' : cat === 'negociando' ? 'negociacao' : 'atendimento'; salvarEstado(); }
+  const t = String((chats[jid] || {}).telefone || pnDe(jid).split('@')[0] || '').replace(/\D/g, '').slice(-8);
+  if (t) { estado.crmStatus = estado.crmStatus || {}; estado.crmStatus[t] = cat; salvarEstado(); }
   try { await definirEtiqueta(jid, cat, await garantirEtiquetas()); } catch (e) { log('etiqueta', e.message); }
 }
-
+async function atualizarStatusCrm(mapa) {
+  // O CRM manda o status de cada telefone; só as conversas que mudaram trocam de etiqueta.
+  const tel8 = (x) => String(x || '').replace(/\D/g, '').slice(-8);
+  const novo = {}; for (const [t, v] of Object.entries(mapa || {})) { const k = tel8(t); if (k.length === 8) novo[k] = v; }
+  const antigo = estado.crmStatus || {}; estado.crmStatus = novo; salvarEstado();
+  if (!sock || !conectado || etiquetando.rodando || !Object.keys(etq.labels).length) return 0;
+  const mud = new Set(Object.keys(novo).filter(k => antigo[k] !== novo[k]));
+  if (!mud.size) return 0;
+  const ids = await garantirEtiquetas(); let n = 0;
+  for (const jid of Object.keys(chats)) { const t = tel8(chats[jid].telefone || pnDe(jid).split('@')[0]); if (mud.has(t)) { try { if (await definirEtiqueta(jid, catEtiqueta(jid), ids)) n++; } catch (e) { } } }
+  if (n) log('etiquetas atualizadas pelo CRM', n);
+  return n;
+}
 async function desconectarWhatsApp() {
   estado.whatsDesligado = true; salvarEstado(); clearTimeout(timerReconectar);
   const s = sock;
@@ -974,6 +1000,7 @@ http.createServer(async (req, res) => {
           (async () => { if (p.status) await classificarTudo(p.compradores || [], true, p); await etiquetarTudo(); })().catch(e => log('etiquetar', e.message));
           await dorme(1500);
         }
+        else if (ac === 'crm_status') { let m = {}; try { m = JSON.parse(b.texto || '{}'); } catch (e) { } atualizarStatusCrm(m).catch(e => log('crm_status', e.message)); return json(res, { ok: true }); }
         else if (ac === 'sincronizar') {
           if (!sock || !conectado) return json(res, { erro: 'WhatsApp desconectado' }, 409);
           for (const ini of [false, true]) { try { await sock.resyncAppState(['critical_block', 'critical_unblock_low', 'regular_high', 'regular_low', 'regular'], ini); } catch (e) { log('sincronizar', ini, e.message); } }
