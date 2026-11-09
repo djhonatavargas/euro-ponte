@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>WhatsApp Euro</title>
+<style>
+:root{--bg:#eef4fb;--surface:#fff;--ink:#16213a;--muted:#5d6b84;--line:#d6deeb;--accent:#1f3a68;--verde:#1f8f5f;--bolha-in:#fff;--bolha-ia:#dff3e8;--bolha-voce:#d9e7ff;--fundo-chat:#e9eef5;--perigo:#b3261e}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+button{font:inherit;cursor:pointer}
+.app{display:grid;grid-template-rows:auto 1fr;height:100dvh}
+header.topo{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px max(14px,env(safe-area-inset-right)) 10px max(14px,env(safe-area-inset-left));background:var(--accent);color:#fff}
+header.topo h1{font-size:17px;margin:0;margin-right:auto;white-space:nowrap}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.14);white-space:nowrap}
+.pill i{width:9px;height:9px;border-radius:50%;background:#e5484d;display:inline-block}
+.pill.ok i{background:#3fd38a}
+.btn{border:0;border-radius:10px;padding:8px 12px;background:#fff;color:var(--accent);font-weight:600;white-space:nowrap}
+.btn.off{background:#ffd9d6;color:var(--perigo)}
+.btn.verde{background:var(--verde);color:#fff}
+.btn.fantasma{background:rgba(255,255,255,.14);color:#fff;font-weight:500}
+.corpo{display:grid;grid-template-columns:minmax(260px,360px) 1fr;min-height:0}
+.lista{display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--surface);min-height:0}
+.busca{padding:10px}
+.busca input{width:100%;font:inherit;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg)}
+.chats{overflow-y:auto;flex:1}
+.chat{display:grid;grid-template-columns:42px 1fr auto;gap:10px;align-items:center;padding:10px 12px;border-bottom:1px solid #eef1f6;cursor:pointer;background:none;border-left:0;border-right:0;border-top:0;width:100%;text-align:left;color:inherit}
+.chat:hover{background:#f5f8fc}
+.chat.ativo{background:#e6eefb}
+.av{width:42px;height:42px;border-radius:50%;background:#c9d6ea;color:#33476b;display:grid;place-items:center;font-weight:700}
+.chat .n{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat .u{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat .lado{display:grid;justify-items:end;gap:4px;font-size:12px;color:var(--muted)}
+.badge{background:var(--verde);color:#fff;border-radius:999px;font-size:12px;font-weight:700;min-width:20px;padding:1px 6px;text-align:center}
+.iaoff{font-size:11px;color:var(--perigo);font-weight:600}
+.conversa{display:flex;flex-direction:column;min-height:0;background:var(--fundo-chat)}
+.cab{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border-bottom:1px solid var(--line)}
+.cab .info{margin-right:auto;min-width:0}
+.cab .info b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cab .info small{color:var(--muted)}
+.voltar{display:none;border:0;background:none;font-size:22px;padding:0 6px;color:var(--accent)}
+.toggle{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;color:var(--ink)}
+.toggle .sw{width:34px;height:20px;border-radius:999px;background:#c3cad6;position:relative;transition:.2s}
+.toggle .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s}
+.toggle.on .sw{background:var(--verde)}
+.toggle.on .sw::after{left:16px}
+.msgs{flex:1;overflow-y:auto;padding:14px max(14px,4%);display:flex;flex-direction:column;gap:6px}
+.dia{align-self:center;font-size:12px;background:#fff;color:var(--muted);padding:3px 10px;border-radius:8px;margin:8px 0;box-shadow:0 1px 1px rgba(0,0,0,.05)}
+.b{max-width:min(78%,560px);padding:7px 10px 5px;border-radius:10px;box-shadow:0 1px 1px rgba(0,0,0,.06);word-wrap:break-word;white-space:pre-wrap}
+.b.cliente{align-self:flex-start;background:var(--bolha-in);border-top-left-radius:3px}
+.b.ia,.b.voce,.b.celular{align-self:flex-end;border-top-right-radius:3px}
+.b.ia{background:var(--bolha-ia)}
+.b.voce,.b.celular{background:var(--bolha-voce)}
+.b .quem{font-size:11.5px;font-weight:700;margin-bottom:2px}
+.b.ia .quem{color:var(--verde)}
+.b.voce .quem,.b.celular .quem{color:var(--accent)}
+.b .hora{font-size:11px;color:var(--muted);text-align:right;margin-top:2px}
+.b img.midia{display:block;max-width:100%;max-height:340px;border-radius:8px;margin-bottom:4px;cursor:zoom-in;background:#eef}
+.b video{display:block;max-width:100%;max-height:340px;border-radius:8px;margin-bottom:4px}
+.b audio{display:block;max-width:100%;width:260px;margin-bottom:4px}
+.b a.doc{display:inline-block;margin-bottom:4px;color:var(--accent);font-weight:600}
+.b .sem{font-size:13px;color:var(--muted);font-style:italic}
+.digitando{align-self:flex-end;font-size:13px;color:var(--verde);font-style:italic;padding:2px 6px}
+.compor{display:flex;gap:8px;align-items:flex-end;padding:10px max(12px,env(safe-area-inset-right)) max(10px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));background:var(--surface);border-top:1px solid var(--line)}
+.compor textarea{flex:1;font:inherit;resize:none;max-height:140px;min-height:42px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg)}
+.ic{border:0;border-radius:50%;width:42px;height:42px;display:grid;place-items:center;background:var(--bg);font-size:20px;flex:none}
+.ic.enviar{background:var(--verde);color:#fff}
+.vazio{margin:auto;text-align:center;color:var(--muted);padding:24px;max-width:420px}
+.aviso{margin:10px;padding:12px 14px;border-radius:12px;background:#fff4e5;border:1px solid #f1c27d;font-size:14px}
+.aviso.vermelho{background:#fdecea;border-color:#f3b4ae}
+.modal{position:fixed;inset:0;background:rgba(10,20,40,.55);display:grid;place-items:center;padding:16px;z-index:50}
+.modal .caixa{background:#fff;border-radius:16px;padding:20px;max-width:460px;width:100%;max-height:90vh;overflow:auto;display:grid;gap:12px}
+.modal h2{margin:0;font-size:18px}
+.qr{display:grid;place-items:center;background:#fff;min-height:300px}
+.qr img{width:280px;height:280px}
+.menu{position:absolute;right:12px;top:52px;background:#fff;color:var(--ink);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.2);display:grid;min-width:240px;overflow:hidden;z-index:40}
+.menu button{border:0;background:none;text-align:left;padding:12px 16px;border-bottom:1px solid #eef1f6}
+.menu button:hover{background:#f5f8fc}
+.menu button.perigo{color:var(--perigo);font-weight:600}
+.zoom{position:fixed;inset:0;background:rgba(0,0,0,.85);display:grid;place-items:center;z-index:60;cursor:zoom-out}
+.zoom img{max-width:95vw;max-height:95vh}
+small.ok{color:var(--verde)} small.no{color:var(--perigo)}
+@media (max-width:760px){
+  .corpo{grid-template-columns:1fr}
+  .corpo.aberto .lista{display:none}
+  .corpo:not(.aberto) .conversa{display:none}
+  .voltar{display:block}
+  header.topo h1{font-size:16px}
+  .b{max-width:88%}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topo">
+    <h1>💬 WhatsApp Euro</h1>
+    <span class="pill" id="st-whats"><i></i><span>…</span></span>
+    <button class="btn" id="bt-assist" title="Liga ou pausa a assistente em todas as conversas">…</button>
+    <button class="btn fantasma" id="bt-menu" aria-label="Mais opções">⋮</button>
+  </header>
+  <div class="corpo" id="corpo">
+    <aside class="lista">
+      <div id="avisos"></div>
+      <div class="busca"><input id="busca" type="search" placeholder="Buscar conversa ou número"></div>
+      <div class="chats" id="chats"></div>
+    </aside>
+    <section class="conversa" id="conversa">
+      <div class="vazio" id="sem-conversa"><h2>Espelho do WhatsApp</h2><p>Escolha uma conversa. Você vê tudo o que o cliente, a assistente e você mandam, ao vivo, e pode responder por aqui. A assistente continua junto, lendo o que você escreveu.</p></div>
+    </section>
+  </div>
+</div>
+<input type="file" id="arq" accept="image/*" hidden>
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let estado = {}, chats = [], atual = null, msgs = [], digitando = {}, confirmarDesc = false;
+
+async function api(caminho, dados, opt = {}) {
+  const r = await fetch(caminho, dados === undefined ? { cache: 'no-store' } : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(dados), ...opt });
+  if (r.status === 401) { location.reload(); throw new Error('login'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.erro || ('erro ' + r.status));
+  return j;
+}
+function telBR(t) {
+  t = String(t || '').replace(/\D/g, '');
+  if (t.startsWith('55') && t.length === 12) return `(${t.slice(2,4)}) 9${t.slice(4,8)}-${t.slice(8)}`;
+  if (t.startsWith('55') && t.length === 13) return `(${t.slice(2,4)}) ${t.slice(4,9)}-${t.slice(9)}`;
+  return t ? '+' + t : '';
+}
+function telDoChat(c) { return c.telefone || (c.jid.endsWith('@s.whatsapp.net') ? c.jid.split('@')[0] : ''); }
+function nomeDoChat(c) { return c.nome || telBR(telDoChat(c)) || 'Contato'; }
+function horaCurta(ts) {
+  const d = new Date(ts), h = new Date();
+  if (d.toDateString() === h.toDateString()) return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const ontem = new Date(h); ontem.setDate(h.getDate() - 1);
+  if (d.toDateString() === ontem.toDateString()) return 'ontem';
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+}
+function iniciais(n) { return String(n || '?').replace(/[^\p{L}\s]/gu, '').trim().split(/\s+/).slice(0, 2).map(x => x[0] || '').join('').toUpperCase() || '#'; }
+
+// ---------- topo / estado ----------
+function desenharEstado() {
+  const st = $('#st-whats');
+  st.className = 'pill' + (estado.conectado ? ' ok' : '');
+  st.querySelector('span').textContent = estado.conectado ? 'Conectado ' + telBR(estado.numero) : (estado.whatsDesligado ? 'Desconectado' : (estado.qr ? 'Aguardando QR Code' : 'Conectando…'));
+  const b = $('#bt-assist');
+  b.textContent = estado.assistente ? '🤖 Assistente ligada' : '⏸ Assistente pausada';
+  b.className = 'btn' + (estado.assistente ? ' verde' : ' off');
+  const av = [];
+  if (!estado.conectado) {
+    av.push(`<div class="aviso vermelho"><b>WhatsApp ${estado.whatsDesligado ? 'desconectado' : 'não conectado'}.</b> A assistente não atua enquanto ele estiver desconectado.<div style="margin-top:8px"><button class="btn verde" data-acao="qr">${estado.qr ? 'Mostrar QR Code' : 'Conectar (gerar QR Code)'}</button></div></div>`);
+  } else if (!estado.assistente) {
+    av.push(`<div class="aviso"><b>Assistente pausada.</b> O WhatsApp continua conectado e espelhado aqui, mas ela não responde ninguém.</div>`);
+  }
+  $('#avisos').innerHTML = av.join('');
+  const aberto = $('#modal-qr');
+  if (aberto) desenharQR();
+  document.title = (chats.reduce((s, c) => s + (c.naoLidas || 0), 0) ? `(${chats.reduce((s, c) => s + (c.naoLidas || 0), 0)}) ` : '') + 'WhatsApp Euro';
+}
+$('#bt-assist').onclick = async () => {
+  const b = $('#bt-assist'); b.disabled = true;
+  try { estado = await api('/api/assistente', { on: !estado.assistente }); desenharEstado(); } catch (e) { alerta(e.message); }
+  b.disabled = false;
+};
+$('#bt-menu').onclick = (ev) => {
+  ev.stopPropagation();
+  let m = $('#menu'); if (m) { m.remove(); return; }
+  m = document.createElement('div'); m.className = 'menu'; m.id = 'menu';
+  m.innerHTML = (estado.conectado || !estado.whatsDesligado
+      ? `<button data-acao="desc" class="perigo">${confirmarDesc ? 'Confirmar: desconectar o WhatsApp' : 'Desconectar WhatsApp'}</button>`
+      : `<button data-acao="qr">Conectar (gerar QR Code)</button>`) +
+    `<button data-acao="status">Status da assistente</button><button data-acao="sair">Sair deste aparelho</button>`;
+  document.body.appendChild(m);
+};
+document.addEventListener('click', async (ev) => {
+  const a = ev.target.closest('[data-acao]');
+  const menu = $('#menu');
+  if (!a) { if (menu && !ev.target.closest('#menu')) { menu.remove(); confirmarDesc = false; } return; }
+  const acao = a.dataset.acao;
+  if (acao === 'desc') {
+    if (!confirmarDesc) { confirmarDesc = true; a.textContent = 'Confirmar: desconectar o WhatsApp'; return; }
+    confirmarDesc = false; menu && menu.remove();
+    try { estado = await api('/api/desconectar', {}); desenharEstado(); } catch (e) { alerta(e.message); }
+    return;
+  }
+  menu && menu.remove();
+  if (acao === 'qr') abrirQR();
+  if (acao === 'status') abrirStatus();
+  if (acao === 'sair') location.href = '/sair';
+  if (acao === 'fechar') a.closest('.modal').remove();
+});
+
+function abrirQR() {
+  if (!$('#modal-qr')) {
+    const d = document.createElement('div'); d.className = 'modal'; d.id = 'modal-qr';
+    d.innerHTML = `<div class="caixa"><h2>Conectar o WhatsApp da Euro</h2><div id="qr-corpo"></div><button class="btn" style="border:1px solid var(--line)" data-acao="fechar">Fechar</button></div>`;
+    document.body.appendChild(d);
+  }
+  if (estado.whatsDesligado || (!estado.conectado && !estado.qr)) api('/api/conectar', {}).then(e => { estado = e; desenharEstado(); }).catch(e => alerta(e.message));
+  desenharQR();
+}
+function desenharQR() {
+  const c = $('#qr-corpo'); if (!c) return;
+  if (estado.conectado) { c.innerHTML = `<p>✅ Conectado: <b>${esc(telBR(estado.numero))}</b>.</p>`; setTimeout(() => { const m = $('#modal-qr'); m && m.remove(); }, 1500); return; }
+  c.innerHTML = estado.qr
+    ? `<p>No celular da Euro: WhatsApp &gt; <b>Aparelhos conectados</b> &gt; <b>Conectar aparelho</b> e aponte para o código.</p><div class="qr"><img src="/api/qr.svg?${Date.now()}" alt="QR Code"></div><small>O código muda sozinho a cada ~20 segundos.</small>`
+    : `<div class="qr"><p>Gerando o QR Code…</p></div>`;
+}
+function abrirStatus() {
+  const d = document.createElement('div'); d.className = 'modal';
+  const u = estado.usoHoje;
+  d.innerHTML = `<div class="caixa"><h2>Status da assistente</h2>
+    <div>WhatsApp: <b>${estado.conectado ? 'conectado ' + esc(telBR(estado.numero)) : 'desconectado'}</b></div>
+    <div>Assistente: <b>${estado.assistente ? 'ligada' : 'pausada'}</b> · horário ${esc(estado.horario)} ${estado.dentroDoHorario ? '(dentro do horário)' : '(fora do horário: responde quando abrir)'}</div>
+    <div>Modelo: ${esc(estado.modelo)} · Imóveis no servidor: ${estado.imoveis} · Bloqueados: ${estado.bloqueados}</div>
+    <div>Regras: ${(estado.regras || []).map(r => `<small class="${r.ok ? 'ok' : 'no'}">${esc(r.arquivo)} ${r.ok ? '✓' : 'faltando'}</small>`).join(' · ')}</div>
+    <div>Uso hoje: ${u ? `${u.chamadas} respostas · ${(u.entrada + u.cache_escrita + u.cache_lida).toLocaleString('pt-BR')} tokens de entrada (${u.cache_lida.toLocaleString('pt-BR')} do cache) · ${u.saida.toLocaleString('pt-BR')} de saída` : 'nenhum'}</div>
+    <small>No celular, numa conversa: <b>#pausa</b> desliga a assistente ali, <b>#bot</b> liga de novo.</small>
+    <button class="btn" style="border:1px solid var(--line)" data-acao="fechar">Fechar</button></div>`;
+  document.body.appendChild(d);
+}
+function alerta(t) {
+  const d = document.createElement('div'); d.className = 'modal';
+  d.innerHTML = `<div class="caixa"><div>${esc(t)}</div><button class="btn" style="border:1px solid var(--line)" data-acao="fechar">OK</button></div>`;
+  document.body.appendChild(d);
+}
+
+// ---------- lista ----------
+function desenharLista() {
+  const q = $('#busca').value.trim().toLowerCase(), qd = q.replace(/\D/g, '');
+  const vis = chats.filter(c => !q || nomeDoChat(c).toLowerCase().includes(q) || (qd && telDoChat(c).includes(qd)));
+  $('#chats').innerHTML = vis.length ? vis.map(c => `<button class="chat${atual === c.jid ? ' ativo' : ''}" data-jid="${esc(c.jid)}">
+      <div class="av">${esc(iniciais(c.nome || '#'))}</div>
+      <div style="min-width:0"><div class="n">${esc(nomeDoChat(c))}</div><div class="u">${c.ultAutor === 'ia' ? '🤖 ' : (c.ultAutor === 'voce' || c.ultAutor === 'celular') ? 'Você: ' : ''}${esc(c.ultTexto)}</div></div>
+      <div class="lado"><span>${c.ult ? horaCurta(c.ult) : ''}</span>${c.naoLidas ? `<span class="badge">${c.naoLidas}</span>` : ''}${c.iaOff ? '<span class="iaoff">IA off</span>' : ''}</div>
+    </button>`).join('') : `<div class="vazio">${chats.length ? 'Nada encontrado.' : 'As conversas aparecem aqui assim que o WhatsApp conectar.'}</div>`;
+}
+$('#busca').oninput = desenharLista;
+$('#chats').onclick = (ev) => { const b = ev.target.closest('[data-jid]'); if (b) abrirConversa(b.dataset.jid); };
+
+// ---------- conversa ----------
+async function abrirConversa(jid) {
+  atual = jid; $('#corpo').classList.add('aberto'); desenharLista();
+  const c = chats.find(x => x.jid === jid) || { jid };
+  $('#conversa').innerHTML = `<div class="cab"><button class="voltar" id="voltar" aria-label="Voltar">‹</button><div class="av">${esc(iniciais(c.nome || '#'))}</div>
+      <div class="info"><b id="cab-nome">${esc(nomeDoChat(c))}</b><small>${esc(telBR(telDoChat(c)))}</small></div>
+      <button class="toggle" id="tg-ia" title="Ligar ou desligar a assistente só nesta conversa"><span class="sw"></span><span id="tg-txt">IA</span></button></div>
+    <div class="msgs" id="msgs"><div class="vazio">Carregando…</div></div>
+    <div class="compor"><button class="ic" id="bt-foto" title="Enviar foto">📎</button><textarea id="txt" rows="1" placeholder="Escreva para o cliente… (Enter envia, Shift+Enter quebra linha)"></textarea><button class="ic enviar" id="bt-enviar" title="Enviar">➤</button></div>`;
+  $('#voltar').onclick = () => { atual = null; $('#corpo').classList.remove('aberto'); desenharLista(); };
+  $('#tg-ia').onclick = async () => {
+    const ch = chats.find(x => x.jid === atual); if (!ch) return;
+    try { const r = await api('/api/ia-conversa', { jid: atual, on: ch.iaOff }); atualizarChat(r); } catch (e) { alerta(e.message); }
+  };
+  const txt = $('#txt');
+  txt.addEventListener('input', () => { txt.style.height = 'auto'; txt.style.height = Math.min(140, txt.scrollHeight) + 'px'; });
+  txt.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); enviar(); } });
+  $('#bt-enviar').onclick = enviar;
+  $('#bt-foto').onclick = () => $('#arq').click();
+  desenharToggle();
+  try {
+    const r = await api('/api/msgs?jid=' + encodeURIComponent(jid));
+    if (atual !== jid) return;
+    msgs = r.msgs || []; atualizarChat(r.chat); desenharMsgs(true);
+    api('/api/lido', { jid }).catch(() => { });
+  } catch (e) { $('#msgs').innerHTML = `<div class="vazio">${esc(e.message)}</div>`; }
+}
+function desenharToggle() {
+  const c = chats.find(x => x.jid === atual); const t = $('#tg-ia'); if (!t || !c) return;
+  t.classList.toggle('on', !c.iaOff);
+  $('#tg-txt').textContent = c.iaOff ? 'IA desligada aqui' : 'IA ligada aqui';
+}
+function midiaHtml(m) {
+  if (!m.arquivo) return m.tipo === 'text' || m.tipo === 'contact' || m.tipo === 'location' ? '' : `<div class="sem">${{ image: '📷 foto', audio: '🎤 áudio', video: '🎬 vídeo', document: '📄 arquivo', sticker: 'figurinha' }[m.tipo] || m.tipo} (não disponível)</div>`;
+  const src = '/' + m.arquivo.split('/').map(encodeURIComponent).join('/');
+  if (m.tipo === 'image' || m.tipo === 'sticker') return `<img class="midia" src="${src}" loading="lazy" alt="" ${m.tipo === 'sticker' ? 'style="max-width:140px"' : ''}>`;
+  if (m.tipo === 'audio') return `<audio controls preload="none" src="${src}"></audio>`;
+  if (m.tipo === 'video') return `<video controls preload="metadata" src="${src}"></video>`;
+  return `<a class="doc" href="${src}" target="_blank" rel="noopener">📄 ${esc(m.nomeArquivo || 'arquivo')}</a>`;
+}
+function bolha(m) {
+  const quem = { ia: '🤖 Assistente', voce: 'Você', celular: 'Você (celular)' }[m.autor] || '';
+  const texto = m.tipo === 'contact' ? '👤 ' + (m.texto || 'contato') : m.tipo === 'location' ? '📍 ' + (m.texto || 'localização') : (m.texto || '');
+  return `<div class="b ${esc(m.autor)}">${quem ? `<div class="quem">${quem}</div>` : ''}${midiaHtml(m)}${texto ? `<div>${esc(texto)}</div>` : ''}<div class="hora">${new Date(m.ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div></div>`;
+}
+function desenharMsgs(rolar) {
+  const box = $('#msgs'); if (!box) return;
+  const perto = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+  let dia = '', html = '';
+  for (const m of msgs) {
+    const d = new Date(m.ts).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+    if (d !== dia) { dia = d; html += `<div class="dia">${esc(d)}</div>`; }
+    html += bolha(m);
+  }
+  if (digitando[atual]) html += `<div class="digitando">🤖 Assistente digitando…</div>`;
+  box.innerHTML = html || `<div class="vazio">Nenhuma mensagem ainda nesta conversa.</div>`;
+  if (rolar || perto) box.scrollTop = box.scrollHeight;
+}
+async function enviar() {
+  const txt = $('#txt'), t = txt.value.trim(); if (!t || !atual) return;
+  const b = $('#bt-enviar'); b.disabled = true; txt.disabled = true;
+  try { await api('/api/enviar', { jid: atual, texto: t }); txt.value = ''; txt.style.height = 'auto'; }
+  catch (e) { alerta('Não enviou: ' + e.message); }
+  b.disabled = false; txt.disabled = false; txt.focus();
+}
+$('#arq').onchange = async () => {
+  const f = $('#arq').files[0]; $('#arq').value = ''; if (!f || !atual) return;
+  const legenda = ($('#txt') && $('#txt').value.trim()) || '';
+  const b = $('#bt-foto'); b.disabled = true; b.textContent = '⏳';
+  try {
+    const r = await fetch(`/api/foto?jid=${encodeURIComponent(atual)}&legenda=${encodeURIComponent(legenda)}`, { method: 'POST', headers: { 'content-type': f.type || 'image/jpeg' }, body: f });
+    const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.erro || 'erro');
+    if ($('#txt')) $('#txt').value = '';
+  } catch (e) { alerta('Não enviou a foto: ' + e.message); }
+  b.disabled = false; b.textContent = '📎';
+};
+document.addEventListener('click', (ev) => {
+  const img = ev.target.closest('img.midia'); if (!img) return;
+  const z = document.createElement('div'); z.className = 'zoom'; z.innerHTML = `<img src="${img.src}" alt="">`; z.onclick = () => z.remove(); document.body.appendChild(z);
+});
+
+function atualizarChat(c) {
+  if (!c || !c.jid) return;
+  const i = chats.findIndex(x => x.jid === c.jid);
+  if (i >= 0) chats[i] = c; else chats.push(c);
+  chats.sort((a, b) => b.ult - a.ult);
+  desenharLista();
+  if (c.jid === atual) { desenharToggle(); const n = $('#cab-nome'); if (n) n.textContent = nomeDoChat(c); }
+  desenharEstado();
+}
+
+// ---------- ao vivo ----------
+function conectarEventos() {
+  const es = new EventSource('/eventos');
+  es.addEventListener('estado', (e) => { estado = JSON.parse(e.data); desenharEstado(); });
+  es.addEventListener('chat', (e) => atualizarChat(JSON.parse(e.data)));
+  es.addEventListener('msg', (e) => {
+    const { jid, msg, chat } = JSON.parse(e.data);
+    if (jid === atual) {
+      if (!msgs.some(m => m.id && m.id === msg.id)) { msgs.push(msg); msgs.sort((a, b) => a.ts - b.ts); }
+      if (msg.autor === 'cliente' && document.visibilityState === 'visible') { chat.naoLidas = 0; api('/api/lido', { jid }).catch(() => { }); }
+      if (msg.autor !== 'cliente') digitando[jid] = false;
+      desenharMsgs(false);
+    }
+    atualizarChat(chat);
+  });
+  es.addEventListener('digitando', (e) => { const d = JSON.parse(e.data); digitando[d.jid] = d.on; if (d.jid === atual) desenharMsgs(false); });
+  es.addEventListener('recarregar', () => carregarChats());
+  es.onerror = () => { $('#st-whats span').textContent = 'Reconectando ao painel…'; };
+}
+async function carregarChats() { try { chats = await api('/api/chats'); desenharLista(); desenharEstado(); } catch (e) { } }
+(async () => {
+  try { estado = await api('/api/estado'); } catch (e) { }
+  desenharEstado(); await carregarChats(); conectarEventos();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && atual) api('/api/lido', { jid: atual }).catch(() => { }); });
+})();
+</script>
+</body>
+</html>

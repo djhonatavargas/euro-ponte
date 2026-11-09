@@ -1,0 +1,14 @@
+{
+  "name": "euro-ponte",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Ponte WhatsApp (QR) <-> Claude para o atendimento da Euro Consultoria",
+  "main": "index.js",
+  "scripts": { "start": "node index.js" },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "pino": "^9.0.0",
+    "qrcode": "^1.5.4"
+  }
+}
