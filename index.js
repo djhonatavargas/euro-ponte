@@ -635,6 +635,14 @@ async function resolverTelefones(lista) {
   log('telefones ligados às conversas', achou, 'de', nums.length);
   return { consultados: nums.length, ligados: achou, conversasComTelefone: Object.keys(chats).filter(j => chats[j].telefone || lidPn[j]).length };
 }
+function acharJid(j) {   // telefone (5547...@s.whatsapp.net) -> conversa existente (muitas vêm como código @lid)
+  j = String(j || ''); if (!j || chats[j]) return j;
+  if (!j.endsWith('@s.whatsapp.net')) return j;
+  const t8 = j.split('@')[0].replace(/\D/g, '').slice(-8); if (t8.length < 8) return j;
+  let melhor = '', ult = -1;
+  for (const k of Object.keys(chats)) { const tel = String(chats[k].telefone || pnDe(k).split('@')[0] || ''); if (tel.replace(/\D/g, '').endsWith(t8) && (chats[k].ult || 0) > ult) { melhor = k; ult = chats[k].ult || 0; } }
+  return melhor || j;
+}
 async function arquivarChat(jid, arquivar) {
   if (!sock || !conectado) throw new Error('WhatsApp desconectado');
   const c = chats[jid] || (chats[jid] = {});
@@ -963,9 +971,21 @@ http.createServer(async (req, res) => {
         else b = JSON.parse(txt || '{}');
       }
       if (u.pathname === '/api/ponte') {   // uma única porta para o CRM (via Make): ver, enviar, ligar/pausar, desconectar...
-        const ac = String(b.acao || 'ver'), jid = b.jid;
+        const ac = String(b.acao || 'ver'); let jid = acharJid(b.jid);
+        if (ac === 'aprimorar') {
+          const rascunho = String(b.texto || '').trim(); if (!rascunho) return json(res, { erro: 'escreva a mensagem primeiro' }, 400);
+          const conversa = jidValido(jid) ? lerEsp(jid).filter(m => m.texto).slice(-14).map(m => (m.autor === 'cliente' ? 'Cliente: ' : 'Euro: ') + m.texto.replace(/\s+/g, ' ').slice(0, 300)).join('\n') : '';
+          const jeito = ['JEITO-DO-DJHONATA.md', 'REGRAS-ATENDIMENTO.md'].map(f => lerTexto(f)).filter(Boolean).join('\n\n').slice(0, 12000);
+          const sis = `Você revisa a mensagem que o Djhonata, corretor da Euro Consultoria Imobiliária (Joinville/SC), vai mandar a um cliente pelo WhatsApp.
+Reescreva o RASCUNHO dele deixando claro, organizado, cordial e profissional, no jeito dele de escrever (próximo, direto, sem formalidade excessiva).
+Regras: mantenha exatamente o sentido e as informações; NÃO invente valores, datas, imóveis, condições ou promessas; não acrescente assuntos novos; português do Brasil; frases curtas; no máximo 1 ou 2 emojis se combinar; use o contexto da conversa só para o tom e para não repetir o que já foi dito.
+Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\n\nComo o Djhonata escreve e as regras do atendimento:\n' + jeito : ''}`;
+          try { const sug = (await claudeTexto(sis, (conversa ? 'Conversa até agora:\n' + conversa + '\n\n' : '') + 'RASCUNHO:\n' + rascunho, 800)).trim(); return json(res, { sugestao: sug }); }
+          catch (e) { return json(res, { erro: e.message }, 502); }
+        }
         if (ac === 'enviar') {
           const texto = String(b.texto || '').trim();
+          if (jid && !chats[jid] && jid.endsWith('@s.whatsapp.net') && sock && conectado) { try { const [r] = await sock.onWhatsApp(jid.split('@')[0]); if (r && r.exists && r.jid) jid = r.jid; } catch (e) { } }
           if (!jidValido(jid) || !texto) return json(res, { erro: 'conversa ou texto inválido' }, 400);
           const id = await enviarTexto(jid, texto, 'voce');
           if (!id) return json(res, { erro: 'WhatsApp desconectado' }, 409);
