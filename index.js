@@ -10,7 +10,7 @@ const pino = require('pino');
 const QRCode = require('qrcode');
 // Biblioteca do WhatsApp: tenta a versão 7 ("baileys", com suporte aos códigos LID); se não carregar, usa a 6 (antiga).
 let makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, downloadMediaMessage, Browsers;
-let BAILEYS = null, BAILEYS_VERSAO = '';
+let BAILEYS = null, BAILEYS_VERSAO = '', BPICK = () => undefined;
 let forcarAntigo = false, abriuComV7 = false;
 function voltarParaAntigo(motivo) {   // a versão 7 não funcionou aqui: volta para a 6 sem derrubar o serviço
   if (forcarAntigo) return; forcarAntigo = true; BAILEYS = null; log('voltando para a biblioteca antiga:', motivo);
@@ -24,7 +24,7 @@ async function carregarBaileys() {
   makeWASocket = typeof ns.makeWASocket === 'function' ? ns.makeWASocket : (typeof ns.default === 'function' ? ns.default : (ns.default && (ns.default.makeWASocket || ns.default.default)));
   useMultiFileAuthState = pick('useMultiFileAuthState'); DisconnectReason = pick('DisconnectReason');
   fetchLatestBaileysVersion = pick('fetchLatestBaileysVersion'); downloadMediaMessage = pick('downloadMediaMessage'); Browsers = pick('Browsers');
-  BAILEYS.pick = pick;
+  BPICK = pick;
   return BAILEYS;
 }
 
@@ -658,7 +658,7 @@ async function resolverLids(s) {
 }
 async function resolverTelefones(lista) {
   if (!sock || !conectado) throw new Error('WhatsApp desconectado');
-  const B0 = await carregarBaileys(); const B = { USyncQuery: B0.pick('USyncQuery'), USyncUser: B0.pick('USyncUser') };
+  await carregarBaileys(); const B = { USyncQuery: BPICK('USyncQuery'), USyncUser: BPICK('USyncUser') };
   const nums = [...new Set((lista || []).map(t => String(t || '').replace(/\D/g, '')).filter(t => t.length >= 10).map(t => t.startsWith('55') ? t : '55' + t))];
   let achou = 0;
   for (let i = 0; i < nums.length; i += 40) {
