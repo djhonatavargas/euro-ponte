@@ -121,7 +121,8 @@ const ADAPTADOR = `# COMO VOCÊ FUNCIONA AQUI (vale acima das partes técnicas d
 Você está rodando num servidor novo, não mais no OpenClaw. As regras abaixo continuam valendo: AGENTS.md (prompt principal), REGRAS-ATENDIMENTO.md e os outros arquivos (tom, identidade como Djhonata, oferta, agenda, endereço, emojis, áudio ou texto, nunca prometer "já te mando" etc.). Se duas regras se contradisserem, vale a do REGRAS-ATENDIMENTO.md, que é a mais nova. Só a parte técnica muda:
 - Sua resposta em texto é enviada ao cliente no WhatsApp. Para mandar mais de uma mensagem separada, coloque uma linha só com --- entre elas. Se não for para responder nada, responda exatamente NO_REPLY.
 - ÁUDIO COM A VOZ DO DJHONATA: para responder em áudio, escreva a parte falada dentro de [[tts:...]], seguindo a regra ÁUDIO OU TEXTO. O que estiver dentro é falado exatamente como está escrito: escreva do jeito que se fala, sem emojis, links, listas, asteriscos ou abreviações; valores e números como se fala ("duzentos e cinquenta mil", "mil e quinhentos por mês"). No máximo uns 40 segundos (cerca de 90 palavras) e um áudio por vez. Link, endereço ou valores para conferir vão numa mensagem de texto separada, depois do áudio. Não repita em texto o que falou no áudio.
-- Áudios que o cliente manda chegam transcritos, assim: [áudio do cliente, transcrito]: "...". Responda ao conteúdo normalmente, sem dizer que transcreveu. Se chegar [o cliente mandou um áudio que não deu para transcrever], peça com naturalidade para ele mandar de novo ou escrever.
+- Áudios que o cliente manda chegam transcritos, assim: [áudio do cliente, transcrito]: "...". Responda ao conteúdo normalmente, sem dizer que transcreveu. Se chegar [o cliente mandou um áudio que não deu para transcrever], peça com naturalidade para ele mandar de novo ou escrever. Se no histórico aparece que antes você disse que não conseguia ouvir áudios, isso mudou: agora você entende os áudios e pode responder em áudio.
+- Toda vez que o cliente fala com você, responda a ele na mesma vez (depois de usar as ferramentas, escreva a mensagem). Só fique em silêncio (NO_REPLY) quando a mensagem dele não pedir resposta.
 - Para mandar foto, vídeo ou arquivo use a ferramenta enviar_arquivo (caminho relativo à pasta do catálogo, ex.: "escritorio/fachada.jpg" ou "rua lapa - boa vista (ref 913)/foto.jpg"; ou um link https de imagem, como os links de fotos que estão nas fichas). Onde as regras falam em ferramenta message, tool_call openclaw, ou caminhos C:\\Users\\Public\\catalogo\\..., use enviar_arquivo com o caminho a partir da pasta do catálogo. Mídia e texto saem na ordem em que você escreve e chama as ferramentas.
 - Antes de oferecer um imóvel, chame ler_ficha com a ref (ou nome da rua) para pegar a descrição pronta do CRM e a lista de fotos/vídeos. Nunca invente dados.
 - Avisos para o Djhonata: ferramenta avisar_djhonata (vai para o WhatsApp pessoal dele). Não use a ferramenta de envio para isso. O aviso é INTERNO: depois de avisar, SEMPRE responda o cliente na mesma vez, de forma natural e sem dizer que foi consultar alguém (por exemplo, fazendo uma pergunta para entender melhor o que ele procura: bairro, quartos, faixa de valor, se é pronto ou na planta). Nunca deixe o cliente sem resposta. Use NO_REPLY só quando a mensagem do cliente não pede resposta (ex.: "ok", "👍", "obrigado" no fim da conversa).
@@ -145,6 +146,12 @@ function sistema(ctx) {
   let din = `Agora: ${dia}, ${hora} (horário de Joinville).\nConversa com: ${ctx.nome || 'nome não informado'} — WhatsApp ${ctx.telefone ? formatoBR(ctx.telefone) : 'desconhecido'}.`;
   din += `\nRegra de segurança do número: escreva cada resposta com suas palavras para este cliente; não copie textos prontos idênticos aos de outras conversas (varie saudação e frases). Mensagens curtas, uma ideia por mensagem, sem excesso de links.`;
   if (!ELEVEN_KEY) din += `\nÁudio com a voz do Djhonata: indisponível agora. Responda só em texto (não use [[tts:...]]).`;
+  else if (!ctx.dono) {
+    const pref = (estado.prefAudio || {})[ctx.jid] || 0;
+    if (pref < 0) din += `\nEste cliente pediu para não receber áudio: responda só em texto.`;
+    else if (pref > 0) din += `\nEste cliente pediu para conversar por ÁUDIO: responda em áudio ([[tts:...]]) sempre que for explicar algo; texto só para link, endereço, valores para conferir ou confirmação curta.`;
+    else if (ctx.audioAgora) din += `\nO cliente mandou ÁUDIO agora. Pela regra ÁUDIO OU TEXTO, se a resposta explica alguma coisa, mande em áudio ([[tts:...]]); confirmação curta pode ir em texto.`;
+  }
   if (ctx.dono) {
     din += `\nATENÇÃO: quem está escrevendo é o próprio Djhonata (dono), pelo WhatsApp pessoal dele. Ele NÃO é cliente: não se apresente, não mande agenda, material nem endereço para ele.
 Siga a seção 13 do AGENTS.md: quando ele der uma orientação sobre um cliente (ex.: "fala pra ele que aposentado também pode"), descubra de qual cliente é (o nome/número que ele citou ou, se não citou, o último aviso abaixo; na dúvida, pergunte curto: "É o Emerson (+55 47 9991-5821)?"), use a ferramenta mandar_ao_cliente para mandar a mensagem ao cliente falando como o Djhonata (primeira pessoa, frases naturais, sem copiar o texto dele ao pé da letra; pode usar [[tts:...]] e ---), e depois responda a ele curto: "Feito! Mandei pro Emerson: [resumo]". Se a mensagem dele não for sobre cliente (ex.: "quem marcou hoje?"), responda direto e curto, com os dados abaixo.`;
@@ -718,10 +725,15 @@ async function aoReceber(m, tipoUpsert) {
   if (!entrada) return;
 
   anotar(jid, 'user', entrada);
+  // preferência de áudio do cliente: pediu áudio / pediu para não mandar áudio (vale para as próximas respostas)
+  const falou = (texto || '') + ' ' + (m._transc || '');
+  if (/n[ãa]o\s+(consigo|posso|d[áa]\s+pra|tenho\s+como)\s+(ouvir|escutar)|n[ãa]o\s+(me\s+)?(mand[ae]|envi[ae])\s+([áa]udio)|s[óo]\s+(por\s+)?(texto|escrito|mensagem)/i.test(falou)) { estado.prefAudio = estado.prefAudio || {}; estado.prefAudio[jid] = -Date.now(); salvarEstado(); }
+  else if (/(mand[ae]|manda\s+um|fala|explica|responde|envia|pode\s+mandar|conversar|me\s+explica)[^.?!]{0,25}\b(em|por|no|um|de)?\s*[áa]udio/i.test(falou)) { estado.prefAudio = estado.prefAudio || {}; estado.prefAudio[jid] = Date.now(); salvarEstado(); }
   let f = filas.get(jid);
   if (!f) { f = { jid, telefone, nome: m.pushName || '', dono, imagens: [], timer: null }; filas.set(jid, f); }
   if (m.pushName) f.nome = m.pushName;
   if (imagem) f.imagens.push(imagem);
+  if (x.audioMessage) f.audio = true;
   clearTimeout(f.timer);
   f.timer = setTimeout(() => processar(jid).catch(e => log('erro processar', e.message)), ESPERA_MS);
 }
@@ -790,34 +802,43 @@ function registrarUso(u) {
 }
 
 async function responder(f) {
-  const ctx = { jid: f.jid, telefone: f.telefone, nome: f.nome, dono: f.dono, notas: [] };
+  const ctx = { jid: f.jid, telefone: f.telefone, nome: f.nome, dono: f.dono, notas: [], audioAgora: !!f.audio };
   const system = sistema(ctx);
   const messages = montarMensagens(f.jid, f.imagens, f.rotina);
   const ferramentas = f.dono && !(estado.teste && estado.teste.ativo) ? [...FERRAMENTAS, FERRAMENTA_DONO] : FERRAMENTAS;
   if (!f.rotina) { try { await sock.sendPresenceUpdate('composing', f.jid); } catch (e) { } }
-  const saida = [];
+  const saida = [], textosIA = [];
+  let usouFerramenta = false, cutucou = false;
   for (let volta = 0; volta < 8; volta++) {
     const resp = await claude(system, messages, ferramentas);
     messages.push({ role: 'assistant', content: resp.content });
     const resultados = [];
     for (const bloco of resp.content || []) {
       if (bloco.type === 'text') {
-        const t = bloco.text.trim();
+        const t = bloco.text.trim(); if (t) textosIA.push(t.slice(0, 200));
         if (!t || /^NO_REPLY\b/.test(t) || /^nada a fazer\W*$/i.test(t)) continue;
         // o Djhonata pode ter desligado a assistente nessa conversa enquanto ela pensava
         if (!podeResponder(f.jid, f.telefone)) { log('resposta descartada (pausada no meio)', f.jid); return; }
         saida.push(...await enviarSaida(f.jid, t, 'ia', f.extra));
       } else if (bloco.type === 'tool_use') {
+        usouFerramenta = true;
         const r = await executar(bloco.name, bloco.input || {}, ctx);
         if (bloco.name === 'enviar_arquivo' && ctx.notas.length) saida.push(ctx.notas.pop());
         resultados.push({ type: 'tool_result', tool_use_id: bloco.id, content: String(r).slice(0, 20000) });
       }
     }
-    if (resp.stop_reason !== 'tool_use' || !resultados.length) break;
-    messages.push({ role: 'user', content: resultados });
+    if (resp.stop_reason === 'tool_use' && resultados.length) { messages.push({ role: 'user', content: resultados }); continue; }
+    // usou ferramenta (ex.: registrou no CRM) e terminou sem falar nada com o cliente: lembra uma vez de responder
+    if (!saida.length && usouFerramenta && !cutucou && !f.rotina && !f.dono) {
+      cutucou = true; log('IA terminou sem responder; pedindo a resposta', f.telefone || f.jid);
+      messages.push({ role: 'user', content: [{ type: 'text', text: '(sistema) Você ainda não mandou nenhuma mensagem ao cliente nesta vez. Responda agora ao que ele disse' + (ctx.audioAgora || ((estado.prefAudio || {})[f.jid] > 0) ? ', em áudio ([[tts:...]]), porque ele mandou ou pediu áudio' : '') + '. Se realmente não houver nada a responder, escreva só NO_REPLY.' }] });
+      continue;
+    }
+    break;
   }
   try { await sock.sendPresenceUpdate('paused', f.jid); } catch (e) { }
   if (saida.length) anotar(f.jid, 'assistant', saida.join('\n'));
+  else if (textosIA.length) log('IA não mandou nada; texto dela:', JSON.stringify(textosIA).slice(0, 400));
   log('respondido', f.telefone || f.jid, saida.length, 'mensagens');
 }
 
