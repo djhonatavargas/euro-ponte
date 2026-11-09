@@ -535,7 +535,7 @@ async function iniciarWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState(AUTH);
     let version;
     try { version = (await fetchLatestBaileysVersion()).version; } catch (e) { }
-    const s = makeWASocket({ version, auth: state, logger: pino({ level: 'silent' }), browser: Browsers.ubuntu('Euro Ponte'), markOnlineOnConnect: false, syncFullHistory: true });
+    const s = makeWASocket({ version, auth: state, logger: pino({ level: 'warn' }, pino.destination({ dest: path.join(DADOS, 'baileys.log'), sync: false })), browser: Browsers.ubuntu('Euro Ponte'), markOnlineOnConnect: false, syncFullHistory: true });
     sock = s;
     s.ev.on('creds.update', saveCreds);
     s.ev.on('connection.update', (u) => {
@@ -660,6 +660,7 @@ async function classificarTudo(compradores, refazer, crm = {}) {
   const tel8 = (t) => String(t || '').replace(/\D/g, '').slice(-8);
   const comp = new Set((compradores || []).map(tel8).filter(x => x.length === 8));
   const st = {}; for (const [t, v] of Object.entries(crm.status || {})) { const k = tel8(t); if (k.length === 8) st[k] = v; }
+  estado.crmStatus = st;
   for (const k of ['corretor', 'construtor', 'pessoal']) for (const t of (crm[k] || [])) { const x = tel8(t); if (x.length === 8) st[x] = k; }
   const SETE = 7 * 864e5, agora = Date.now();
   const lista = Object.keys(chats).filter(j => !chats[j].arquivado).sort((a, b) => (chats[b].ult || 0) - (chats[a].ult || 0));
@@ -704,18 +705,76 @@ async function classificarTudo(compradores, refazer, crm = {}) {
     for (const jid of paraIA) if (!estado.classes[jid]) marca(jid, 'cliente', 'conversa recente');
   } finally { classif.rodando = false; salvarEstado(); log('organização terminou', lista.length, 'conversas;', paraIA.length, 'pela IA'); }
 }
-async function aplicarEtiquetaStatus(jid, novoStatus) {
-  // Assistente marcou visita / negociação -> etiqueta "Importante" (e "Visita marcada" se existir); perdeu interesse -> tira "Importante".
-  if (!sock || !conectado || !jid) return;
-  const acha = (re) => Object.entries(etq.labels).find(([, l]) => !l.apagada && re.test(String(l.nome || '').toLowerCase()));
-  const tem = new Set(etq.chats[jid] || []);
-  const por = async (re, on) => { const e = acha(re); if (!e) return; const [id] = e; if (on === tem.has(id)) return; try { if (on) await sock.addChatLabel(jid, id); else await sock.removeChatLabel(jid, id); on ? tem.add(id) : tem.delete(id); } catch (x) { log('etiqueta', x.message); } };
-  const st = String(novoStatus || '').toLowerCase();
-  if (st === 'visita_marcada' || st === 'visita') { await por(/import/, true); await por(/visita/, true); }
-  else if (st === 'negociacao') { await por(/import/, true); }
-  else if (st === 'sem_interesse' || st === 'desistiu') { await por(/import/, false); await por(/visita/, false); }
-  etq.chats[jid] = [...tem]; salvarEtq();
+// ---------- etiquetas por categoria ----------
+// Uma etiqueta por conversa: Cliente, Visita marcada, Negociando, Já comprou, Corretor, Construtor, Pessoal.
+const CATS_ETQ = [
+  { cat: 'cliente', nome: 'Cliente', re: /^client/, cor: 1 },
+  { cat: 'visita', nome: 'Visita marcada', re: /visita/, cor: 3 },
+  { cat: 'negociando', nome: 'Negociando', re: /negoci|import/, cor: 5 },
+  { cat: 'comprou', nome: 'Já comprou', re: /comprou|finaliz|pago/, cor: 8 },
+  { cat: 'corretor', nome: 'Corretor', re: /corret/, cor: 10 },
+  { cat: 'construtor', nome: 'Construtor', re: /constru|capta/, cor: 12 },
+  { cat: 'pessoal', nome: 'Pessoal', re: /pessoal|famil|amig/, cor: 15 }
+];
+async function garantirEtiquetas() {
+  const ids = {};
+  for (const c of CATS_ETQ) {
+    const ach = Object.entries(etq.labels).find(([, l]) => !l.apagada && c.re.test(String(l.nome || '').toLowerCase()));
+    if (ach) { ids[c.cat] = ach[0]; continue; }
+    if (typeof sock.addLabel !== 'function') continue;
+    let novo = 90; while (etq.labels[String(novo)]) novo++;
+    try { await sock.addLabel('', { id: String(novo), name: c.nome, color: c.cor, deleted: false }); etq.labels[String(novo)] = { nome: c.nome, cor: c.cor }; ids[c.cat] = String(novo); salvarEtq(); log('etiqueta criada', c.nome); }
+    catch (e) { log('criar etiqueta', c.nome, e.message); }
+    await dorme(800);
+  }
+  return ids;
 }
+function catEtiqueta(jid) {    // categoria da etiqueta a partir da organização + status do CRM
+  const cl = (estado.classes || {})[jid]; let cat = cl ? cl.cat : '';
+  const t = String((chats[jid] || {}).telefone || pnDe(jid).split('@')[0] || '').replace(/\D/g, '').slice(-8);
+  const st = (estado.crmStatus || {})[t] || '';
+  if (st === 'visita') return 'visita';
+  if (st === 'negociacao') return 'negociando';
+  if (st === 'fechado') return 'comprou';
+  if (['corretor', 'construtor', 'pessoal'].includes(st)) return st;
+  if (cat === 'perdido' || cat === 'duvida') cat = 'cliente';
+  return cat;
+}
+async function definirEtiqueta(jid, cat, ids) {
+  if (!cat || !ids[cat]) return false;
+  const tem = new Set(etq.chats[jid] || []);
+  let mudou = false;
+  for (const c of CATS_ETQ) {
+    const id = ids[c.cat]; if (!id) continue;
+    const quer = c.cat === cat;
+    if (quer === tem.has(id)) continue;
+    if (quer) await sock.addChatLabel(jid, id); else await sock.removeChatLabel(jid, id);
+    quer ? tem.add(id) : tem.delete(id); mudou = true;
+    await dorme(acaso(350, 700));
+  }
+  etq.chats[jid] = [...tem]; salvarEtq();
+  return mudou;
+}
+const etiquetando = { rodando: false, feitos: 0, total: 0 };
+async function etiquetarTudo() {
+  if (etiquetando.rodando || !sock || !conectado) return;
+  const ids = await garantirEtiquetas();
+  const lista = Object.keys(chats).filter(j => catEtiqueta(j));
+  Object.assign(etiquetando, { rodando: true, feitos: 0, total: lista.length });
+  try { for (const jid of lista) { if (!sock || !conectado) break; try { await definirEtiqueta(jid, catEtiqueta(jid), ids); } catch (e) { log('etiquetar', jid, e.message); } etiquetando.feitos++; } }
+  finally { etiquetando.rodando = false; log('etiquetas aplicadas', etiquetando.feitos, 'conversas'); }
+}
+async function aplicarEtiquetaStatus(jid, novoStatus) {
+  // A assistente registrou um evento: troca a etiqueta da conversa (visita marcada / negociando / cliente).
+  if (!sock || !conectado || !jid) return;
+  const st = String(novoStatus || '').toLowerCase();
+  const cat = (st === 'visita_marcada' || st === 'visita') ? 'visita' : st === 'negociacao' ? 'negociando' : (st === 'atendimento' || st === 'remarcar' || st === 'sem_interesse') ? 'cliente' : '';
+  if (!cat) return;
+  const t = String((chats[jid] || {}).telefone || '').replace(/\D/g, '').slice(-8);
+  if (t) { estado.crmStatus = estado.crmStatus || {}; estado.crmStatus[t] = cat === 'visita' ? 'visita' : cat === 'negociando' ? 'negociacao' : 'atendimento'; salvarEstado(); }
+  try { await definirEtiqueta(jid, cat, await garantirEtiquetas()); } catch (e) { log('etiqueta', e.message); }
+}
+
 async function desconectarWhatsApp() {
   estado.whatsDesligado = true; salvarEstado(); clearTimeout(timerReconectar);
   const s = sock;
@@ -910,14 +969,21 @@ http.createServer(async (req, res) => {
           let l = []; try { l = JSON.parse(b.texto || '[]'); } catch (e) { }
           try { b._resultado = await resolverTelefones(l); } catch (e) { return json(res, { erro: e.message }, 409); }
         }
+        else if (ac === 'etiquetar') {
+          let p = {}; try { p = JSON.parse(b.texto || '{}'); } catch (e) { }
+          (async () => { if (p.status) await classificarTudo(p.compradores || [], true, p); await etiquetarTudo(); })().catch(e => log('etiquetar', e.message));
+          await dorme(1500);
+        }
         else if (ac === 'sincronizar') {
           if (!sock || !conectado) return json(res, { erro: 'WhatsApp desconectado' }, 409);
-          try { await sock.resyncAppState(['critical_block', 'critical_unblock_low', 'regular_high', 'regular_low', 'regular'], true); } catch (e) { log('sincronizar', e.message); }
+          for (const ini of [false, true]) { try { await sock.resyncAppState(['critical_block', 'critical_unblock_low', 'regular_high', 'regular_low', 'regular'], ini); } catch (e) { log('sincronizar', ini, e.message); } }
+          log('sincronizar: etiquetas', Object.keys(etq.labels).length, 'contatos', Object.keys(contatos).length);
           await new Promise(r => setTimeout(r, 1500));
         }
         else if (ac === 'diag') {
           const lids = Object.keys(chats).filter(j => j.endsWith('@lid'));
-          return json(res, { chats: Object.keys(chats).length, lids: lids.length, lidsComTelefone: lids.filter(j => lidPn[j] || chats[j].telefone).length, mapa: Object.keys(lidPn).length, contatos: Object.keys(contatos).length, temLidMapping: !!(sock && sock.signalRepository && sock.signalRepository.lidMapping) });
+          let bl = ''; try { bl = fs.readFileSync(path.join(DADOS, 'baileys.log'), 'utf8').split('\n').slice(-25).map(l => { try { const o = JSON.parse(l); return (o.msg || '') + ' ' + JSON.stringify(o.err ? o.err.message : (o.error || '')).slice(0, 200); } catch (e) { return l.slice(0, 200); } }).join('\n'); } catch (e) { }
+          return json(res, { baileys: bl, etiquetas: etq.labels, etiquetando, temAddLabel: !!(sock && typeof sock.addLabel === 'function'), chats: Object.keys(chats).length, lids: lids.length, lidsComTelefone: lids.filter(j => lidPn[j] || chats[j].telefone).length, mapa: Object.keys(lidPn).length, contatos: Object.keys(contatos).length, temLidMapping: !!(sock && sock.signalRepository && sock.signalRepository.lidMapping) });
         }
         else if (ac === 'log') {
           let t = ''; try { t = fs.readFileSync(path.join(DADOS, 'ponte.log'), 'utf8'); } catch (e) { }
@@ -925,7 +991,7 @@ http.createServer(async (req, res) => {
         }
         const verArq = ac === 'ver' && b.texto === 'arquivados';
         const todos = Object.keys(chats).map(chatPublico);
-        const out = { estado: estadoPublico(), classif, etiquetas: Object.entries(etq.labels).filter(([, l]) => !l.apagada).map(([id, l]) => ({ id, nome: l.nome, cor: l.cor })), totais: { ativos: todos.filter(c => !c.arquivado).length, arquivados: todos.filter(c => c.arquivado).length },
+        const out = { estado: estadoPublico(), classif, etiquetando, etiquetas: Object.entries(etq.labels).filter(([, l]) => !l.apagada).map(([id, l]) => ({ id, nome: l.nome, cor: l.cor })), totais: { ativos: todos.filter(c => !c.arquivado).length, arquivados: todos.filter(c => c.arquivado).length },
           chats: todos.filter(c => verArq ? c.arquivado : !c.arquivado).sort((a, b) => b.ult - a.ult).slice(0, 400) };
         if (b._resultado) out.resultado = b._resultado;
         if (jidValido(jid)) { out.chat = chatPublico(jid); out.msgs = lerEsp(jid).slice(-60).map(m => ({ id: m.id, autor: m.autor, tipo: m.tipo, texto: m.texto, ts: m.ts })); }
