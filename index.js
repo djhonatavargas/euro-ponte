@@ -555,6 +555,29 @@ async function resolverLids(s) {
   }
   if (n) log('telefones descobertos pelo LID', n);
 }
+async function resolverTelefones(lista) {
+  if (!sock || !conectado) throw new Error('WhatsApp desconectado');
+  const B = require('@whiskeysockets/baileys');
+  const nums = [...new Set((lista || []).map(t => String(t || '').replace(/\D/g, '')).filter(t => t.length >= 10).map(t => t.startsWith('55') ? t : '55' + t))];
+  let achou = 0;
+  for (let i = 0; i < nums.length; i += 40) {
+    const lote = nums.slice(i, i + 40);
+    try {
+      if (B.USyncQuery && B.USyncUser && sock.executeUSyncQuery) {
+        const q = new B.USyncQuery().withContactProtocol().withLIDProtocol();
+        for (const n of lote) q.withUser(new B.USyncUser().withPhone('+' + n));
+        const r = await sock.executeUSyncQuery(q);
+        for (const x of (r && r.list) || []) { if (x.lid && x.id) { ligarLid(x.lid, x.id); achou++; } }
+      } else {
+        const r = await sock.onWhatsApp(...lote);
+        for (const x of r || []) { if (x.lid && x.jid) { ligarLid(x.lid, x.jid); achou++; } }
+      }
+    } catch (e) { log('resolver telefones', e.message); }
+    await new Promise(r => setTimeout(r, 600));
+  }
+  log('telefones ligados às conversas', achou, 'de', nums.length);
+  return { consultados: nums.length, ligados: achou, conversasComTelefone: Object.keys(chats).filter(j => chats[j].telefone || lidPn[j]).length };
+}
 async function arquivarChat(jid, arquivar) {
   if (!sock || !conectado) throw new Error('WhatsApp desconectado');
   const c = chats[jid] || (chats[jid] = {});
@@ -797,6 +820,10 @@ http.createServer(async (req, res) => {
           const id = String(b.texto || ''); if (!jidValido(jid) || !etq.labels[id]) return json(res, { erro: 'etiqueta ou conversa inválida' }, 400);
           if (b.on) await sock.addChatLabel(jid, id); else await sock.removeChatLabel(jid, id);
           const l = new Set(etq.chats[jid] || []); if (b.on) l.add(id); else l.delete(id); etq.chats[jid] = [...l]; salvarEtq();
+        }
+        else if (ac === 'resolver') {
+          let l = []; try { l = JSON.parse(b.texto || '[]'); } catch (e) { }
+          try { b._resultado = await resolverTelefones(l); } catch (e) { return json(res, { erro: e.message }, 409); }
         }
         else if (ac === 'diag') {
           const lids = Object.keys(chats).filter(j => j.endsWith('@lid'));
