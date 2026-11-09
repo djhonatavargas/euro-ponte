@@ -474,12 +474,13 @@ async function iniciarWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState(AUTH);
     let version;
     try { version = (await fetchLatestBaileysVersion()).version; } catch (e) { }
-    const s = makeWASocket({ version, auth: state, logger: pino({ level: 'silent' }), browser: Browsers.macOS('Desktop'), markOnlineOnConnect: false, syncFullHistory: true });
+    const s = makeWASocket({ version, auth: state, logger: pino({ level: 'silent' }), browser: Browsers.ubuntu('Euro Ponte'), markOnlineOnConnect: false, syncFullHistory: true });
     sock = s;
     s.ev.on('creds.update', saveCreds);
     s.ev.on('connection.update', (u) => {
       if (sock !== s) return;
       if (u.qr) { ultimoQR = u.qr; log('QR novo disponível no painel'); emitir('estado', estadoPublico()); }
+      if (u.qr || u.connection === 'open') falhasSeguidas = 0;
       if (u.connection === 'open') { conectado = true; ultimoQR = null; meuNumero = (s.user && s.user.id || '').split(':')[0]; log('WhatsApp conectado', meuNumero); emitir('estado', estadoPublico()); }
       if (u.connection === 'close') {
         conectado = false; ultimoQR = null;
@@ -488,7 +489,11 @@ async function iniciarWhatsApp() {
         if (code === DisconnectReason.loggedOut) { fs.rmSync(AUTH, { recursive: true, force: true }); fs.mkdirSync(AUTH, { recursive: true }); }
         sock = null;
         emitir('estado', estadoPublico());
-        if (!estado.whatsDesligado) setTimeout(() => iniciarWhatsApp().catch(e => log('erro reconectar', e.message)), 4000);
+        falhasSeguidas++;
+        const espera = Math.min(60e3, 4e3 * Math.pow(1.6, Math.max(0, falhasSeguidas - 1)));
+        if (falhasSeguidas >= 6 && code === 428 && !temSessao()) { log('sem QR após várias tentativas; recomeçando a sessão'); }
+        clearTimeout(timerReconectar);
+        if (!estado.whatsDesligado) timerReconectar = setTimeout(() => iniciarWhatsApp().catch(e => log('erro reconectar', e.message)), espera);
       }
     });
     s.ev.on('messages.upsert', async ({ messages, type }) => {
@@ -564,7 +569,7 @@ async function classificarTudo(compradores, refazer, crm = {}) {
   } finally { classif.rodando = false; salvarEstado(); log('classificação terminou', classif.feitos, 'conversas'); }
 }
 async function desconectarWhatsApp() {
-  estado.whatsDesligado = true; salvarEstado();
+  estado.whatsDesligado = true; salvarEstado(); clearTimeout(timerReconectar);
   const s = sock;
   try { if (s) await s.logout(); } catch (e) { log('logout', e.message); }
   try { if (s) s.end(undefined); } catch (e) { }
@@ -573,8 +578,10 @@ async function desconectarWhatsApp() {
   log('WhatsApp DESCONECTADO pelo painel');
   emitir('estado', estadoPublico());
 }
+let falhasSeguidas = 0, timerReconectar = null;
+function temSessao() { try { return fs.readdirSync(AUTH).length > 0; } catch (e) { return false; } }
 async function conectarWhatsApp() {
-  estado.whatsDesligado = false; salvarEstado();
+  estado.whatsDesligado = false; salvarEstado(); falhasSeguidas = 0; clearTimeout(timerReconectar);
   if (!sock) await iniciarWhatsApp();
   emitir('estado', estadoPublico());
 }
@@ -721,6 +728,16 @@ http.createServer(async (req, res) => {
           if (!API_KEY) return json(res, { erro: 'falta a chave da Anthropic no servidor' }, 400);
           classificarTudo(p.compradores || [], !!p.refazer, p).catch(e => log('classificar', e.message));
           await new Promise(r => setTimeout(r, 500));
+        }
+        else if (ac === 'atualizar') {
+          const REPO = 'https://raw.githubusercontent.com/djhonatavargas/euro-ponte/main/';
+          const novos = {};
+          for (const f of ['index.js', 'painel.html']) { const r = await fetch(REPO + f + '?' + Date.now()); if (!r.ok) return json(res, { erro: 'GitHub ' + r.status + ' em ' + f }, 502); novos[f] = await r.text(); }
+          try { new Function(novos['index.js'].replace(/^#!.*\n/, '')); } catch (e) { if (!/import|await/.test(e.message)) return json(res, { erro: 'index.js novo com erro: ' + e.message }, 400); }
+          for (const f in novos) fs.writeFileSync(path.join(BASE, f), novos[f]);
+          log('atualizado pelo CRM; reiniciando');
+          json(res, { ok: true, reiniciando: true });
+          return setTimeout(() => process.exit(0), 800);
         }
         else if (ac === 'log') {
           let t = ''; try { t = fs.readFileSync(path.join(DADOS, 'ponte.log'), 'utf8'); } catch (e) { }
