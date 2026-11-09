@@ -157,6 +157,7 @@ async function executar(nome, entrada, ctx) {
       await enviarTexto(DONO + '@s.whatsapp.net', entrada.texto || '');
       return 'Aviso enviado ao Djhonata.';
     }
+    if (nome === 'registrar_crm' && estado.teste && estado.teste.ativo) { log('teste: registrar_crm ignorado', JSON.stringify(entrada).slice(0, 200)); return 'Registrado.'; }
     if (nome === 'registrar_crm') {
       fs.appendFileSync(path.join(DADOS, 'eventos-crm.jsonl'), JSON.stringify({ rid: 'ep' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), telefone: ctx.telefone ? formatoBR(ctx.telefone) : '', nome: ctx.nome || '', ...entrada }) + '\n');
       if (entrada.novoStatus && ctx.jid) aplicarEtiquetaStatus(ctx.jid, entrada.novoStatus).catch(() => { });
@@ -282,6 +283,8 @@ const envios = [];               // horários dos envios automáticos (assistent
 let ultimoEnvio = 0;
 const dorme = (ms) => new Promise(r => setTimeout(r, ms));
 const acaso = (a, b) => a + Math.floor(Math.random() * (b - a));
+function tel8De(jid, tel) { return String(tel || (chats[jid] || {}).telefone || (pnDe(jid) || '').split('@')[0] || '').replace(/\D/g, '').slice(-8); }
+function ehNumeroTeste(jid, tel) { const t = tel8De(jid, tel); return t.length === 8 && ((estado.teste || {}).numeros || []).some(n => String(n).replace(/\D/g, '').slice(-8) === t); }
 function ehDono(jid) { return String(jid || '').startsWith(DONO); }
 async function guardaEnvio(jid, autor, texto, tipo) {
   if (autor !== 'ia' || ehDono(jid)) return;                 // você (painel/celular) e avisos ao dono não passam pelo freio
@@ -436,9 +439,13 @@ async function processar(jid) {
   const f = filas.get(jid);
   if (!f) return;
   f.timer = null;
-  if (!estado.ativo) { filas.delete(jid); return; }                         // assistente pausada: só espelha
+  const emTeste = !!(estado.teste && estado.teste.ativo);
+  if (emTeste) {                                                             // modo teste: responde SÓ os números de teste, como se fossem clientes
+    if (!ehNumeroTeste(jid, f.telefone)) { filas.delete(jid); return; }
+    f.dono = false;
+  } else if (!estado.ativo) { filas.delete(jid); return; }                  // assistente pausada: só espelha
   if ((estado.pausas[jid] || 0) > Date.now()) { filas.delete(jid); return; } // assistente desligada nessa conversa
-  if (!dentroDoHorario() && !f.dono) { return; }                            // fica na fila até abrir o horário
+  if (!dentroDoHorario() && !f.dono && !emTeste) { return; }                // fica na fila até abrir o horário
   if (ocupado.has(jid)) { f.timer = setTimeout(() => processar(jid), 3000); return; }
   filas.delete(jid);
   ocupado.add(jid);
@@ -524,7 +531,7 @@ function estadoPublico() {
     conectado, numero: meuNumero, qr: !!ultimoQR, whatsDesligado: !!estado.whatsDesligado, iniciando,
     assistente: !!estado.ativo, horario: `${HORA_INI}–${HORA_FIM}`, dentroDoHorario: dentroDoHorario(),
     regras: ARQS_REGRAS.map(f => ({ arquivo: f, ok: !!lerTexto(f) })), imoveis: pastasImoveis().length, bloqueados: lerBloqueados().size,
-    usoHoje: hoje, modelo: MODELO
+    usoHoje: hoje, modelo: MODELO, teste: estado.teste && estado.teste.ativo ? (estado.teste.numeros || []) : []
   };
 }
 
@@ -652,9 +659,9 @@ async function arquivarChat(jid, arquivar) {
   await sock.chatModify({ archive: !!arquivar, lastMessages }, jid);
   c.arquivado = !!arquivar; salvarChats();
 }
-async function claudeTexto(system, texto, maxTokens = 3000) {
+async function claudeTexto(system, texto, maxTokens = 3000, temperatura) {
   for (let t = 0; t < 3; t++) {
-    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: JSON.stringify({ model: MODELO, max_tokens: maxTokens, system, messages: [{ role: 'user', content: texto }] }) });
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: JSON.stringify(Object.assign({ model: MODELO, max_tokens: maxTokens, system, messages: [{ role: 'user', content: texto }] }, temperatura === undefined ? {} : { temperature: temperatura })) });
     if (r.ok) { const j = await r.json(); if (j.usage) registrarUso(j.usage); return (j.content || []).map(x => x.text || '').join(''); }
     if (![429, 500, 502, 503, 529].includes(r.status)) throw new Error('API ' + r.status + ' ' + (await r.text()).slice(0, 200));
     await new Promise(res => setTimeout(res, 5000 * (t + 1)));
@@ -978,9 +985,14 @@ http.createServer(async (req, res) => {
           const jeito = ['JEITO-DO-DJHONATA.md', 'REGRAS-ATENDIMENTO.md'].map(f => lerTexto(f)).filter(Boolean).join('\n\n').slice(0, 12000);
           const sis = `Você revisa a mensagem que o Djhonata, corretor da Euro Consultoria Imobiliária (Joinville/SC), vai mandar a um cliente pelo WhatsApp.
 Reescreva o RASCUNHO dele deixando claro, organizado, cordial e profissional, no jeito dele de escrever (próximo, direto, sem formalidade excessiva).
-Regras: mantenha exatamente o sentido e as informações; NÃO invente valores, datas, imóveis, condições ou promessas; não acrescente assuntos novos; português do Brasil; frases curtas; no máximo 1 ou 2 emojis se combinar; use o contexto da conversa só para o tom e para não repetir o que já foi dito.
+REGRAS OBRIGATÓRIAS:
+1. Mantenha TODAS as informações do rascunho exatamente como ele escreveu: mesmos documentos, valores, datas, nomes, imóveis e pedidos. Nunca troque um item por outro, mesmo que a conversa fale de outra coisa.
+2. Não acrescente NADA que não esteja no rascunho: nenhuma data, dia da semana, prazo, documento, valor, condição, promessa ou assunto novo.
+3. Só melhore a forma: ortografia, acentos, pontuação, ordem das frases, cordialidade e clareza.
+4. A conversa abaixo serve APENAS para acertar o tom (formal/informal) e o nome do cliente. Nunca copie informação dela.
+5. Português do Brasil, frases curtas, no máximo 1 emoji se combinar. Tamanho parecido com o do rascunho.
 Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\n\nComo o Djhonata escreve e as regras do atendimento:\n' + jeito : ''}`;
-          try { const sug = (await claudeTexto(sis, (conversa ? 'Conversa até agora:\n' + conversa + '\n\n' : '') + 'RASCUNHO:\n' + rascunho, 800)).trim(); return json(res, { sugestao: sug }); }
+          try { const sug = (await claudeTexto(sis, (conversa ? 'Conversa até agora (só para o tom, NÃO use informações daqui):\n' + conversa + '\n\n' : '') + 'RASCUNHO DO DJHONATA (reescreva só este, mantendo todas as informações dele e nada além):\n' + rascunho, 800, 0)).trim(); return json(res, { sugestao: sug }); }
           catch (e) { return json(res, { erro: e.message }, 502); }
         }
         if (ac === 'enviar') {
@@ -1052,6 +1064,32 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           let p = {}; try { p = JSON.parse(b.texto || '{}'); } catch (e) { }
           (async () => { if (p.status) await classificarTudo(p.compradores || [], true, p); await etiquetarTudo(); })().catch(e => log('etiquetar', e.message));
           await dorme(1500);
+        }
+        else if (ac === 'regras_ler') {
+          const arq = ARQS_REGRAS.includes(b.jid) ? b.jid : 'REGRAS-ATENDIMENTO.md';
+          let em = 0; try { em = fs.statSync(path.join(CATALOGO, arq)).mtimeMs; } catch (e) { }
+          return json(res, { arquivo: arq, texto: lerTexto(arq), em, arquivos: ARQS_REGRAS.map(f => ({ arquivo: f, ok: !!lerTexto(f) })) });
+        }
+        else if (ac === 'regras_salvar') {
+          const arq = ARQS_REGRAS.includes(b.jid) ? b.jid : 'REGRAS-ATENDIMENTO.md';
+          const txt = String(b.texto || '');
+          if (txt.trim().length < 200) return json(res, { erro: 'texto curto demais: não salvei' }, 400);
+          const abs = path.join(CATALOGO, arq);
+          fs.mkdirSync(CATALOGO, { recursive: true });
+          try { if (fs.existsSync(abs)) fs.copyFileSync(abs, abs + '.anterior'); } catch (e) { }
+          fs.writeFileSync(abs, txt);
+          log('regras salvas pelo CRM:', arq, txt.length, 'caracteres');
+          return json(res, { ok: true, arquivo: arq, em: Date.now() });
+        }
+        else if (ac === 'teste') {
+          if (b.on) {
+            let nums = []; try { nums = (JSON.parse(b.texto || '{}').numeros) || []; } catch (e) { }
+            if (!nums.length) nums = [DONO];
+            estado.teste = { ativo: true, numeros: nums.map(n => String(n).replace(/\D/g, '')) }; salvarEstado();
+            try { await resolverTelefones(estado.teste.numeros); } catch (e) { }
+            log('MODO TESTE ligado para', estado.teste.numeros.join(', '));
+          } else { estado.teste = { ativo: false, numeros: [] }; salvarEstado(); log('modo teste desligado'); }
+          emitir('estado', estadoPublico());
         }
         else if (ac === 'crm_status') { let m = {}; try { m = JSON.parse(b.texto || '{}'); } catch (e) { } atualizarStatusCrm(m).catch(e => log('crm_status', e.message)); return json(res, { ok: true }); }
         else if (ac === 'sincronizar') {
