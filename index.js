@@ -8,10 +8,25 @@ const http = require('http');
 const crypto = require('crypto');
 const pino = require('pino');
 const QRCode = require('qrcode');
-const {
-  default: makeWASocket, useMultiFileAuthState, DisconnectReason,
-  fetchLatestBaileysVersion, downloadMediaMessage, Browsers
-} = require('@whiskeysockets/baileys');
+// Biblioteca do WhatsApp: tenta a versão 7 ("baileys", com suporte aos códigos LID); se não carregar, usa a 6 (antiga).
+let makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, downloadMediaMessage, Browsers;
+let BAILEYS = null, BAILEYS_VERSAO = '';
+let forcarAntigo = false, abriuComV7 = false;
+function voltarParaAntigo(motivo) {   // a versão 7 não funcionou aqui: volta para a 6 sem derrubar o serviço
+  if (forcarAntigo) return; forcarAntigo = true; BAILEYS = null; log('voltando para a biblioteca antiga:', motivo);
+}
+async function carregarBaileys() {
+  if (BAILEYS) return BAILEYS;
+  try { if (forcarAntigo || process.env.EP_BAILEYS6) throw new Error('forçado'); BAILEYS = await import('baileys'); BAILEYS_VERSAO = 'baileys 7'; }
+  catch (e) { BAILEYS = require('@whiskeysockets/baileys'); BAILEYS_VERSAO = 'baileys 6 (antigo)'; try { log('baileys 7 indisponível, usando o antigo:', e.message); } catch (x) { } }
+  const ns = BAILEYS;
+  const pick = (k) => (ns[k] !== undefined ? ns[k] : (ns.default && ns.default[k]));
+  makeWASocket = typeof ns.makeWASocket === 'function' ? ns.makeWASocket : (typeof ns.default === 'function' ? ns.default : (ns.default && (ns.default.makeWASocket || ns.default.default)));
+  useMultiFileAuthState = pick('useMultiFileAuthState'); DisconnectReason = pick('DisconnectReason');
+  fetchLatestBaileysVersion = pick('fetchLatestBaileysVersion'); downloadMediaMessage = pick('downloadMediaMessage'); Browsers = pick('Browsers');
+  BAILEYS.pick = pick;
+  return BAILEYS;
+}
 
 // ---------- configuração ----------
 const BASE = __dirname;
@@ -235,7 +250,18 @@ function resumoMsg(m) {
 function registrarEspelho(jid, m, { silencioso = false } = {}) {
   if (!jid) return;
   const lista = lerEsp(jid);
-  if (m.id && lista.some(x => x.id === m.id)) return;
+  if (m.id) {
+    const i = lista.findIndex(x => x.id === m.id);
+    if (i >= 0) {   // já existe: se antes chegou vazia/cifrada e agora veio o conteúdo, atualiza
+      const v = lista[i], vazio = !v.texto || /^🔒/.test(v.texto), novoTem = (m.texto && !/^🔒/.test(m.texto)) || (m.tipo && m.tipo !== 'text');
+      if (vazio && novoTem) {
+        lista[i] = Object.assign({}, v, m); gravarJson(arqEsp(jid), lista);
+        const c = chats[jid]; if (c && c.ult === v.ts) { c.ultTexto = resumoMsg(lista[i]).slice(0, 120); salvarChats(); }
+        emitir('msg', { jid, msg: lista[i], chat: chatPublico(jid) });
+      }
+      return;
+    }
+  }
   lista.push(m);
   lista.sort((a, b) => a.ts - b.ts);
   gravarJson(arqEsp(jid), lista.slice(-1000));
@@ -355,7 +381,7 @@ async function enviarFotoPainel(jid, buf, mime, legenda) {
 function desembrulhar(m) {
   let x = m.message || {};
   for (let i = 0; i < 4; i++) {
-    const inner = x.ephemeralMessage || x.viewOnceMessage || x.viewOnceMessageV2 || x.viewOnceMessageV2Extension || x.documentWithCaptionMessage || x.editedMessage;
+    const inner = x.ephemeralMessage || x.viewOnceMessage || x.viewOnceMessageV2 || x.viewOnceMessageV2Extension || x.documentWithCaptionMessage || x.editedMessage || x.deviceSentMessage || x.futureProofMessage || x.associatedChildMessage || x.botInvokeMessage || x.groupMentionedMessage;
     if (inner && inner.message) x = inner.message; else break;
   }
   return x;
@@ -375,9 +401,10 @@ const filas = new Map();
 async function aoReceber(m, tipoUpsert) {
   const jid = m.key.remoteJid || '';
   if (!jidValido(jid)) return;
+  const cifrada = !m.message && m.messageStubType === 2;   // chegou cifrada e ainda não foi decifrada
   const x = desembrulhar(m);
   if (x.protocolMessage || x.reactionMessage || (x.senderKeyDistributionMessage && Object.keys(x).length === 1)) return;
-  const texto = textoDe(x);
+  const texto = cifrada ? '🔒 (mensagem ainda não decifrada — veja no celular)' : textoDe(x);
   const tipo = tipoDe(x);
   const ts = tsDe(m);
   const recente = Date.now() - ts < 180e3;
@@ -394,6 +421,7 @@ async function aoReceber(m, tipoUpsert) {
       nome: m.key.fromMe ? undefined : (m.pushName || undefined), telefone: telefone || undefined, ts
     }, { silencioso: tipoUpsert === 'historico' });
   }
+  if (cifrada) return;   // sem conteúdo ainda: quando o WhatsApp reenviar decifrada, ela passa por aqui de novo
   if (!recente) return; // mensagem antiga (sincronização do histórico): só espelho
 
   if (m.key.fromMe) {
@@ -539,10 +567,14 @@ async function iniciarWhatsApp() {
   if (estado.whatsDesligado || iniciando) return;
   iniciando = true;
   try {
+    await carregarBaileys();
     const { state, saveCreds } = await useMultiFileAuthState(AUTH);
     let version;
     try { version = (await fetchLatestBaileysVersion()).version; } catch (e) { }
-    const s = makeWASocket({ version, auth: state, logger: pino({ level: 'warn' }, pino.destination({ dest: path.join(DADOS, 'baileys.log'), sync: false })), browser: Browsers.ubuntu('Euro Ponte'), markOnlineOnConnect: false, syncFullHistory: true });
+    let s; try { s = makeWASocket({ version, auth: state, logger: pino({ level: 'warn' }, pino.destination({ dest: path.join(DADOS, 'baileys.log'), sync: false })), browser: Browsers.ubuntu('Euro Ponte'), markOnlineOnConnect: false, syncFullHistory: true,
+      getMessage: async (key) => { try { const l = lerEsp(key.remoteJid); const x = l.find(y => y.id === key.id); return x && x.texto ? { conversation: x.texto } : undefined; } catch (e) { return undefined; } } });
+    } catch (e) { if (BAILEYS_VERSAO.startsWith('baileys 7')) { voltarParaAntigo('erro ao criar a conexão: ' + e.message); iniciando = false; return iniciarWhatsApp(); } throw e; }
+    log('biblioteca do WhatsApp:', BAILEYS_VERSAO);
     sock = s;
     s.ev.on('creds.update', saveCreds);
     s.ev.on('connection.update', (u) => {
@@ -550,7 +582,7 @@ async function iniciarWhatsApp() {
       if (u.qr) { ultimoQR = u.qr; log('QR novo disponível no painel'); emitir('estado', estadoPublico()); }
       if (u.qr || u.connection === 'open') falhasSeguidas = 0;
       if (u.connection === 'open' && !global.__sincronizou) { global.__sincronizou = true; setTimeout(() => { if (sock === s) s.resyncAppState(['critical_block', 'critical_unblock_low', 'regular_high', 'regular_low', 'regular'], true).then(() => { log('etiquetas e contatos sincronizados', Object.keys(etq.labels).length, 'etiquetas'); return lerEquipe(); }).catch(e => log('sincronizar', e.message)); }, 20e3); }
-      if (u.connection === 'open') { conectadoDesde = Date.now(); conectado = true; ultimoQR = null; meuNumero = (s.user && s.user.id || '').split(':')[0]; log('WhatsApp conectado', meuNumero); emitir('estado', estadoPublico()); }
+      if (u.connection === 'open') { if (BAILEYS_VERSAO.startsWith('baileys 7')) abriuComV7 = true; conectadoDesde = Date.now(); conectado = true; ultimoQR = null; meuNumero = (s.user && s.user.id || '').split(':')[0]; log('WhatsApp conectado', meuNumero); emitir('estado', estadoPublico()); }
       if (u.connection === 'close') {
         conectado = false; ultimoQR = null;
         const code = u.lastDisconnect && u.lastDisconnect.error && u.lastDisconnect.error.output && u.lastDisconnect.error.output.statusCode;
@@ -559,6 +591,7 @@ async function iniciarWhatsApp() {
         sock = null;
         emitir('estado', estadoPublico());
         falhasSeguidas++;
+        if (BAILEYS_VERSAO.startsWith('baileys 7') && !abriuComV7 && falhasSeguidas >= 4 && temSessao()) voltarParaAntigo('a versão 7 não conseguiu conectar (' + code + ')');
         if (conectadoDesde && Date.now() - conectadoDesde > 30e3) { quedas.push(Date.now()); while (quedas.length && Date.now() - quedas[0] > 3600e3) quedas.shift(); if (quedas.length >= 4) pausarPorSeguranca('a conexão caiu ' + quedas.length + ' vezes na última hora'); }
         if (code === 403) pausarPorSeguranca('o WhatsApp recusou a conexão (403)');
         conectadoDesde = 0;
@@ -603,6 +636,10 @@ async function iniciarWhatsApp() {
         }
       }
     });
+    s.ev.on('lid-mapping.update', (u) => {
+      const arr = Array.isArray(u) ? u : (u && Array.isArray(u.mappings) ? u.mappings : [u]);
+      for (const x of arr) { if (x && x.lid && x.pn) ligarLid(String(x.lid), String(x.pn).includes('@') ? String(x.pn) : x.pn + '@s.whatsapp.net'); }
+    });
     s.ev.on('chats.upsert', (lista) => { for (const ch of lista || []) guardarChat(ch); });
     s.ev.on('chats.update', (lista) => { for (const ch of lista || []) guardarChat(ch); });
     s.ev.on('contacts.upsert', (lista) => { for (const c of lista || []) guardarContato(c); });
@@ -621,7 +658,7 @@ async function resolverLids(s) {
 }
 async function resolverTelefones(lista) {
   if (!sock || !conectado) throw new Error('WhatsApp desconectado');
-  const B = require('@whiskeysockets/baileys');
+  const B0 = await carregarBaileys(); const B = { USyncQuery: B0.pick('USyncQuery'), USyncUser: B0.pick('USyncUser') };
   const nums = [...new Set((lista || []).map(t => String(t || '').replace(/\D/g, '')).filter(t => t.length >= 10).map(t => t.startsWith('55') ? t : '55' + t))];
   let achou = 0;
   for (let i = 0; i < nums.length; i += 40) {
