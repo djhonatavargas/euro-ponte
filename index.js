@@ -318,6 +318,11 @@ let ultimoEnvio = 0;
 const dorme = (ms) => new Promise(r => setTimeout(r, ms));
 const acaso = (a, b) => a + Math.floor(Math.random() * (b - a));
 function tel8De(jid, tel) { return String(tel || (chats[jid] || {}).telefone || (pnDe(jid) || '').split('@')[0] || '').replace(/\D/g, '').slice(-8); }
+function podeResponder(jid, tel) {   // ligada para todos, ou modo teste e é o número de teste; e não pausada nessa conversa
+  if ((estado.pausas[jid] || 0) > Date.now()) return false;
+  if (estado.teste && estado.teste.ativo) return ehNumeroTeste(jid, tel);
+  return !!estado.ativo;
+}
 function ehNumeroTeste(jid, tel) { const t = tel8De(jid, tel); return t.length === 8 && ((estado.teste || {}).numeros || []).some(n => String(n).replace(/\D/g, '').slice(-8) === t); }
 function ehDono(jid) { return String(jid || '').startsWith(DONO); }
 async function guardaEnvio(jid, autor, texto, tipo) {
@@ -544,7 +549,7 @@ async function responder(f) {
         const t = bloco.text.trim();
         if (!t || /^NO_REPLY\b/.test(t)) continue;
         // o Djhonata pode ter desligado a assistente nessa conversa enquanto ela pensava
-        if (!estado.ativo || (estado.pausas[f.jid] || 0) > Date.now()) { log('resposta descartada (pausada no meio)', f.jid); return; }
+        if (!podeResponder(f.jid, f.telefone)) { log('resposta descartada (pausada no meio)', f.jid); return; }
         for (const parte of t.split(/\n\s*---\s*\n/)) { if (parte.trim()) { await enviarTexto(f.jid, parte, 'ia'); saida.push(parte.trim()); } }
       } else if (bloco.type === 'tool_use') {
         const r = await executar(bloco.name, bloco.input || {}, ctx);
