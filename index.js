@@ -67,7 +67,8 @@ function lerBloqueados() {
 }
 function telefoneDe(m) {
   const k = m.key || {};
-  const alt = k.senderPn || k.participantPn || k.remoteJidAlt || '';
+  if (k.remoteJid && k.remoteJid.endsWith('@lid') && (k.senderPn || k.remoteJidAlt)) ligarLid(k.remoteJid, k.senderPn || k.remoteJidAlt);
+  const alt = k.senderPn || k.participantPn || k.remoteJidAlt || lidPn[k.remoteJid] || '';
   const j = alt || k.remoteJid || '';
   if (j.endsWith('@lid')) return '';
   return normal(j.split('@')[0].split(':')[0]);
@@ -121,7 +122,7 @@ const FERRAMENTAS = [
   { name: 'ler_ficha', description: 'Lê a ficha de um imóvel do catálogo (descrição pronta do CRM, dados e lista de fotos e vídeo). Use a ref (ex.: "913") ou parte do nome da rua/residencial.', input_schema: { type: 'object', properties: { busca: { type: 'string' } }, required: ['busca'] } },
   { name: 'enviar_arquivo', description: 'Envia ao cliente uma foto, vídeo ou arquivo do catálogo (caminho relativo à pasta do catálogo) ou uma imagem por link https. A legenda vai junto com a mídia.', input_schema: { type: 'object', properties: { caminho: { type: 'string' }, legenda: { type: 'string' } }, required: ['caminho'] } },
   { name: 'avisar_djhonata', description: 'Manda um aviso no WhatsApp pessoal do Djhonata.', input_schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
-  { name: 'registrar_crm', description: 'Registra no CRM um evento do cliente atual: mudança de status (atendimento, visita_marcada, negociacao, remarcar, pausado) e/ou resumo atualizado do atendimento.', input_schema: { type: 'object', properties: { novoStatus: { type: 'string' }, resumo: { type: 'string' }, resultado: { type: 'string' } } } }
+  { name: 'registrar_crm', description: 'Registra no CRM um evento do cliente atual e move o card dele: novoStatus = atendimento, visita_marcada, negociacao, remarcar, sem_interesse ou pausado. Em visita_marcada mande data (AAAA-MM-DD) e hora (HH:MM). Mande nomeReal quando o cliente disser o nome e imovel quando souber qual imóvel interessa. resultado = frase curta do que aconteceu.', input_schema: { type: 'object', properties: { novoStatus: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nomeReal: { type: 'string' }, imovel: { type: 'string' }, resumo: { type: 'string' }, resultado: { type: 'string' } } } }
 ];
 
 function pastasImoveis() {
@@ -156,7 +157,7 @@ async function executar(nome, entrada, ctx) {
       return 'Aviso enviado ao Djhonata.';
     }
     if (nome === 'registrar_crm') {
-      fs.appendFileSync(path.join(DADOS, 'eventos-crm.jsonl'), JSON.stringify({ ts: new Date().toISOString(), telefone: ctx.telefone ? formatoBR(ctx.telefone) : '', nome: ctx.nome || '', ...entrada }) + '\n');
+      fs.appendFileSync(path.join(DADOS, 'eventos-crm.jsonl'), JSON.stringify({ rid: 'ep' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), telefone: ctx.telefone ? formatoBR(ctx.telefone) : '', nome: ctx.nome || '', ...entrada }) + '\n');
       return 'Registrado.';
     }
     return 'Ferramenta desconhecida.';
@@ -171,8 +172,26 @@ const CONTATOS_F = path.join(DADOS, 'contatos.json');
 const contatos = lerJson(CONTATOS_F, {});  // jid -> nome salvo na agenda / nome do perfil
 let salvarContatosTimer = null;
 function salvarContatos() { clearTimeout(salvarContatosTimer); salvarContatosTimer = setTimeout(() => gravarJson(CONTATOS_F, contatos), 1500); }
+const LID_F = path.join(DADOS, 'lid-telefone.json');
+const lidPn = lerJson(LID_F, {});           // 1234@lid -> 5547...@s.whatsapp.net
+let salvarLidTimer = null;
+function ligarLid(lid, pn) {
+  if (!lid || !pn || !String(lid).endsWith('@lid') || !String(pn).endsWith('@s.whatsapp.net')) return;
+  lid = String(lid).replace(/:\d+@/, '@'); pn = String(pn).replace(/:\d+@/, '@');
+  if (lidPn[lid] === pn) return;
+  lidPn[lid] = pn; clearTimeout(salvarLidTimer); salvarLidTimer = setTimeout(() => gravarJson(LID_F, lidPn), 1500);
+  const c = chats[lid]; if (c && !c.telefone) { c.telefone = pn.split('@')[0]; salvarChats(); }
+}
+const ETQ_F = path.join(DADOS, 'etiquetas.json');
+const etq = Object.assign({ labels: {}, chats: {} }, lerJson(ETQ_F, {}));   // labels: id -> {nome, cor}; chats: jid -> [ids]
+let salvarEtqTimer = null;
+function salvarEtq() { clearTimeout(salvarEtqTimer); salvarEtqTimer = setTimeout(() => gravarJson(ETQ_F, etq), 1000); }
+function etiquetasDe(jid) { const pn = pnDe(jid); const ids = new Set([...(etq.chats[jid] || []), ...(pn ? etq.chats[pn] || [] : [])]); return [...ids].filter(i => etq.labels[i] && !etq.labels[i].apagada).map(i => ({ id: i, nome: etq.labels[i].nome, cor: etq.labels[i].cor })); }
+function pnDe(jid) { return jid && jid.endsWith('@lid') ? (lidPn[jid] || '') : jid; }
 function guardarContato(c) {
   if (!c || !c.id) return;
+  if (c.lid && c.id.endsWith('@s.whatsapp.net')) ligarLid(c.lid, c.id);
+  if (c.id.endsWith('@lid') && (c.phoneNumber || c.jid)) ligarLid(c.id, c.phoneNumber || c.jid);
   if (c.name) contatos[c.id] = c.name; else if (!contatos[c.id] && (c.notify || c.verifiedName)) contatos[c.id] = c.notify || c.verifiedName;
   if (c.lid && contatos[c.id]) contatos[c.lid] = contatos[c.lid] || contatos[c.id];
   salvarContatos();
@@ -180,11 +199,13 @@ function guardarContato(c) {
 function guardarChat(ch) {
   if (!ch || !jidValido(ch.id || '')) return;
   const c = chats[ch.id] || (chats[ch.id] = {});
+  if (ch.pnJid) ligarLid(ch.lidJid || ch.id, ch.pnJid);
+  if (ch.lidJid && ch.id.endsWith('@s.whatsapp.net')) ligarLid(ch.lidJid, ch.id);
   if (ch.name && !c.nome) c.nome = ch.name;
   if ('archived' in ch && ch.archived != null) c.arquivado = !!ch.archived;
   const ts = (Number(ch.conversationTimestamp && (ch.conversationTimestamp.low || ch.conversationTimestamp)) || 0) * 1000;
   if (ts > (c.ult || 0)) c.ult = ts;
-  if (!c.telefone && ch.id.endsWith('@s.whatsapp.net')) c.telefone = ch.id.split('@')[0];
+  if (!c.telefone) { const pn = pnDe(ch.id); if (pn && pn.endsWith('@s.whatsapp.net')) c.telefone = pn.split('@')[0]; }
   if (typeof ch.unreadCount === 'number' && ch.unreadCount >= 0) c.naoLidas = ch.unreadCount;
   salvarChats();
 }
@@ -199,7 +220,9 @@ function emitir(tipo, dados) {
 function chatPublico(jid) {
   const c = chats[jid] || {};
   const cl = (estado.classes || {})[jid];
-  return { jid, nome: c.nome || contatos[jid] || '', arquivado: !!c.arquivado, cat: cl ? cl.cat : '', catMotivo: cl ? cl.motivo : '', telefone: c.telefone || '', ult: c.ult || 0, ultTexto: c.ultTexto || '', ultAutor: c.ultAutor || '', naoLidas: c.naoLidas || 0, iaOff: (estado.pausas[jid] || 0) > Date.now() };
+  const etqs = etiquetasDe(jid);
+  const pn = pnDe(jid);
+  return { jid, nome: c.nome || contatos[jid] || (pn && contatos[pn]) || '', telefone: c.telefone || (pn && pn.endsWith('@s.whatsapp.net') ? pn.split('@')[0] : ''), arquivado: !!c.arquivado, cat: cl ? cl.cat : '', catMotivo: cl ? cl.motivo : '', etiquetas: etqs, ult: c.ult || 0, ultTexto: c.ultTexto || '', ultAutor: c.ultAutor || '', naoLidas: c.naoLidas || 0, iaOff: (estado.pausas[jid] || 0) > Date.now() };
 }
 function resumoMsg(m) {
   const rot = { image: '📷 Foto', audio: '🎤 Áudio', video: '🎬 Vídeo', document: '📄 Arquivo', sticker: 'Figurinha', contact: '👤 Contato', location: '📍 Localização' }[m.tipo];
@@ -218,6 +241,7 @@ function registrarEspelho(jid, m, { silencioso = false } = {}) {
   if (m.telefone) c.telefone = m.telefone;
   if (m.id && (!c.ultKey || m.ts >= (c.ultKeyTs || 0))) { c.ultKey = { id: m.id, fromMe: m.autor !== 'cliente' }; c.ultKeyTs = m.ts; }
   if (!c.ult || m.ts >= c.ult) { c.ult = m.ts; c.ultTexto = resumoMsg(m).slice(0, 120); c.ultAutor = m.autor; }
+  if (m.autor === 'cliente' && m.ts > (c.ultCliente || 0)) c.ultCliente = m.ts;
   if (m.autor === 'cliente' && !silencioso) c.naoLidas = (c.naoLidas || 0) + 1;
   salvarChats();
   if (!silencioso) emitir('msg', { jid, msg: m, chat: chatPublico(jid) });
@@ -505,14 +529,31 @@ async function iniciarWhatsApp() {
       for (const ch of lista || []) guardarChat(ch);
       let n = 0;
       for (const m of messages || []) { try { await aoReceber(m, 'historico'); n++; } catch (e) { } }
+      resolverLids(s).catch(() => { });
       log('histórico', syncType, progress == null ? '' : progress + '%', (lista || []).length, 'conversas', (contacts || []).length, 'contatos', n, 'mensagens');
       emitir('recarregar', {});
+    });
+    s.ev.on('labels.edit', (l) => { if (!l || l.id == null) return; etq.labels[l.id] = { nome: l.name || (etq.labels[l.id] || {}).nome || '', cor: l.color, apagada: !!l.deleted }; salvarEtq(); });
+    s.ev.on('labels.association', ({ association: a, type }) => {
+      if (!a || !a.chatId || a.labelId == null) return;
+      const l = new Set(etq.chats[a.chatId] || []); if (type === 'remove') l.delete(String(a.labelId)); else l.add(String(a.labelId));
+      etq.chats[a.chatId] = [...l]; salvarEtq();
     });
     s.ev.on('chats.upsert', (lista) => { for (const ch of lista || []) guardarChat(ch); });
     s.ev.on('chats.update', (lista) => { for (const ch of lista || []) guardarChat(ch); });
     s.ev.on('contacts.upsert', (lista) => { for (const c of lista || []) guardarContato(c); });
     s.ev.on('contacts.update', (lista) => { for (const c of lista || []) guardarContato(c); });
   } finally { iniciando = false; }
+}
+async function resolverLids(s) {
+  const lm = s && s.signalRepository && s.signalRepository.lidMapping;
+  if (!lm || typeof lm.getPNForLID !== 'function') return;
+  let n = 0;
+  for (const jid of Object.keys(chats)) {
+    if (!jid.endsWith('@lid') || lidPn[jid]) continue;
+    try { const pn = await lm.getPNForLID(jid); if (pn) { ligarLid(jid, String(pn).replace(/:\d+@/, '@')); n++; } } catch (e) { }
+  }
+  if (n) log('telefones descobertos pelo LID', n);
 }
 async function arquivarChat(jid, arquivar) {
   if (!sock || !conectado) throw new Error('WhatsApp desconectado');
@@ -739,13 +780,35 @@ http.createServer(async (req, res) => {
           json(res, { ok: true, reiniciando: true });
           return setTimeout(() => process.exit(0), 800);
         }
+        else if (ac === 'eventos') {
+          let linhas = []; try { linhas = fs.readFileSync(path.join(DADOS, 'eventos-crm.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean); } catch (e) { }
+          const ok = new Set(estado.eventosOk || []);
+          const pend = linhas.filter(e => e.rid && !ok.has(e.rid)).slice(-100);
+          const ult = {}; for (const jid of Object.keys(chats)) { const c = chats[jid]; const t = (c.telefone || '').replace(/\D/g, '').slice(-8); if (t.length === 8 && c.ultCliente) ult[t] = Math.max(ult[t] || 0, c.ultCliente); }
+          return json(res, { eventos: pend, ultimaMsgCliente: ult });
+        }
+        else if (ac === 'eventos_ok') {
+          let ids = []; try { ids = JSON.parse(b.texto || '[]'); } catch (e) { }
+          estado.eventosOk = [...new Set([...(estado.eventosOk || []), ...ids])].slice(-2000); salvarEstado();
+          return json(res, { ok: true });
+        }
+        else if (ac === 'etiqueta') {
+          if (!sock || !conectado) return json(res, { erro: 'WhatsApp desconectado' }, 409);
+          const id = String(b.texto || ''); if (!jidValido(jid) || !etq.labels[id]) return json(res, { erro: 'etiqueta ou conversa inválida' }, 400);
+          if (b.on) await sock.addChatLabel(jid, id); else await sock.removeChatLabel(jid, id);
+          const l = new Set(etq.chats[jid] || []); if (b.on) l.add(id); else l.delete(id); etq.chats[jid] = [...l]; salvarEtq();
+        }
+        else if (ac === 'diag') {
+          const lids = Object.keys(chats).filter(j => j.endsWith('@lid'));
+          return json(res, { chats: Object.keys(chats).length, lids: lids.length, lidsComTelefone: lids.filter(j => lidPn[j] || chats[j].telefone).length, mapa: Object.keys(lidPn).length, contatos: Object.keys(contatos).length, temLidMapping: !!(sock && sock.signalRepository && sock.signalRepository.lidMapping) });
+        }
         else if (ac === 'log') {
           let t = ''; try { t = fs.readFileSync(path.join(DADOS, 'ponte.log'), 'utf8'); } catch (e) { }
           return json(res, { log: t.split('\n').slice(-60).join('\n') });
         }
         const verArq = ac === 'ver' && b.texto === 'arquivados';
         const todos = Object.keys(chats).map(chatPublico);
-        const out = { estado: estadoPublico(), classif, totais: { ativos: todos.filter(c => !c.arquivado).length, arquivados: todos.filter(c => c.arquivado).length },
+        const out = { estado: estadoPublico(), classif, etiquetas: Object.entries(etq.labels).filter(([, l]) => !l.apagada).map(([id, l]) => ({ id, nome: l.nome, cor: l.cor })), totais: { ativos: todos.filter(c => !c.arquivado).length, arquivados: todos.filter(c => c.arquivado).length },
           chats: todos.filter(c => verArq ? c.arquivado : !c.arquivado).sort((a, b) => b.ult - a.ult).slice(0, 400) };
         if (b._resultado) out.resultado = b._resultado;
         if (jidValido(jid)) { out.chat = chatPublico(jid); out.msgs = lerEsp(jid).slice(-60).map(m => ({ id: m.id, autor: m.autor, tipo: m.tipo, texto: m.texto, ts: m.ts })); }
