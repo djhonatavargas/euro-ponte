@@ -992,7 +992,7 @@ REGRAS OBRIGATÓRIAS:
 4. A conversa abaixo serve APENAS para acertar o tom (formal/informal) e o nome do cliente. Nunca copie informação dela.
 5. Português do Brasil, frases curtas, no máximo 1 emoji se combinar. Tamanho parecido com o do rascunho.
 Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\n\nComo o Djhonata escreve e as regras do atendimento:\n' + jeito : ''}`;
-          try { const sug = (await claudeTexto(sis, (conversa ? 'Conversa até agora (só para o tom, NÃO use informações daqui):\n' + conversa + '\n\n' : '') + 'RASCUNHO DO DJHONATA (reescreva só este, mantendo todas as informações dele e nada além):\n' + rascunho, 800, 0)).trim(); return json(res, { sugestao: sug }); }
+          try { const sug = (await claudeTexto(sis, (conversa ? 'Conversa até agora (só para o tom, NÃO use informações daqui):\n' + conversa + '\n\n' : '') + 'RASCUNHO DO DJHONATA (reescreva só este, mantendo todas as informações dele e nada além):\n' + rascunho, 800)).trim(); return json(res, { sugestao: sug }); }
           catch (e) { return json(res, { erro: e.message }, 502); }
         }
         if (ac === 'enviar') {
