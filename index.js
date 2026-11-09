@@ -159,6 +159,7 @@ async function executar(nome, entrada, ctx) {
     }
     if (nome === 'registrar_crm') {
       fs.appendFileSync(path.join(DADOS, 'eventos-crm.jsonl'), JSON.stringify({ rid: 'ep' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), telefone: ctx.telefone ? formatoBR(ctx.telefone) : '', nome: ctx.nome || '', ...entrada }) + '\n');
+      if (entrada.novoStatus && ctx.jid) aplicarEtiquetaStatus(ctx.jid, entrada.novoStatus).catch(() => { });
       return 'Registrado.';
     }
     return 'Ferramenta desconhecida.';
@@ -541,6 +542,7 @@ async function iniciarWhatsApp() {
       if (sock !== s) return;
       if (u.qr) { ultimoQR = u.qr; log('QR novo disponível no painel'); emitir('estado', estadoPublico()); }
       if (u.qr || u.connection === 'open') falhasSeguidas = 0;
+      if (u.connection === 'open' && !global.__sincronizou) { global.__sincronizou = true; setTimeout(() => { if (sock === s) s.resyncAppState(['critical_block', 'critical_unblock_low', 'regular_high', 'regular_low', 'regular'], true).then(() => log('etiquetas e contatos sincronizados', Object.keys(etq.labels).length, 'etiquetas')).catch(e => log('sincronizar', e.message)); }, 20e3); }
       if (u.connection === 'open') { conectadoDesde = Date.now(); conectado = true; ultimoQR = null; meuNumero = (s.user && s.user.id || '').split(':')[0]; log('WhatsApp conectado', meuNumero); emitir('estado', estadoPublico()); }
       if (u.connection === 'close') {
         conectado = false; ultimoQR = null;
@@ -645,31 +647,74 @@ Para cada conversa, escolha UMA categoria:
 - pessoal: família, amigos, assuntos pessoais, serviços pessoais (oficina, médico, loja, banco pessoal), colegas sem relação com venda.
 - duvida: não dá para saber (sem mensagens e nome sem pista).
 Na dúvida entre "cliente" e outra categoria, escolha "cliente". Responda SOMENTE com JSON: [{"n":número,"cat":"categoria","motivo":"até 8 palavras"}].`;
+// Regra do Djhonata: nas conversas ficam só os clientes em foco (interagindo, visita marcada, negociando, "Importante").
+// Arquiva: comprou / pedido finalizado, perdido (+7 dias sem falar), corretor, construtor/captação, pessoal.
+function ultCli(jid) {   // última mensagem do cliente (calcula do espelho para conversas que vieram do histórico)
+  const c = chats[jid] || {};
+  if (c.ultCliente === undefined) { const l = lerEsp(jid); let t = 0; for (const m of l) if (m.autor === 'cliente' && m.ts > t) t = m.ts; c.ultCliente = t; salvarChats(); }
+  return c.ultCliente || 0;
+}
 async function classificarTudo(compradores, refazer, crm = {}) {
   if (classif.rodando) return;
-  estado.classes = estado.classes || {};
+  estado.classes = {};
   const tel8 = (t) => String(t || '').replace(/\D/g, '').slice(-8);
   const comp = new Set((compradores || []).map(tel8).filter(x => x.length === 8));
-  const crmCat = new Map(); for (const k of ['corretor', 'construtor', 'pessoal', 'cliente']) for (const t of (crm[k] || [])) { const x = tel8(t); if (x.length === 8) crmCat.set(x, k); }
-  const lista = Object.keys(chats).filter(j => !chats[j].arquivado && (refazer || !estado.classes[j])).sort((a, b) => (chats[b].ult || 0) - (chats[a].ult || 0));
+  const st = {}; for (const [t, v] of Object.entries(crm.status || {})) { const k = tel8(t); if (k.length === 8) st[k] = v; }
+  for (const k of ['corretor', 'construtor', 'pessoal']) for (const t of (crm[k] || [])) { const x = tel8(t); if (x.length === 8) st[x] = k; }
+  const SETE = 7 * 864e5, agora = Date.now();
+  const lista = Object.keys(chats).filter(j => !chats[j].arquivado).sort((a, b) => (chats[b].ult || 0) - (chats[a].ult || 0));
   Object.assign(classif, { rodando: true, feitos: 0, total: lista.length, erro: '' });
+  const paraIA = [];
+  const marca = (jid, cat, motivo) => { estado.classes[jid] = { cat, motivo }; };
   try {
-    for (let i = 0; i < lista.length; i += 15) {
-      const lote = lista.slice(i, i + 15);
+    for (const jid of lista) {
+      const c = chats[jid]; const t = tel8(c.telefone || pnDe(jid).split('@')[0]);
+      const etqs = etiquetasDe(jid).map(e => String(e.nome || '').toLowerCase());
+      const uc = ultCli(jid); const recente = uc && agora - uc < SETE;
+      const s = t.length === 8 ? st[t] : '';
+      if (etqs.some(n => /import/.test(n))) marca(jid, 'cliente', 'etiqueta Importante');
+      else if (etqs.some(n => /finaliz|pago|comprou|vendid/.test(n))) marca(jid, 'comprou', 'etiqueta ' + etqs.find(n => /finaliz|pago|comprou|vendid/.test(n)));
+      else if (etqs.some(n => /capta|constru/.test(n))) marca(jid, 'construtor', 'etiqueta ' + etqs.find(n => /capta|constru/.test(n)));
+      else if (t.length === 8 && comp.has(t)) marca(jid, 'comprou', 'comprador no CRM');
+      else if (s === 'fechado') marca(jid, 'comprou', 'negócio fechado no CRM');
+      else if (s === 'corretor' || s === 'construtor' || s === 'pessoal') marca(jid, s, 'marcado no CRM');
+      else if (s === 'perdido' || s === 'desistiu' || s === 'pausado') marca(jid, 'perdido', 'CRM: ' + s);
+      else if (s === 'visita' || s === 'negociacao') marca(jid, 'cliente', 'CRM: ' + (s === 'visita' ? 'visita marcada' : 'em negociação'));
+      else if (s) marca(jid, recente ? 'cliente' : 'perdido', recente ? 'CRM: em atendimento' : 'CRM: sem conversa há +7 dias');
+      else if (!recente) marca(jid, 'perdido', uc ? 'sem conversa há +7 dias' : 'nunca respondeu');
+      else paraIA.push(jid);
+      classif.feitos++;
+    }
+    classif.total = lista.length; salvarEstado();
+    // Só as conversas recentes de quem não está no CRM passam pela IA (corretor? pessoal? cliente novo?)
+    for (let i = 0; i < paraIA.length && API_KEY; i += 15) {
+      const lote = paraIA.slice(i, i + 15);
       const blocos = lote.map((jid, k) => {
-        const c = chats[jid]; const tel = c.telefone || (jid.endsWith('@s.whatsapp.net') ? jid.split('@')[0] : '');
+        const c = chats[jid]; const tel = c.telefone || '';
         const msgs = lerEsp(jid).filter(m => m.texto || m.tipo !== 'text').slice(-12).map(m => (m.autor === 'cliente' ? 'C: ' : 'D: ') + (m.texto ? m.texto.replace(/\s+/g, ' ').slice(0, 160) : '[' + m.tipo + ']')).join('\n');
-        return `#${k + 1} nome: ${c.nome || contatos[jid] || '(sem nome)'} | telefone: ${tel || '?'} | comprador no CRM: ${tel && comp.has(tel8(tel)) ? 'SIM' : 'não'}${tel && crmCat.has(tel8(tel)) ? ' | marcado no CRM como: ' + crmCat.get(tel8(tel)) : ''}\n${msgs || '(sem mensagens)'}`;
+        return `#${k + 1} nome: ${c.nome || contatos[jid] || contatos[pnDe(jid)] || '(sem nome)'} | telefone: ${tel || '?'}\n${msgs || '(sem mensagens)'}`;
       }).join('\n\n');
       let resp = '';
       try { resp = await claudeTexto(SIS_CLASSE, blocos); } catch (e) { classif.erro = e.message; log('classificar', e.message); continue; }
       const a = resp.indexOf('['), b = resp.lastIndexOf(']');
       let arr = []; try { arr = JSON.parse(resp.slice(a, b + 1)); } catch (e) { }
-      for (const r of arr) { const jid = lote[(Number(r.n) || 0) - 1]; if (jid && r.cat) estado.classes[jid] = { cat: String(r.cat), motivo: String(r.motivo || '').slice(0, 80) }; }
-      for (const jid of lote) { const t = chats[jid].telefone || ''; if (!t) continue; if (comp.has(tel8(t))) estado.classes[jid] = { cat: 'comprou', motivo: 'comprador no CRM' }; else if (crmCat.has(tel8(t))) estado.classes[jid] = { cat: crmCat.get(tel8(t)), motivo: 'marcado no CRM' }; }
-      classif.feitos = Math.min(lista.length, i + lote.length); salvarEstado();
+      for (const r of arr) { const jid = lote[(Number(r.n) || 0) - 1]; if (jid && r.cat) marca(jid, r.cat === 'duvida' ? 'cliente' : String(r.cat), String(r.motivo || '').slice(0, 80)); }
+      salvarEstado();
     }
-  } finally { classif.rodando = false; salvarEstado(); log('classificação terminou', classif.feitos, 'conversas'); }
+    for (const jid of paraIA) if (!estado.classes[jid]) marca(jid, 'cliente', 'conversa recente');
+  } finally { classif.rodando = false; salvarEstado(); log('organização terminou', lista.length, 'conversas;', paraIA.length, 'pela IA'); }
+}
+async function aplicarEtiquetaStatus(jid, novoStatus) {
+  // Assistente marcou visita / negociação -> etiqueta "Importante" (e "Visita marcada" se existir); perdeu interesse -> tira "Importante".
+  if (!sock || !conectado || !jid) return;
+  const acha = (re) => Object.entries(etq.labels).find(([, l]) => !l.apagada && re.test(String(l.nome || '').toLowerCase()));
+  const tem = new Set(etq.chats[jid] || []);
+  const por = async (re, on) => { const e = acha(re); if (!e) return; const [id] = e; if (on === tem.has(id)) return; try { if (on) await sock.addChatLabel(jid, id); else await sock.removeChatLabel(jid, id); on ? tem.add(id) : tem.delete(id); } catch (x) { log('etiqueta', x.message); } };
+  const st = String(novoStatus || '').toLowerCase();
+  if (st === 'visita_marcada' || st === 'visita') { await por(/import/, true); await por(/visita/, true); }
+  else if (st === 'negociacao') { await por(/import/, true); }
+  else if (st === 'sem_interesse' || st === 'desistiu') { await por(/import/, false); await por(/visita/, false); }
+  etq.chats[jid] = [...tem]; salvarEtq();
 }
 async function desconectarWhatsApp() {
   estado.whatsDesligado = true; salvarEstado(); clearTimeout(timerReconectar);
@@ -828,7 +873,6 @@ http.createServer(async (req, res) => {
         }
         else if (ac === 'classificar') {
           let p = {}; try { p = JSON.parse(b.texto || '{}'); } catch (e) { }
-          if (!API_KEY) return json(res, { erro: 'falta a chave da Anthropic no servidor' }, 400);
           classificarTudo(p.compradores || [], !!p.refazer, p).catch(e => log('classificar', e.message));
           await new Promise(r => setTimeout(r, 500));
         }
@@ -848,7 +892,7 @@ http.createServer(async (req, res) => {
           let linhas = []; try { linhas = fs.readFileSync(path.join(DADOS, 'eventos-crm.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean); } catch (e) { }
           const ok = new Set(estado.eventosOk || []);
           const pend = linhas.filter(e => e.rid && !ok.has(e.rid)).slice(-100);
-          const ult = {}; for (const jid of Object.keys(chats)) { const c = chats[jid]; const t = (c.telefone || '').replace(/\D/g, '').slice(-8); if (t.length === 8 && c.ultCliente) ult[t] = Math.max(ult[t] || 0, c.ultCliente); }
+          const ult = {}; for (const jid of Object.keys(chats)) { const c = chats[jid]; const t = (c.telefone || '').replace(/\D/g, '').slice(-8); const u = ultCli(jid); if (t.length === 8 && u) ult[t] = Math.max(ult[t] || 0, u); }
           return json(res, { eventos: pend, ultimaMsgCliente: ult });
         }
         else if (ac === 'eventos_ok') {
@@ -865,6 +909,11 @@ http.createServer(async (req, res) => {
         else if (ac === 'resolver') {
           let l = []; try { l = JSON.parse(b.texto || '[]'); } catch (e) { }
           try { b._resultado = await resolverTelefones(l); } catch (e) { return json(res, { erro: e.message }, 409); }
+        }
+        else if (ac === 'sincronizar') {
+          if (!sock || !conectado) return json(res, { erro: 'WhatsApp desconectado' }, 409);
+          try { await sock.resyncAppState(['critical_block', 'critical_unblock_low', 'regular_high', 'regular_low', 'regular'], true); } catch (e) { log('sincronizar', e.message); }
+          await new Promise(r => setTimeout(r, 1500));
         }
         else if (ac === 'diag') {
           const lids = Object.keys(chats).filter(j => j.endsWith('@lid'));
