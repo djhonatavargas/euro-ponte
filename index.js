@@ -584,7 +584,11 @@ async function iniciarWhatsApp() {
         const nome = String((etq.labels[String(a.labelId)] || {}).nome || '').toLowerCase();
         const c = CATS_ETQ.find(x => x.re.test(nome));
         const pn = pnDe(a.chatId); const tel = (chats[a.chatId] || {}).telefone || (pn.endsWith('@s.whatsapp.net') ? pn.split('@')[0] : '');
-        if (c && tel) {
+        const t8 = String(tel || '').replace(/\D/g, '').slice(-8);
+        const atual = (estado.crmStatus || {})[t8];
+        const mesmo = c && (atual === c.cat || (c.cat === 'corretor_euro' && atual === 'corretor') || (c.cat === 'corretor' && (estado.equipe || []).includes(t8)));
+        const recenteMeu = [...meusRotulos.keys()].some(k => k.endsWith('|' + String(a.labelId)) && (k.startsWith(a.chatId) || (pn && k.startsWith(pn)) || (t8 && (chats[k.split('|')[0]] || {}).telefone && String(chats[k.split('|')[0]].telefone).endsWith(t8))) && Date.now() - meusRotulos.get(k) < 300e3);
+        if (c && tel && !mesmo && !recenteMeu && !etiquetando.rodando) {
           const NS = { corretor_euro: 'corretor', atendimento: 'atendimento', novo: 'remarcar', visita: 'visita_marcada', negociacao: 'negociacao', fechado: 'fechado', pausado: 'pausado', perdido: 'perdido', desistiu: 'desistiu', corretor: 'corretor', construtor: 'construtor', pessoal: 'pessoal' };
           fs.appendFileSync(path.join(DADOS, 'eventos-crm.jsonl'), JSON.stringify({ rid: 'et' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), telefone: formatoBR(tel), nome: (chats[a.chatId] || {}).nome || '', novoStatus: NS[c.cat], resultado: 'Etiqueta "' + (etq.labels[String(a.labelId)] || {}).nome + '" colocada no WhatsApp' }) + '\n');
           estado.crmStatus = estado.crmStatus || {}; estado.crmStatus[String(tel).replace(/\D/g, '').slice(-8)] = c.cat; salvarEstado();
@@ -734,7 +738,9 @@ const CATS_ETQ = [   // espelho das colunas do CRM (status do cliente)
   { cat: 'construtor', nome: 'Construtores', re: /constru|capta/, cor: 12 },
   { cat: 'pessoal', nome: 'Pessoais', re: /pessoa|famil|amig/, cor: 15 }
 ];
-async function garantirEtiquetas() {
+let garantindo = null;
+function garantirEtiquetas() { if (!garantindo) garantindo = garantirEtiquetas0().finally(() => { garantindo = null; }); return garantindo; }
+async function garantirEtiquetas0() {
   const ids = {};
   for (const [id, l] of Object.entries(etq.labels)) {   // a etiqueta "Corretor" criada antes pela ponte vira "Corretor parceiro"
     if (Number(id) >= 90 && !l.apagada && String(l.nome || '').trim().toLowerCase() === 'corretor' && typeof sock.addLabel === 'function') {
