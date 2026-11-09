@@ -51,6 +51,14 @@ const SENHA = ENV.SENHA || '';                     // senha do painel (além do 
 const ESPERA_MS = Number(ENV.ESPERA_MS || 9000);  // espera o cliente terminar de digitar
 const HORA_INI = ENV.HORA_INI || '08:00';
 const HORA_FIM = ENV.HORA_FIM || '23:30';
+// Voz e ouvido (como no OpenClaw): ElevenLabs fala com a voz do Djhonata e transcreve os áudios recebidos.
+const ELEVEN_KEY = ENV.ELEVENLABS_API_KEY || '';
+const ELEVEN_VOZ = ENV.ELEVEN_VOZ || 'ESI8AvlyEl6TuR4ajagH';       // voz do Djhonata (a mesma do OpenClaw)
+const ELEVEN_MODELO = ENV.ELEVEN_MODELO || 'eleven_v4';
+const GEMINI_KEY = ENV.GEMINI_API_KEY || ENV.GOOGLE_API_KEY || '';  // opcional: transcreve pelo Gemini se a ElevenLabs falhar
+// Rotinas (lembrete de visita e retomada) só nesse horário
+const ROTINAS = ENV.ROTINAS !== '0';
+const ROT_INI = ENV.ROTINA_INI || '08:00', ROT_FIM = ENV.ROTINA_FIM || '21:30';
 
 const DADOS = path.join(BASE, 'dados');
 const CATALOGO = path.join(BASE, 'catalogo');
@@ -105,32 +113,52 @@ function anotar(id, role, texto) {
 }
 
 // ---------- regras e catálogo (vêm do computador do Djhonata pelo enviar-catalogo.ps1) ----------
-const ARQS_REGRAS = ['REGRAS-ATENDIMENTO.md', 'JEITO-DO-DJHONATA.md', 'ATENDIMENTO-INTELIGENTE.md', 'BASE-RESPOSTAS.md', 'APRENDIZADOS.md', 'combinados-clientes.md', 'CATALOGO.md'];
+// AGENTS.md = prompt principal que o OpenClaw usava (base das 51 perguntas, bloco da agenda, regras obrigatórias).
+const ARQS_REGRAS = ['AGENTS.md', 'REGRAS-ATENDIMENTO.md', 'JEITO-DO-DJHONATA.md', 'ATENDIMENTO-INTELIGENTE.md', 'BASE-RESPOSTAS.md', 'APRENDIZADOS.md', 'combinados-clientes.md', 'CATALOGO.md'];
 function lerTexto(rel) { try { return fs.readFileSync(path.join(CATALOGO, rel), 'utf8'); } catch (e) { return ''; } }
 
 const ADAPTADOR = `# COMO VOCÊ FUNCIONA AQUI (vale acima das partes técnicas das regras)
-Você está rodando num servidor novo, não mais no OpenClaw. As regras de atendimento abaixo continuam valendo (tom, identidade como Djhonata, oferta, agenda, endereço, emojis, nunca prometer "já te mando" etc.). Só a parte técnica muda:
+Você está rodando num servidor novo, não mais no OpenClaw. As regras abaixo continuam valendo: AGENTS.md (prompt principal), REGRAS-ATENDIMENTO.md e os outros arquivos (tom, identidade como Djhonata, oferta, agenda, endereço, emojis, áudio ou texto, nunca prometer "já te mando" etc.). Se duas regras se contradisserem, vale a do REGRAS-ATENDIMENTO.md, que é a mais nova. Só a parte técnica muda:
 - Sua resposta em texto é enviada ao cliente no WhatsApp. Para mandar mais de uma mensagem separada, coloque uma linha só com --- entre elas. Se não for para responder nada, responda exatamente NO_REPLY.
-- Para mandar foto, vídeo ou arquivo use a ferramenta enviar_arquivo (caminho relativo à pasta do catálogo, ex.: "escritorio/fachada.jpg" ou "rua lapa - boa vista (ref 913)/foto.jpg"; ou um link https de imagem). Onde as regras falam em ferramenta message, tool_call openclaw, ou caminhos C:\\Users\\Public\\catalogo\\..., use enviar_arquivo com o caminho a partir da pasta do catálogo. Mídia e texto saem na ordem em que você escreve e chama as ferramentas.
+- ÁUDIO COM A VOZ DO DJHONATA: para responder em áudio, escreva a parte falada dentro de [[tts:...]], seguindo a regra ÁUDIO OU TEXTO. O que estiver dentro é falado exatamente como está escrito: escreva do jeito que se fala, sem emojis, links, listas, asteriscos ou abreviações; valores e números como se fala ("duzentos e cinquenta mil", "mil e quinhentos por mês"). No máximo uns 40 segundos (cerca de 90 palavras) e um áudio por vez. Link, endereço ou valores para conferir vão numa mensagem de texto separada, depois do áudio. Não repita em texto o que falou no áudio.
+- Áudios que o cliente manda chegam transcritos, assim: [áudio do cliente, transcrito]: "...". Responda ao conteúdo normalmente, sem dizer que transcreveu. Se chegar [o cliente mandou um áudio que não deu para transcrever], peça com naturalidade para ele mandar de novo ou escrever.
+- Para mandar foto, vídeo ou arquivo use a ferramenta enviar_arquivo (caminho relativo à pasta do catálogo, ex.: "escritorio/fachada.jpg" ou "rua lapa - boa vista (ref 913)/foto.jpg"; ou um link https de imagem, como os links de fotos que estão nas fichas). Onde as regras falam em ferramenta message, tool_call openclaw, ou caminhos C:\\Users\\Public\\catalogo\\..., use enviar_arquivo com o caminho a partir da pasta do catálogo. Mídia e texto saem na ordem em que você escreve e chama as ferramentas.
 - Antes de oferecer um imóvel, chame ler_ficha com a ref (ou nome da rua) para pegar a descrição pronta do CRM e a lista de fotos/vídeos. Nunca invente dados.
 - Avisos para o Djhonata: ferramenta avisar_djhonata (vai para o WhatsApp pessoal dele). Não use a ferramenta de envio para isso. O aviso é INTERNO: depois de avisar, SEMPRE responda o cliente na mesma vez, de forma natural e sem dizer que foi consultar alguém (por exemplo, fazendo uma pergunta para entender melhor o que ele procura: bairro, quartos, faixa de valor, se é pronto ou na planta). Nunca deixe o cliente sem resposta. Use NO_REPLY só quando a mensagem do cliente não pede resposta (ex.: "ok", "👍", "obrigado" no fim da conversa).
 - Quem escreve é um CLIENTE (lead), a não ser que o sistema diga explicitamente que é o Djhonata. Trate a pessoa como cliente: nunca fale com ela como se fosse o dono, o chefe ou o corretor.
-- Eventos e resumo do CRM (mudança de status, resumo do cliente, cliente pausado): ferramenta registrar_crm. Não escreva arquivos .jsonl.
-- Lembretes de visita, retomadas e comandos do CRM NÃO são feitos aqui por enquanto: ignore essas rotinas. Só atenda a conversa atual.
-- Áudio: por enquanto você não consegue ouvir áudios. Se o cliente mandar áudio, diga de forma natural que agora não consegue ouvir e peça para ele escrever (sem dizer que é IA).
-- Imagens que o cliente mandar chegam para você ver.
-- O Djhonata acompanha as conversas por um painel e às vezes escreve direto para o cliente. As mensagens dele aparecem no histórico como "(Djhonata escreveu)". Continue a conversa a partir do que ele disse: não repita o que ele já mandou, não contradiga e não se apresente de novo.`;
+- Eventos do CRM (visita marcada com data e hora, remarcar, negociação, cliente pausado, nome real, imóvel de interesse): ferramenta registrar_crm. Onde as regras mandam escrever em arquivos (visitas-agendadas.md, avisos-enviados.md, resultados-assistente.jsonl, AGENTS.md, combinados), não escreva arquivos: use registrar_crm e avisar_djhonata. O sistema guarda as visitas e os avisos.
+- ROTINAS: os lembretes de visita e a retomada de quem parou de responder são disparados pelo sistema, com uma mensagem [ROTINA AUTOMÁTICA ...]. Siga o que ela pedir; quando não houver nada a fazer, responda NO_REPLY (nunca escreva "nada a fazer", porque iria para o cliente). Fora disso, não prometa mandar mensagem depois e não marque nada por conta própria.
+- Imagens que o cliente mandar chegam para você ver (ex.: comprovante do agendamento).
+- O Djhonata acompanha as conversas por um painel e às vezes escreve direto para o cliente. As mensagens dele aparecem no histórico como "(Djhonata escreveu)"; as que você mandou a pedido dele, como "(mensagem a pedido do Djhonata)". Continue a conversa a partir disso: não repita o que ele já mandou, não contradiga e não se apresente de novo.`;
 
 function sistema(ctx) {
   const partes = [ADAPTADOR];
-  for (const f of ARQS_REGRAS) { const t = lerTexto(f); if (t) partes.push(`\n\n===== ${f} =====\n${t}`); }
+  for (const f of ARQS_REGRAS) {
+    let t = lerTexto(f);
+    if (f === 'AGENTS.md') t = t.replace(/<!--\s*REGRAS-FIM\s*-->[\s\S]*$/, '');   // a lista de números "não atender" já é bloqueada pelo servidor
+    if (t) partes.push(`\n\n===== ${f} =====\n${t}`);
+  }
   const fixo = partes.join('');
   const d = agoraSP();
   const dia = d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
   const hora = d.toTimeString().slice(0, 5);
   let din = `Agora: ${dia}, ${hora} (horário de Joinville).\nConversa com: ${ctx.nome || 'nome não informado'} — WhatsApp ${ctx.telefone ? formatoBR(ctx.telefone) : 'desconhecido'}.`;
   din += `\nRegra de segurança do número: escreva cada resposta com suas palavras para este cliente; não copie textos prontos idênticos aos de outras conversas (varie saudação e frases). Mensagens curtas, uma ideia por mensagem, sem excesso de links.`;
-  if (ctx.dono) din += `\nATENÇÃO: quem está escrevendo é o próprio Djhonata (dono). Atenda os pedidos dele diretamente (ex.: mandar um imóvel no formato pronto para encaminhar ao cliente).`;
+  if (!ELEVEN_KEY) din += `\nÁudio com a voz do Djhonata: indisponível agora. Responda só em texto (não use [[tts:...]]).`;
+  if (ctx.dono) {
+    din += `\nATENÇÃO: quem está escrevendo é o próprio Djhonata (dono), pelo WhatsApp pessoal dele. Ele NÃO é cliente: não se apresente, não mande agenda, material nem endereço para ele.
+Siga a seção 13 do AGENTS.md: quando ele der uma orientação sobre um cliente (ex.: "fala pra ele que aposentado também pode"), descubra de qual cliente é (o nome/número que ele citou ou, se não citou, o último aviso abaixo; na dúvida, pergunte curto: "É o Emerson (+55 47 9991-5821)?"), use a ferramenta mandar_ao_cliente para mandar a mensagem ao cliente falando como o Djhonata (primeira pessoa, frases naturais, sem copiar o texto dele ao pé da letra; pode usar [[tts:...]] e ---), e depois responda a ele curto: "Feito! Mandei pro Emerson: [resumo]". Se a mensagem dele não for sobre cliente (ex.: "quem marcou hoje?"), responda direto e curto, com os dados abaixo.`;
+    const av = (estado.avisos || []).slice(-8).reverse().map(a => `- ${new Date(a.ts).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}: ${a.nome || 'sem nome'} (${a.telefone ? formatoBR(a.telefone) : 'sem número'}) — ${String(a.texto || '').slice(0, 220)}`).join('\n');
+    din += `\nÚltimos avisos que você mandou ao Djhonata (o mais recente primeiro):\n${av || '(nenhum)'}`;
+    const vis = Object.entries(estado.visitas || {}).map(([j, v]) => ({ j, v, T: quandoMs(v.q) })).filter(x => x.T > Date.now() - 3600e3).sort((a, b) => a.T - b.T).slice(0, 15)
+      .map(x => { const c = chatPublico(x.j); return `- ${descreverQuando(x.v.q)}: ${c.nome || 'sem nome'} (${c.telefone ? formatoBR(c.telefone) : 'sem número'})`; }).join('\n');
+    din += `\nVisitas marcadas que o sistema conhece (próximas):\n${vis || '(nenhuma)'}`;
+  } else {
+    const comb = (estado.combinados || {})[ctx.jid];
+    if (comb && comb.length) din += `\nCombinados com este cliente (orientações do Djhonata, siga):\n` + comb.map(c => '- ' + c.texto).join('\n');
+    const v = (estado.visitas || {})[ctx.jid];
+    if (v && quandoMs(v.q) > Date.now() - 3600e3) din += `\nVisita marcada deste cliente: ${descreverQuando(v.q)}, no escritório.`;
+  }
   return [{ type: 'text', text: fixo, cache_control: { type: 'ephemeral' } }, { type: 'text', text: din }];
 }
 
@@ -139,8 +167,10 @@ const FERRAMENTAS = [
   { name: 'ler_ficha', description: 'Lê a ficha de um imóvel do catálogo (descrição pronta do CRM, dados e lista de fotos e vídeo). Use a ref (ex.: "913") ou parte do nome da rua/residencial.', input_schema: { type: 'object', properties: { busca: { type: 'string' } }, required: ['busca'] } },
   { name: 'enviar_arquivo', description: 'Envia ao cliente uma foto, vídeo ou arquivo do catálogo (caminho relativo à pasta do catálogo) ou uma imagem por link https. A legenda vai junto com a mídia.', input_schema: { type: 'object', properties: { caminho: { type: 'string' }, legenda: { type: 'string' } }, required: ['caminho'] } },
   { name: 'avisar_djhonata', description: 'Manda um aviso no WhatsApp pessoal do Djhonata.', input_schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
-  { name: 'registrar_crm', description: 'Registra no CRM um evento do cliente atual e move o card dele: novoStatus = atendimento, visita_marcada, negociacao, remarcar, sem_interesse ou pausado. Em visita_marcada mande data (AAAA-MM-DD) e hora (HH:MM). Mande nomeReal quando o cliente disser o nome e imovel quando souber qual imóvel interessa. resultado = frase curta do que aconteceu.', input_schema: { type: 'object', properties: { novoStatus: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nomeReal: { type: 'string' }, imovel: { type: 'string' }, resumo: { type: 'string' }, resultado: { type: 'string' } } } }
+  { name: 'registrar_crm', description: 'Registra no CRM um evento do cliente atual e move o card dele: novoStatus = atendimento, visita_marcada, negociacao, remarcar, sem_interesse ou pausado. Em visita_marcada mande data (AAAA-MM-DD) e hora (HH:MM): o sistema usa para os lembretes da visita. Se o cliente cancelar ou pedir para remarcar, use remarcar (os lembretes param). Mande nomeReal quando o cliente disser o nome e imovel quando souber qual imóvel interessa. resultado = frase curta do que aconteceu.', input_schema: { type: 'object', properties: { novoStatus: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nomeReal: { type: 'string' }, imovel: { type: 'string' }, resumo: { type: 'string' }, resultado: { type: 'string' } } } }
 ];
+// Só quando quem escreve é o Djhonata (WhatsApp pessoal, modo teste desligado): seção 13 do AGENTS.md
+const FERRAMENTA_DONO = { name: 'mandar_ao_cliente', description: 'Manda uma mensagem a um cliente a pedido do Djhonata, falando como o Djhonata. cliente = nome ou telefone do cliente, como o Djhonata citou (ou o do último aviso). texto = a mensagem para o cliente (pode ter [[tts:...]] para áudio e linhas com --- para separar mensagens). combinado = resumo curto da orientação do Djhonata sobre esse cliente, para seguir nas próximas conversas com ele.', input_schema: { type: 'object', properties: { cliente: { type: 'string' }, texto: { type: 'string' }, combinado: { type: 'string' } }, required: ['cliente', 'texto'] } };
 
 function pastasImoveis() {
   try { return fs.readdirSync(CATALOGO, { withFileTypes: true }).filter(d => d.isDirectory() && !d.name.startsWith('_')).map(d => d.name); } catch (e) { return []; }
@@ -171,6 +201,7 @@ async function executar(nome, entrada, ctx) {
     }
     if (nome === 'avisar_djhonata') {
       const txt = String(entrada.texto || '').trim(); if (!txt) return 'Aviso vazio: nada enviado.';
+      estado.avisos = [...(estado.avisos || []), { ts: Date.now(), jid: ctx.jid, nome: ctx.nome || '', telefone: ctx.telefone || '', texto: txt.slice(0, 600) }].slice(-30); salvarEstado();
       if (estado.teste && estado.teste.ativo) {   // no teste o "cliente" é o próprio Djhonata: o aviso fica só no CRM
         registrarEspelho(ctx.jid, { id: 'av' + Date.now().toString(36), autor: 'aviso', tipo: 'text', texto: '🔔 Aviso ao Djhonata (não enviado, modo teste): ' + txt, ts: Date.now() });
         log('teste: aviso ao Djhonata ficou só no CRM');
@@ -178,6 +209,26 @@ async function executar(nome, entrada, ctx) {
       }
       await enviarTexto(DONO + '@s.whatsapp.net', '🔔 ' + txt, 'aviso');
       return 'Aviso enviado ao Djhonata. Continue atendendo o cliente normalmente.';
+    }
+    if (nome === 'registrar_crm') {   // visitas: guardadas para os lembretes (também no modo teste, só para o número de teste)
+      const st = String(entrada.novoStatus || '').toLowerCase();
+      if (st === 'visita_marcada' && entrada.data) guardarVisita(ctx.jid, String(entrada.data), String(entrada.hora || ''), 'assistente');
+      if (['remarcar', 'sem_interesse', 'pausado', 'desistiu', 'negociacao'].includes(st)) cancelarVisita(ctx.jid, st);
+    }
+    if (nome === 'mandar_ao_cliente') {
+      if (!ctx.dono || (estado.teste && estado.teste.ativo)) return 'Só o Djhonata pode pedir isso.';
+      const achados = acharCliente(entrada.cliente);
+      if (!achados.length) return 'Não achei esse cliente nas conversas do WhatsApp da Euro. Pergunte ao Djhonata o número.';
+      if (achados.length > 1) return 'Mais de um cliente parecido: ' + achados.slice(0, 5).map(j => { const c = chatPublico(j); return `${c.nome || 'sem nome'} (${c.telefone ? formatoBR(c.telefone) : '?'})`; }).join(', ') + '. Pergunte ao Djhonata qual é.';
+      const alvo = achados[0], c = chatPublico(alvo);
+      liberado24h.add(alvo);
+      let feitos = [];
+      try { feitos = await enviarSaida(alvo, String(entrada.texto || ''), 'ia', { ordem: true }); } finally { liberado24h.delete(alvo); }
+      if (!feitos.length) return 'Não consegui mandar agora (WhatsApp desconectado ou limite de segurança). Avise o Djhonata.';
+      anotar(alvo, 'assistant', '(mensagem a pedido do Djhonata) ' + feitos.join('\n'));
+      if (entrada.combinado) { estado.combinados = estado.combinados || {}; estado.combinados[alvo] = [...(estado.combinados[alvo] || []), { ts: Date.now(), texto: String(entrada.combinado).slice(0, 400) }].slice(-6); salvarEstado(); }
+      log('ordem do Djhonata enviada para', c.telefone || alvo);
+      return `Enviado para ${c.nome || 'o cliente'} (${c.telefone ? formatoBR(c.telefone) : alvo}).`;
     }
     if (nome === 'registrar_crm' && estado.teste && estado.teste.ativo) { log('teste: registrar_crm ignorado', JSON.stringify(entrada).slice(0, 200)); return 'Registrado.'; }
     if (nome === 'registrar_crm') {
@@ -325,10 +376,11 @@ function podeResponder(jid, tel) {   // ligada para todos, ou modo teste e é o 
 }
 function ehNumeroTeste(jid, tel) { const t = tel8De(jid, tel); return t.length === 8 && ((estado.teste || {}).numeros || []).some(n => String(n).replace(/\D/g, '').slice(-8) === t); }
 function ehDono(jid) { return String(jid || '').startsWith(DONO); }
-async function guardaEnvio(jid, autor, texto, tipo) {
+async function guardaEnvio(jid, autor, texto, tipo, segundos) {
   if (autor !== 'ia' || ehDono(jid)) return;                 // você (painel/celular) e avisos ao dono não passam pelo freio
   const c = chats[jid] || {};
-  if (!c.ultCliente || Date.now() - c.ultCliente > 24 * 3600e3) throw new Error('bloqueado: o cliente não falou nas últimas 24h (a assistente não puxa conversa)');
+  // lembrete de visita marcada e ordem do Djhonata podem passar das 24h; o resto não puxa conversa
+  if (!liberado24h.has(jid) && (!c.ultCliente || Date.now() - c.ultCliente > 24 * 3600e3)) throw new Error('bloqueado: o cliente não falou nas últimas 24h (a assistente não puxa conversa)');
   for (;;) {
     const agora = Date.now();
     while (envios.length && agora - envios[0] > 3600e3) envios.shift();
@@ -342,22 +394,212 @@ async function guardaEnvio(jid, autor, texto, tipo) {
   if (tipo === 'text') {                                     // "digitando…" proporcional ao tamanho, como uma pessoa
     try { await sock.sendPresenceUpdate('composing', jid); } catch (e) { }
     await dorme(Math.min(9000, 900 + String(texto || '').length * acaso(25, 45)));
+  } else if (tipo === 'audio') {                             // "gravando áudio…" proporcional à duração
+    try { await sock.sendPresenceUpdate('recording', jid); } catch (e) { }
+    await dorme(Math.min(15000, 1500 + (Number(segundos) || 10) * acaso(300, 450)));
   }
   envios.push(Date.now()); ultimoEnvio = Date.now();
 }
+const liberado24h = new Set();   // conversas liberadas da regra das 24h durante um lembrete de visita ou uma ordem do Djhonata
 const quedas = [];
 function pausarPorSeguranca(motivo) {
   if (!estado.ativo) return;
   estado.ativo = false; salvarEstado(); log('ASSISTENTE PAUSADA POR SEGURANÇA:', motivo); emitir('estado', estadoPublico());
   setTimeout(() => { if (sock && conectado) sock.sendMessage(DONO + '@s.whatsapp.net', { text: `⚠️ Assistente pausada por segurança: ${motivo}. O WhatsApp continua conectado. Reative pelo CRM quando quiser.` }).then(lembrarEnvio).catch(() => { }); }, 3000);
 }
-async function enviarTexto(jid, texto, autor = 'ia') {
+async function enviarTexto(jid, texto, autor = 'ia', extra) {
   if (!sock || !conectado || !String(texto || '').trim()) return null;
   try { await guardaEnvio(jid, autor, texto, 'text'); } catch (e) { log('envio barrado', jid, e.message); return null; }
   const r = await sock.sendMessage(jid, { text: String(texto).trim() });
   const id = lembrarEnvio(r);
-  registrarEspelho(jid, { id, autor, tipo: 'text', texto: String(texto).trim(), ts: Date.now() });
+  registrarEspelho(jid, Object.assign({ id, autor, tipo: 'text', texto: String(texto).trim(), ts: Date.now() }, extra || {}));
   return id;
+}
+
+// ---------- voz (ElevenLabs, voz do Djhonata) e transcrição dos áudios ----------
+const voz = { feitas: 0, erros: 0, ultimoErro: '', modelo: '', formato: '' };
+const ouvido = { feitas: 0, erros: 0, ultimoErro: '', servico: '' };
+let FFMPEG = null;
+function temFfmpeg() { if (FFMPEG === null) { try { require('child_process').execFileSync('ffmpeg', ['-version'], { stdio: 'ignore', timeout: 5000 }); FFMPEG = true; } catch (e) { FFMPEG = false; } } return FFMPEG; }
+function paraOgg(buf) {   // mp3 -> ogg/opus (nota de voz), se o servidor tiver ffmpeg
+  if (!temFfmpeg()) return null;
+  try {
+    const r = require('child_process').spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', '-vn', '-c:a', 'libopus', '-b:a', '48k', '-ar', '48000', '-ac', '1', '-f', 'ogg', 'pipe:1'], { input: buf, maxBuffer: 50e6, timeout: 30000 });
+    return r.status === 0 && r.stdout && r.stdout.length > 100 ? r.stdout : null;
+  } catch (e) { return null; }
+}
+function duracaoOgg(buf) {   // duração pela última página do Ogg (granule a 48 kHz, menos o pre-skip do OpusHead)
+  try {
+    const i = buf.lastIndexOf(Buffer.from('OggS')); if (i < 0 || i + 14 > buf.length) return 0;
+    const gran = Number(buf.readBigUInt64LE(i + 6)); if (!isFinite(gran) || gran <= 0 || gran > 1e12) return 0;
+    const h = buf.indexOf(Buffer.from('OpusHead')); const pre = h >= 0 && h + 12 <= buf.length ? buf.readUInt16LE(h + 10) : 0;
+    return Math.max(1, Math.round((gran - pre) / 48000));
+  } catch (e) { return 0; }
+}
+const estimarSeg = (t) => Math.max(2, Math.round(String(t || '').length / 14));
+function ondaFake() { const a = new Uint8Array(64); let v = 35; for (let i = 0; i < 64; i++) { v = Math.max(6, Math.min(94, v + (Math.random() - 0.5) * 38)); a[i] = Math.round(v); } return a; }
+function rodarFfmpeg(args, entrada, limiteMs = 45000) {   // sem travar o servidor enquanto o ffmpeg trabalha
+  return new Promise((ok) => {
+    let p; try { p = require('child_process').spawn('ffmpeg', args); } catch (e) { return ok({ status: -1, stdout: Buffer.alloc(0), stderr: e.message }); }
+    const saida = [], erro = []; const t = setTimeout(() => { try { p.kill('SIGKILL'); } catch (e) { } }, limiteMs);
+    p.stdout.on('data', d => saida.push(d)); p.stderr.on('data', d => erro.push(d));
+    p.on('error', e => { clearTimeout(t); ok({ status: -1, stdout: Buffer.alloc(0), stderr: e.message }); });
+    p.on('close', (c) => { clearTimeout(t); ok({ status: c, stdout: Buffer.concat(saida), stderr: Buffer.concat(erro).toString() }); });
+    p.stdin.on('error', () => { }); if (entrada) p.stdin.end(entrada); else p.stdin.end();
+  });
+}
+async function ondaReal(ogg) {   // barrinhas da nota de voz a partir do som de verdade (64 valores de 0 a 100)
+  if (!temFfmpeg()) return ondaFake();
+  const r = await rodarFfmpeg(['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', '-ac', '1', '-ar', '8000', '-f', 's16le', 'pipe:1'], ogg, 20000);
+  if (r.status !== 0 || r.stdout.length < 256) return ondaFake();
+  const n = Math.floor(r.stdout.length / 2), passo = Math.max(1, Math.floor(n / 64)), v = [];
+  for (let b = 0; b < 64; b++) { let s = 0, k = 0; for (let i = b * passo; i < Math.min(n, (b + 1) * passo); i++) { s += Math.abs(r.stdout.readInt16LE(i * 2)); k++; } v.push(k ? s / k : 0); }
+  const max = Math.max(...v) || 1; return Uint8Array.from(v.map(x => Math.round(Math.max(3, Math.min(100, (x / max) * 100)))));
+}
+// ---------- fundo do áudio: um barulhinho de ambiente bem baixo atrás da voz, como o Djhonata faz nos áudios dele ----------
+// Ordem: arquivo dele na pasta _ponte (fundo-audio.mp3/.wav/.m4a/.ogg), senão um ambiente criado uma vez pela ElevenLabs
+// (efeitos sonoros), senão um ruído suave de sala feito aqui mesmo. FUNDO_AUDIO=0 no .env desliga; FUNDO_DB muda o volume.
+const FUNDO = ENV.FUNDO_AUDIO !== '0';
+const FUNDO_DB = Number(ENV.FUNDO_DB || -44);
+const FUNDO_PROMPT = ENV.FUNDO_PROMPT || 'Very quiet indoor room tone of a small office: soft air conditioner hum and faint distant street traffic through a closed window. No voices, no music, steady and constant.';
+let fundoGerando = null; const ganhoFundoCache = {};
+function arquivoFundo() {
+  try { const p = path.join(CATALOGO, '_ponte'); const f = fs.readdirSync(p).find(n => /^fundo-audio\.(mp3|wav|m4a|ogg|opus|aac)$/i.test(n)); if (f) return path.join(p, f); } catch (e) { }
+  const g = path.join(DADOS, 'fundo-gerado.mp3'); try { if (fs.statSync(g).size > 1000) return g; } catch (e) { }
+  return '';
+}
+function gerarFundo() {   // pede à ElevenLabs um som de ambiente (uma vez) e guarda no servidor
+  if (!fundoGerando) fundoGerando = (async () => {
+    const r = await fetch('https://api.elevenlabs.io/v1/sound-generation', { method: 'POST', headers: { 'xi-api-key': ELEVEN_KEY, 'content-type': 'application/json' }, body: JSON.stringify({ text: FUNDO_PROMPT, duration_seconds: 20, prompt_influence: 0.6 }) });
+    if (!r.ok) throw new Error('efeito sonoro ' + r.status + ' ' + (await r.text()).slice(0, 200));
+    const buf = Buffer.from(await r.arrayBuffer()); if (buf.length < 1000) throw new Error('efeito sonoro vazio');
+    fs.writeFileSync(path.join(DADOS, 'fundo-gerado.mp3'), buf); log('fundo do áudio criado pela ElevenLabs');
+  })().catch(e => { voz.fundoErro = e.message; estado.fundoFalhou = Date.now(); salvarEstado(); log('fundo do áudio:', e.message); }).finally(() => { fundoGerando = null; });
+  return fundoGerando;
+}
+async function ganhoFundo(f) {   // volume do fundo: mede uma vez e ajusta para FUNDO_DB
+  let st; try { st = fs.statSync(f); } catch (e) { return -27; }
+  const k = f + '|' + st.mtimeMs + '|' + FUNDO_DB;
+  if (ganhoFundoCache[k] === undefined) {
+    const r = await rodarFfmpeg(['-hide_banner', '-nostats', '-t', '20', '-i', f, '-af', 'volumedetect', '-f', 'null', '-'], null, 30000);
+    const m = /mean_volume:\s*(-?[\d.]+) dB/.exec(r.stderr || '');
+    ganhoFundoCache[k] = m ? Math.max(-60, Math.min(20, FUNDO_DB - Number(m[1]))) : -27;
+  }
+  return ganhoFundoCache[k];
+}
+async function comFundo(audio) {   // devolve ogg/opus com o fundo, ou null (sem ffmpeg ou deu erro: vai sem fundo)
+  if (!FUNDO || !temFfmpeg()) return null;
+  let f = arquivoFundo();
+  if (!f && ELEVEN_KEY && !(estado.fundoFalhou && Date.now() - estado.fundoFalhou < 6 * 3600e3)) { await gerarFundo(); f = arquivoFundo(); }
+  const args = ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0'];
+  let ganho;
+  if (f) { args.push('-stream_loop', '-1', '-i', f); ganho = await ganhoFundo(f); }
+  else { args.push('-f', 'lavfi', '-i', 'anoisesrc=color=brown:amplitude=0.6:sample_rate=48000,lowpass=f=700'); ganho = FUNDO_DB + 19; }   // esse ruído mede -19 dB
+  const graph = `[0:a]aformat=channel_layouts=mono,aresample=48000,adelay=300,apad=pad_len=19200[v];[1:a]aformat=channel_layouts=mono,aresample=48000,volume=${ganho.toFixed(1)}dB[bg];[v][bg]amix=inputs=2:duration=first:dropout_transition=0,volume=2,afade=t=in:d=0.25,areverse,afade=t=in:d=0.4,areverse[o]`;
+  args.push('-filter_complex', graph, '-map', '[o]', '-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', '48k', '-f', 'ogg', 'pipe:1');
+  const r = await rodarFfmpeg(args, audio);
+  if (r.status === 0 && r.stdout.length > 200 && r.stdout.slice(0, 4).toString('latin1') === 'OggS') { voz.fundo = f ? path.basename(f) : 'ruído de sala'; return r.stdout; }
+  log('fundo do áudio: ffmpeg falhou', String(r.stderr || '').slice(0, 200)); return null;
+}
+async function falar(texto) {
+  const limpo = String(texto || '').replace(/https?:\/\/\S+/g, '').replace(/[*_~`#>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 2500);
+  if (!limpo) throw new Error('texto vazio');
+  let erro = '';
+  for (const modelo of [...new Set([ELEVEN_MODELO, 'eleven_v3', 'eleven_multilingual_v2'])]) {
+    let trocarModelo = false;
+    for (const fmt of ['opus_48000_64', 'mp3_44100_128']) {
+      let r;
+      try { r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(ELEVEN_VOZ)}?output_format=${fmt}`, { method: 'POST', headers: { 'xi-api-key': ELEVEN_KEY, 'content-type': 'application/json' }, body: JSON.stringify({ text: limpo, model_id: modelo }) }); }
+      catch (e) { throw new Error('ElevenLabs fora do ar: ' + e.message); }
+      if (r.ok) {
+        const buf = Buffer.from(await r.arrayBuffer());
+        voz.modelo = modelo; voz.formato = fmt;
+        const misturado = await comFundo(buf).catch(() => null);   // voz + barulhinho de ambiente
+        if (misturado) return { buf: misturado, mime: 'audio/ogg; codecs=opus', ptt: true, ext: 'ogg', seg: duracaoOgg(misturado) || estimarSeg(limpo) };
+        if (buf.slice(0, 4).toString('latin1') === 'OggS') return { buf, mime: 'audio/ogg; codecs=opus', ptt: true, ext: 'ogg', seg: duracaoOgg(buf) || estimarSeg(limpo) };
+        const ogg = paraOgg(buf);
+        if (ogg) return { buf: ogg, mime: 'audio/ogg; codecs=opus', ptt: true, ext: 'ogg', seg: duracaoOgg(ogg) || estimarSeg(limpo) };
+        if (fmt.startsWith('mp3')) return { buf, mime: 'audio/mpeg', ptt: false, ext: 'mp3', seg: estimarSeg(limpo) };
+        continue;   // o opus veio num formato inesperado: tenta mp3
+      }
+      const t = (await r.text()).slice(0, 300); erro = 'ElevenLabs ' + r.status + ' ' + t;
+      if (r.status === 401 || r.status === 403 || r.status === 429 || /quota|credit|limit/i.test(t)) throw new Error(erro);
+      if (/output_format|format/i.test(t) && fmt.startsWith('opus')) continue;   // formato não liberado no plano: tenta mp3
+      trocarModelo = true; break;                                                // modelo não aceito: tenta o próximo
+    }
+    if (!trocarModelo) break;
+  }
+  throw new Error(erro || 'não consegui gerar o áudio');
+}
+async function enviarAudio(jid, fala, autor = 'ia', extra) {   // true = enviado; false = sem voz (manda texto); 'barrado' = freio de segurança
+  if (!ELEVEN_KEY || !sock || !conectado) return false;
+  let a;
+  try { a = await falar(fala); } catch (e) { voz.erros++; voz.ultimoErro = e.message; log('voz:', e.message); return false; }
+  try { await guardaEnvio(jid, autor, fala, 'audio', a.seg); } catch (e) { log('envio barrado', jid, e.message); return 'barrado'; }
+  const msg = { audio: a.buf, mimetype: a.mime, ptt: a.ptt, seconds: a.seg };
+  if (a.ptt) msg.waveform = await ondaReal(a.buf).catch(() => ondaFake());
+  const r = await sock.sendMessage(jid, msg);
+  const id = lembrarEnvio(r);
+  const nome = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${a.ext}`;
+  try { fs.writeFileSync(path.join(MIDIA, nome), a.buf); } catch (e) { }
+  registrarEspelho(jid, Object.assign({ id, autor, tipo: 'audio', texto: String(fala).trim(), arquivo: 'm/' + nome, voz: true, ts: Date.now() }, extra || {}));
+  voz.feitas++;
+  return true;
+}
+// Resposta da IA -> mensagens: texto (--- separa), [[tts:...]] vira áudio com a voz do Djhonata
+const RE_TTS = /\[\[\s*tts\s*:([\s\S]*?)\]\]|\[\[\s*tts\s*\]\]([\s\S]*?)\[\[\s*\/\s*tts\s*\]\]/gi;
+function partesResposta(t) {
+  const out = []; let i = 0, m; RE_TTS.lastIndex = 0;
+  while ((m = RE_TTS.exec(t))) {
+    const antes = t.slice(i, m.index); if (antes.trim()) out.push({ tipo: 'texto', t: antes });
+    const fala = String(m[1] || m[2] || '').trim(); if (fala) out.push({ tipo: 'audio', t: fala });
+    i = RE_TTS.lastIndex;
+  }
+  const resto = t.slice(i); if (resto.trim()) out.push({ tipo: 'texto', t: resto });
+  return out;
+}
+async function enviarSaida(jid, texto, autor = 'ia', extra) {   // devolve o que saiu (para a memória da conversa)
+  const feitos = [];
+  for (const p of partesResposta(String(texto || ''))) {
+    if (p.tipo === 'audio') {
+      const ok = await enviarAudio(jid, p.t, autor, extra);
+      if (ok === true) { feitos.push('[áudio] ' + p.t); continue; }
+      if (ok === 'barrado') continue;
+    }
+    for (const parte of p.t.split(/\n\s*---\s*\n/)) { const s = parte.replace(/^\s*---\s*$/gm, '').trim(); if (s && await enviarTexto(jid, s, autor, extra)) feitos.push(s); }
+  }
+  return feitos;
+}
+async function transcrever(buf, mime) {
+  if (!buf || !buf.length) return '';
+  const tipo = String(mime || 'audio/ogg').split(';')[0].trim() || 'audio/ogg';
+  const ext = EXT_MIME[tipo] || 'ogg';
+  let erro = '';
+  if (ELEVEN_KEY) {
+    for (const modelo of [...new Set([ENV.ELEVEN_STT || 'scribe_v2', 'scribe_v1'])]) {
+      try {
+        const fd = new FormData();
+        fd.append('model_id', modelo); fd.append('language_code', 'pt'); fd.append('tag_audio_events', 'false');
+        fd.append('file', new Blob([buf], { type: tipo }), 'audio.' + ext);
+        const r = await fetch('https://api.elevenlabs.io/v1/speech-to-text', { method: 'POST', headers: { 'xi-api-key': ELEVEN_KEY }, body: fd });
+        if (r.ok) { const j = await r.json(); ouvido.feitas++; ouvido.servico = 'ElevenLabs ' + modelo; return String(j.text || '').trim(); }
+        erro = 'ElevenLabs ' + r.status + ' ' + (await r.text()).slice(0, 300);
+        if (r.status === 401 || r.status === 403 || r.status === 429) break;
+      } catch (e) { erro = 'ElevenLabs ' + e.message; break; }
+    }
+  }
+  if (GEMINI_KEY) {
+    for (const modelo of [...new Set([ENV.GEMINI_MODELO || 'gemini-3-flash-preview', 'gemini-2.5-flash'])]) {
+      try {
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, { method: 'POST', headers: { 'x-goog-api-key': GEMINI_KEY, 'content-type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ inline_data: { mime_type: tipo, data: buf.toString('base64') } }, { text: 'Transcreva este áudio de WhatsApp em português do Brasil, palavra por palavra, sem comentários. Se não houver fala, responda vazio.' }] }] }) });
+        if (r.ok) { const j = await r.json(); const c = ((j.candidates || [])[0] || {}).content; ouvido.feitas++; ouvido.servico = 'Gemini ' + modelo; return ((c && c.parts) || []).map(p => p.text || '').join('').trim(); }
+        erro = 'Gemini ' + r.status + ' ' + (await r.text()).slice(0, 300);
+        if (r.status === 401 || r.status === 403 || r.status === 429) break;
+      } catch (e) { erro = 'Gemini ' + e.message; break; }
+    }
+  }
+  if (erro) { ouvido.erros++; ouvido.ultimoErro = erro; log('transcrição falhou:', erro); }
+  return '';
 }
 async function enviarArquivo(jid, caminho, legenda, autor = 'ia') {
   if (!sock || !conectado) return 'WhatsApp desconectado.';
@@ -433,6 +675,14 @@ async function aoReceber(m, tipoUpsert) {
       arquivo: midia ? midia.arquivo : undefined, nomeArquivo: x.documentMessage ? x.documentMessage.fileName : undefined,
       nome: m.key.fromMe ? undefined : (m.pushName || undefined), telefone: telefone || undefined, ts
     }, { silencioso: tipoUpsert === 'historico' });
+    // áudio recebido (do cliente ou mandado pelo celular): transcreve e mostra o texto no CRM
+    if (tipo === 'audio' && midia && midia.buf && (ELEVEN_KEY || GEMINI_KEY)) {
+      const seg = Number((x.audioMessage && x.audioMessage.seconds) || 0);
+      if (!seg || seg <= 600) {
+        m._transc = await transcrever(midia.buf, midia.mime).catch(() => '');
+        if (m._transc) registrarEspelho(jid, { id: m.key.id, autor: m.key.fromMe ? 'celular' : 'cliente', tipo: 'audio', texto: m._transc, transc: true, ts }, { silencioso: true });
+      }
+    }
   }
   if (cifrada) return;   // sem conteúdo ainda: quando o WhatsApp reenviar decifrada, ela passa por aqui de novo
   if (!recente) return; // mensagem antiga (sincronização do histórico): só espelho
@@ -442,7 +692,7 @@ async function aoReceber(m, tipoUpsert) {
     // escrito no celular ou em outro aparelho conectado
     if (/^#bot\b/i.test(texto.trim())) { delete estado.pausas[jid]; salvarEstado(); emitir('chat', chatPublico(jid)); log('assistente reativada em', jid); return; }
     if (/^#pausa\b/i.test(texto.trim())) { estado.pausas[jid] = Date.now() + 3650 * 864e5; salvarEstado(); emitir('chat', chatPublico(jid)); return; }
-    if (texto || tipo !== 'text') anotar(jid, 'assistant', `(Djhonata escreveu) ${texto || '[' + tipo + ']'}`);
+    if (texto || tipo !== 'text') anotar(jid, 'assistant', `(Djhonata escreveu) ${texto || (m._transc ? '[mandou um áudio] ' + m._transc : '[' + tipo + ']')}`);
     if (PAUSA_HORAS > 0) { estado.pausas[jid] = Date.now() + PAUSA_HORAS * 3600e3; salvarEstado(); filas.delete(jid); emitir('chat', chatPublico(jid)); }
     return;
   }
@@ -453,7 +703,8 @@ async function aoReceber(m, tipoUpsert) {
 
   let entrada = texto;
   let imagem = null;
-  if (x.audioMessage) entrada = (entrada ? entrada + '\n' : '') + '[o cliente mandou um áudio]';
+  const quemFala = dono && !(estado.teste && estado.teste.ativo) ? 'do Djhonata' : 'do cliente';
+  if (x.audioMessage) entrada = (entrada ? entrada + '\n' : '') + (m._transc ? `[áudio ${quemFala}, transcrito]: "${m._transc}"` : `[o ${quemFala === 'do cliente' ? 'cliente' : 'Djhonata'} mandou um áudio que não deu para transcrever]`);
   if (x.imageMessage) {
     const buf = m._midia && m._midia.buf;
     if (buf && buf.length < 4.5e6) imagem = { data: buf.toString('base64'), mime: m._midia.mime || 'image/jpeg' };
@@ -495,7 +746,7 @@ async function processar(jid) {
 }
 setInterval(() => { if (dentroDoHorario()) for (const [jid, f] of filas) { if (!f.timer) processar(jid).catch(() => { }); } }, 60e3);
 
-function montarMensagens(jid, imagens) {
+function montarMensagens(jid, imagens, rotina) {
   const h = lerConv(jid).slice(-40);
   const msgs = [];
   for (const it of h) {
@@ -504,18 +755,22 @@ function montarMensagens(jid, imagens) {
     else msgs.push({ role, content: [{ type: 'text', text: it.texto }] });
   }
   while (msgs.length && msgs[0].role !== 'user') msgs.shift();
+  if (rotina) {   // rotina automática (lembrete/retomada): instrução do sistema no fim, como última "mensagem"
+    if (msgs.length && msgs[msgs.length - 1].role === 'user') msgs[msgs.length - 1].content[0].text += '\n\n' + rotina;
+    else msgs.push({ role: 'user', content: [{ type: 'text', text: rotina }] });
+  }
   if (!msgs.length || msgs[msgs.length - 1].role !== 'user') msgs.push({ role: 'user', content: [{ type: 'text', text: '(sem mensagem nova)' }] });
   const ult = msgs[msgs.length - 1];
   for (const im of imagens.slice(-3)) ult.content.unshift({ type: 'image', source: { type: 'base64', media_type: im.mime, data: im.data } });
   return msgs;
 }
 
-async function claude(system, messages) {
+async function claude(system, messages, ferramentas = FERRAMENTAS) {
   for (let tentativa = 0; tentativa < 3; tentativa++) {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: MODELO, max_tokens: 1500, system, tools: FERRAMENTAS, messages })
+      body: JSON.stringify({ model: MODELO, max_tokens: 1500, system, tools: ferramentas, messages })
     });
     if (r.ok) { const j = await r.json(); if (j.usage) registrarUso(j.usage); return j; }
     const corpo = await r.text();
@@ -537,20 +792,21 @@ function registrarUso(u) {
 async function responder(f) {
   const ctx = { jid: f.jid, telefone: f.telefone, nome: f.nome, dono: f.dono, notas: [] };
   const system = sistema(ctx);
-  const messages = montarMensagens(f.jid, f.imagens);
-  try { await sock.sendPresenceUpdate('composing', f.jid); } catch (e) { }
+  const messages = montarMensagens(f.jid, f.imagens, f.rotina);
+  const ferramentas = f.dono && !(estado.teste && estado.teste.ativo) ? [...FERRAMENTAS, FERRAMENTA_DONO] : FERRAMENTAS;
+  if (!f.rotina) { try { await sock.sendPresenceUpdate('composing', f.jid); } catch (e) { } }
   const saida = [];
   for (let volta = 0; volta < 8; volta++) {
-    const resp = await claude(system, messages);
+    const resp = await claude(system, messages, ferramentas);
     messages.push({ role: 'assistant', content: resp.content });
     const resultados = [];
     for (const bloco of resp.content || []) {
       if (bloco.type === 'text') {
         const t = bloco.text.trim();
-        if (!t || /^NO_REPLY\b/.test(t)) continue;
+        if (!t || /^NO_REPLY\b/.test(t) || /^nada a fazer\W*$/i.test(t)) continue;
         // o Djhonata pode ter desligado a assistente nessa conversa enquanto ela pensava
         if (!podeResponder(f.jid, f.telefone)) { log('resposta descartada (pausada no meio)', f.jid); return; }
-        for (const parte of t.split(/\n\s*---\s*\n/)) { if (parte.trim()) { await enviarTexto(f.jid, parte, 'ia'); saida.push(parte.trim()); } }
+        saida.push(...await enviarSaida(f.jid, t, 'ia', f.extra));
       } else if (bloco.type === 'tool_use') {
         const r = await executar(bloco.name, bloco.input || {}, ctx);
         if (bloco.name === 'enviar_arquivo' && ctx.notas.length) saida.push(ctx.notas.pop());
@@ -565,6 +821,155 @@ async function responder(f) {
   log('respondido', f.telefone || f.jid, saida.length, 'mensagens');
 }
 
+// ---------- rotinas do OpenClaw: lembretes de visita e retomada ----------
+// Lembrete 1: ~24h antes (8h–21h30). Lembrete 2: no dia, 2–3h antes. Retomada: uma vez, 3h depois que o cliente
+// parou de responder (2h se ela mandou a agenda), dentro das 24h do cliente. Tudo passa pelos freios de envio.
+const rotinas = { rodando: false, dia: '', lembretes: 0, retomadas: 0, ultima: '' };
+function dentroRotina() { const d = agoraSP(); const x = d.getHours() * 60 + d.getMinutes(); return x >= minutos(ROT_INI) && x <= minutos(ROT_FIM); }
+function tel8Chat(jid) { return String((chats[jid] || {}).telefone || pnDe(jid).split('@')[0] || '').replace(/\D/g, '').slice(-8); }
+function jidPorTel8(t8) { let melhor = '', ult = -1; for (const k of Object.keys(chats)) { if (jidValido(k) && tel8Chat(k) === t8 && (chats[k].ult || 0) > ult) { melhor = k; ult = chats[k].ult || 0; } } return melhor; }
+function quandoMs(q) {   // 'AAAA-MM-DDTHH:MM' em Joinville (UTC-3) -> ms; sem hora = 9h
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{1,2}):(\d{2}))?/.exec(String(q || '')); if (!m) return 0;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], (m[4] ? +m[4] : 9) + 3, m[5] ? +m[5] : 0);
+}
+function descreverQuando(q) {
+  const [d, h] = String(q || '').split('T');
+  const ymd = (x) => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
+  const hoje = agoraSP(), am = new Date(hoje.getTime() + 864e5);
+  const dt = new Date(d + 'T12:00:00Z');
+  const sem = isNaN(dt) ? d : dt.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', timeZone: 'UTC' });
+  const rel = d === ymd(hoje) ? 'hoje' : d === ymd(am) ? 'amanhã' : '';
+  return (rel ? `${rel} (${sem})` : sem) + (h ? ' às ' + h : ' (horário não informado)');
+}
+function guardarVisita(jid, data, hora, origem) {
+  if (!jid || !/^\d{4}-\d{2}-\d{2}$/.test(data || '')) return;
+  const h = /^(\d{1,2}):(\d{2})/.exec(hora || ''); const q = data + (h ? 'T' + h[1].padStart(2, '0') + ':' + h[2] : '');
+  estado.visitas = estado.visitas || {};
+  const v = estado.visitas[jid];
+  if (v && v.q === q) { if (origem === 'crm' && !v.crm) { v.crm = true; salvarEstado(); } return; }
+  estado.visitas[jid] = { q, origem, criado: Date.now(), enviados: {}, crm: origem === 'crm' };
+  salvarEstado(); log('visita guardada para lembretes', jid, q, origem);
+}
+function cancelarVisita(jid, motivo) { if (estado.visitas && estado.visitas[jid]) { delete estado.visitas[jid]; salvarEstado(); log('lembretes cancelados', jid, motivo || ''); } }
+function atualizarVisitasCrm(mapa) {   // o CRM manda {telefone8: 'AAAA-MM-DD HH:MM'} de quem está em "Visita marcada"
+  estado.visitas = estado.visitas || {};
+  const vistos = new Set();
+  for (const [t, q] of Object.entries(mapa || {})) {
+    const t8 = String(t).replace(/\D/g, '').slice(-8); if (t8.length !== 8) continue;
+    const jid = jidPorTel8(t8); if (!jid) continue;   // sem conversa neste WhatsApp: sem lembrete (não puxa conversa nova)
+    const [data, hora] = String(q || '').split(/[T ]/);
+    guardarVisita(jid, data, hora, 'crm'); vistos.add(jid);
+  }
+  for (const [jid, v] of Object.entries(estado.visitas)) {
+    if (vistos.has(jid)) continue;
+    const t8 = tel8Chat(jid), st = t8 ? (estado.crmStatus || {})[t8] : '';
+    if (v.crm || (st && st !== 'visita' && Date.now() - (v.criado || 0) > 20 * 60e3)) { delete estado.visitas[jid]; log('lembretes cancelados (CRM)', jid); }
+  }
+  salvarEstado();
+}
+function acharCliente(busca) {   // nome ou telefone -> conversas (sem repetir o mesmo número)
+  const b = String(busca || '').trim(), dig = b.replace(/\D/g, '');
+  let cand = [];
+  if (dig.length >= 8) { const t8 = dig.slice(-8); cand = Object.keys(chats).filter(j => jidValido(j) && tel8Chat(j) === t8); }
+  else if (b.length >= 2) {
+    const q = semAcento(b);
+    const pont = (j) => { const n = semAcento(chatPublico(j).nome || ''); if (!n) return 0; if (n === q) return 3; if (n.split(/\s+/).includes(q) || n.startsWith(q + ' ')) return 2; return n.includes(q) ? 1 : 0; };
+    const lista = Object.keys(chats).filter(j => jidValido(j) && !ehDono(pnDe(j) || j) && tel8Chat(j) !== String(DONO).slice(-8)).map(j => [j, pont(j)]).filter(x => x[1] > 0);
+    const melhor = Math.max(0, ...lista.map(x => x[1])); cand = lista.filter(x => x[1] === melhor).map(x => x[0]);
+  }
+  const porTel = new Map();
+  for (const j of cand.sort((a, b) => (chats[b].ult || 0) - (chats[a].ult || 0))) { const k = tel8Chat(j) || j; if (!porTel.has(k)) porTel.set(k, j); }
+  return [...porTel.values()];
+}
+function rotinaPermitida(jid, tipo) {
+  if (!jidValido(jid) || ehDono(pnDe(jid) || jid)) return false;
+  const c = chats[jid] || {}, t8 = tel8Chat(jid);
+  if (!podeResponder(jid, c.telefone)) return false;           // assistente ligada (ou teste com este número) e não pausada nesta conversa
+  if (c.arquivado || filas.has(jid) || ocupado.has(jid)) return false;
+  if (t8 && t8 === String(DONO).slice(-8) && !(estado.teste && estado.teste.ativo)) return false;
+  if (t8 && [...lerBloqueados()].some(n => n.endsWith(t8))) return false;
+  if (t8 && (estado.equipe || []).includes(t8)) return false;
+  const st = t8 ? (estado.crmStatus || {})[t8] || '' : '';
+  if (['negociacao', 'fechado', 'pausado', 'perdido', 'desistiu', 'corretor', 'corretor_euro', 'construtor', 'pessoal'].includes(st)) return false;
+  if (tipo === 'retomada' && st === 'visita') return false;
+  const cl = (estado.classes || {})[jid]; if (cl && ['comprou', 'corretor', 'construtor', 'pessoal'].includes(cl.cat)) return false;
+  if (etiquetasDe(jid).some(e => /pausad|perdid|desist|fechad|finaliz|comprou|corretor|constru|capta|pessoa|negocia/.test(semAcento(e.nome)))) return false;
+  return true;
+}
+function conversaParada(jid) {   // última mensagem (sem contar avisos internos) foi da assistente e o cliente não respondeu
+  const l = lerEsp(jid); let ult = null, ultCli = 0, agenda = false;
+  for (let i = l.length - 1; i >= 0; i--) {
+    const m = l[i];
+    if (m.autor === 'cliente') { ultCli = m.ts; break; }
+    if (m.autor === 'aviso') continue;
+    if (!ult) ult = m;
+    if (m.autor === 'ia' && /make\.com|marque seu hor[aá]rio/i.test(m.texto || '')) agenda = true;
+  }
+  return ult && ult.autor === 'ia' && ultCli && ult.ts > ultCli ? { ultIa: ult.ts, ultCli, agenda, jaRetomou: !!ult.rotina } : null;
+}
+async function verificarRotinas() {
+  if (!ROTINAS || rotinas.rodando || !sock || !conectado || !API_KEY) return;
+  const dia = agoraSP().toISOString().slice(0, 10); if (rotinas.dia !== dia) Object.assign(rotinas, { dia, lembretes: 0, retomadas: 0 });
+  rotinas.rodando = true;
+  try {
+    const agora = Date.now(), fila = [], janela = dentroRotina();
+    for (const [jid, v] of Object.entries(estado.visitas || {})) {
+      const T = quandoMs(v.q); if (!T) continue;
+      if (agora > T + 3 * 3600e3) { delete estado.visitas[jid]; salvarEstado(); continue; }
+      if (!janela || !rotinaPermitida(jid, 'lembrete')) continue;
+      v.enviados = v.enviados || {};
+      if (!v.enviados.l24 && agora >= T - 24 * 3600e3 && agora <= T - 12 * 3600e3 && (v.criado || 0) <= T - 22 * 3600e3) fila.push({ jid, tipo: 'l24', v });
+      else if (v.q.includes('T') && !v.enviados.l2 && agora >= T - 3 * 3600e3 && agora <= T - 50 * 60e3) fila.push({ jid, tipo: 'l2', v });
+    }
+    if (janela) {
+      for (const jid of Object.keys(chats)) {
+        const c = chats[jid];
+        if (!['ia', 'aviso'].includes(c.ultAutor) || !c.ult || agora - c.ult > 22 * 3600e3 || agora - c.ult < 2 * 3600e3) continue;
+        if ((estado.visitas || {})[jid]) continue;            // tem visita marcada: quem cuida são os lembretes
+        const p = conversaParada(jid); if (!p || p.jaRetomou) continue;
+        if (agora - p.ultCli > 22 * 3600e3) continue;          // fora das 24h do cliente: não puxa conversa
+        if (agora - p.ultIa < (p.agenda ? 2 : 3) * 3600e3) continue;
+        const r = (estado.retomadas || {})[jid]; if (r && r.base === p.ultCli) continue;   // já retomou desde a última mensagem dele
+        if (!rotinaPermitida(jid, 'retomada')) continue;
+        fila.push({ jid, tipo: 'retomada', p });
+      }
+    }
+    for (const it of fila.slice(0, 15)) {
+      if (!sock || !conectado) break;
+      if (filas.has(it.jid) || ocupado.has(it.jid)) continue;
+      await rodarRotina(it);
+      await dorme(acaso(20e3, 60e3));
+    }
+  } catch (e) { log('rotinas', e.message); }
+  finally { rotinas.rodando = false; }
+}
+async function rodarRotina(it) {
+  const jid = it.jid, c = chats[jid] || {};
+  let instr, extra;
+  if (it.tipo === 'retomada') {
+    const h = Math.max(2, Math.round((Date.now() - it.p.ultIa) / 3600e3));
+    instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Retomada: o cliente não responde desde a sua última mensagem (há umas ${h} horas). Releia a conversa. Se fizer sentido, mande UMA mensagem curta e natural retomando de onde parou (uma pergunta simples que convide a responder), sem repetir o que já mandou e sem pressionar.${it.p.agenda ? ' Você já mandou a agenda: se ele combinou dia ou horário e ainda não mandou o comprovante, lembre com leveza de marcar pelo link e mandar o comprovante aqui.' : ''} Responda só NO_REPLY se: ele disse que não quer agora ou desistiu; a conversa terminou naturalmente (agradeceu e se despediu); ele disse que ia ver e retornar em outro dia; ou não há o que retomar. É a única retomada: não prometa mandar outras mensagens.`;
+    extra = { rotina: 'retomada' };
+    estado.retomadas = estado.retomadas || {}; estado.retomadas[jid] = { base: it.p.ultCli, em: Date.now() };
+    for (const [k, r] of Object.entries(estado.retomadas)) if (Date.now() - (r.em || 0) > 7 * 864e5) delete estado.retomadas[k];
+    salvarEstado();
+  } else {
+    instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Lembrete de visita (${it.tipo === 'l24' ? '1 de 2, cerca de 24 horas antes' : '2 de 2, no dia, algumas horas antes'}). A visita está marcada para ${descreverQuando(it.v.q)}, no escritório da Euro (Rua Dona Francisca, 1222 - Saguaçu). Releia a conversa. Se o cliente cancelou, desmarcou, disse que não vai ou pediu para remarcar, NÃO mande lembrete: use registrar_crm com novoStatus remarcar e responda NO_REPLY. Se não, mande um lembrete curto e simpático com o dia, o horário e o endereço, sem valores, sem material novo e sem a agenda. Pode pedir para ele confirmar.`;
+    extra = { rotina: 'lembrete' };
+    it.v.enviados = it.v.enviados || {}; it.v.enviados[it.tipo] = Date.now(); salvarEstado();
+    liberado24h.add(jid);
+  }
+  ocupado.add(jid); emitir('digitando', { jid, on: true });
+  try {
+    await responder({ jid, telefone: c.telefone || '', nome: c.nome || '', dono: false, imagens: [], rotina: instr, extra });
+    if (it.tipo === 'retomada') rotinas.retomadas++; else rotinas.lembretes++;
+    rotinas.ultima = new Date().toISOString();
+    log('rotina', it.tipo, c.telefone || jid);
+  } catch (e) { log('rotina com erro', it.tipo, e.message); }
+  finally { liberado24h.delete(jid); ocupado.delete(jid); emitir('digitando', { jid, on: false }); }
+}
+setInterval(() => verificarRotinas().catch(e => log('rotinas', e.message)), 2 * 60e3);
+
 function estadoPublico() {
   const uso = lerJson(path.join(DADOS, 'uso.json'), {});
   const hoje = uso[agoraSP().toISOString().slice(0, 10)] || null;
@@ -572,7 +977,10 @@ function estadoPublico() {
     conectado, numero: meuNumero, qr: !!ultimoQR, whatsDesligado: !!estado.whatsDesligado, iniciando,
     assistente: !!estado.ativo, horario: `${HORA_INI}–${HORA_FIM}`, dentroDoHorario: dentroDoHorario(),
     regras: ARQS_REGRAS.map(f => ({ arquivo: f, ok: !!lerTexto(f) })), imoveis: pastasImoveis().length, bloqueados: lerBloqueados().size,
-    usoHoje: hoje, modelo: MODELO, teste: estado.teste && estado.teste.ativo ? (estado.teste.numeros || []) : []
+    usoHoje: hoje, modelo: MODELO, teste: estado.teste && estado.teste.ativo ? (estado.teste.numeros || []) : [],
+    voz: !!ELEVEN_KEY, transcricao: ELEVEN_KEY ? 'ElevenLabs' : GEMINI_KEY ? 'Gemini' : '',
+    audio: { transcritos: ouvido.feitas, falados: voz.feitas, erros: ouvido.erros + voz.erros, ultimoErro: (voz.ultimoErro || ouvido.ultimoErro || '').slice(0, 160) },
+    rotinas: ROTINAS ? { visitas: Object.keys(estado.visitas || {}).length, lembretesHoje: rotinas.lembretes, retomadasHoje: rotinas.retomadas, horario: `${ROT_INI}–${ROT_FIM}` } : null
   };
 }
 
@@ -1164,6 +1572,10 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           emitir('estado', estadoPublico());
         }
         else if (ac === 'crm_status') { let m = {}; try { m = JSON.parse(b.texto || '{}'); } catch (e) { } atualizarStatusCrm(m).catch(e => log('crm_status', e.message)); return json(res, { ok: true }); }
+        else if (ac === 'crm_visitas') { let m = {}; try { m = JSON.parse(b.texto || '{}'); } catch (e) { } atualizarVisitasCrm(m); return json(res, { ok: true, visitas: Object.keys(estado.visitas || {}).length }); }
+        else if (ac === 'rotinas') {   // o que o sistema sabe das visitas e das rotinas (para conferir)
+          return json(res, { rotinas, visitas: Object.entries(estado.visitas || {}).map(([j, v]) => ({ nome: chatPublico(j).nome, telefone: chatPublico(j).telefone, quando: descreverQuando(v.q), origem: v.origem, enviados: v.enviados })), retomadas: Object.keys(estado.retomadas || {}).length, voz, ouvido, ffmpeg: temFfmpeg() });
+        }
         else if (ac === 'sincronizar') {
           if (!sock || !conectado) return json(res, { erro: 'WhatsApp desconectado' }, 409);
           for (const ini of [false, true]) { try { await sock.resyncAppState(['critical_block', 'critical_unblock_low', 'regular_high', 'regular_low', 'regular'], ini); } catch (e) { log('sincronizar', ini, e.message); } }
@@ -1184,7 +1596,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
         const out = { estado: estadoPublico(), classif, etiquetando, etiquetas: Object.entries(etq.labels).filter(([, l]) => !l.apagada).map(([id, l]) => ({ id, nome: l.nome, cor: l.cor })), totais: { ativos: todos.filter(c => !c.arquivado).length, arquivados: todos.filter(c => c.arquivado).length },
           chats: todos.filter(c => verArq ? c.arquivado : !c.arquivado).sort((a, b) => b.ult - a.ult).slice(0, 400) };
         if (b._resultado) out.resultado = b._resultado;
-        if (jidValido(jid)) { out.chat = chatPublico(jid); out.msgs = lerEsp(jid).slice(-60).map(m => ({ id: m.id, autor: m.autor, tipo: m.tipo, texto: m.texto, ts: m.ts })); }
+        if (jidValido(jid)) { out.chat = chatPublico(jid); out.msgs = lerEsp(jid).slice(-60).map(m => ({ id: m.id, autor: m.autor, tipo: m.tipo, texto: m.texto, ts: m.ts, rotina: m.rotina || undefined, transc: m.transc || undefined, voz: m.voz || undefined, ordem: m.ordem || undefined })); }
         if (ultimoQR && !conectado) { try { out.qr = await QRCode.toString(ultimoQR, { type: 'svg', margin: 1, width: 240 }); } catch (e) { } }
         return json(res, out);
       }
