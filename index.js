@@ -542,7 +542,7 @@ async function iniciarWhatsApp() {
       if (sock !== s) return;
       if (u.qr) { ultimoQR = u.qr; log('QR novo disponível no painel'); emitir('estado', estadoPublico()); }
       if (u.qr || u.connection === 'open') falhasSeguidas = 0;
-      if (u.connection === 'open' && !global.__sincronizou) { global.__sincronizou = true; setTimeout(() => { if (sock === s) s.resyncAppState(['critical_block', 'critical_unblock_low', 'regular_high', 'regular_low', 'regular'], true).then(() => log('etiquetas e contatos sincronizados', Object.keys(etq.labels).length, 'etiquetas')).catch(e => log('sincronizar', e.message)); }, 20e3); }
+      if (u.connection === 'open' && !global.__sincronizou) { global.__sincronizou = true; setTimeout(() => { if (sock === s) s.resyncAppState(['critical_block', 'critical_unblock_low', 'regular_high', 'regular_low', 'regular'], true).then(() => { log('etiquetas e contatos sincronizados', Object.keys(etq.labels).length, 'etiquetas'); return lerEquipe(); }).catch(e => log('sincronizar', e.message)); }, 20e3); }
       if (u.connection === 'open') { conectadoDesde = Date.now(); conectado = true; ultimoQR = null; meuNumero = (s.user && s.user.id || '').split(':')[0]; log('WhatsApp conectado', meuNumero); emitir('estado', estadoPublico()); }
       if (u.connection === 'close') {
         conectado = false; ultimoQR = null;
@@ -585,7 +585,7 @@ async function iniciarWhatsApp() {
         const c = CATS_ETQ.find(x => x.re.test(nome));
         const pn = pnDe(a.chatId); const tel = (chats[a.chatId] || {}).telefone || (pn.endsWith('@s.whatsapp.net') ? pn.split('@')[0] : '');
         if (c && tel) {
-          const NS = { atendimento: 'atendimento', novo: 'remarcar', visita: 'visita_marcada', negociacao: 'negociacao', fechado: 'fechado', pausado: 'pausado', perdido: 'perdido', desistiu: 'desistiu', corretor: 'corretor', construtor: 'construtor', pessoal: 'pessoal' };
+          const NS = { corretor_euro: 'corretor', atendimento: 'atendimento', novo: 'remarcar', visita: 'visita_marcada', negociacao: 'negociacao', fechado: 'fechado', pausado: 'pausado', perdido: 'perdido', desistiu: 'desistiu', corretor: 'corretor', construtor: 'construtor', pessoal: 'pessoal' };
           fs.appendFileSync(path.join(DADOS, 'eventos-crm.jsonl'), JSON.stringify({ rid: 'et' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), telefone: formatoBR(tel), nome: (chats[a.chatId] || {}).nome || '', novoStatus: NS[c.cat], resultado: 'Etiqueta "' + (etq.labels[String(a.labelId)] || {}).nome + '" colocada no WhatsApp' }) + '\n');
           estado.crmStatus = estado.crmStatus || {}; estado.crmStatus[String(tel).replace(/\D/g, '').slice(-8)] = c.cat; salvarEstado();
           setTimeout(() => garantirEtiquetas().then(ids => definirEtiqueta(a.chatId, c.cat, ids)).catch(() => { }), 3000);   // tira a etiqueta de status antiga
@@ -685,7 +685,8 @@ async function classificarTudo(compradores, refazer, crm = {}) {
       const etqs = etiquetasDe(jid).map(e => String(e.nome || '').toLowerCase());
       const uc = ultCli(jid); const recente = uc && agora - uc < SETE;
       const s = t.length === 8 ? st[t] : '';
-      if (etqs.some(n => /import/.test(n))) marca(jid, 'cliente', 'etiqueta Importante');
+      if (t.length === 8 && (estado.equipe || []).includes(t)) marca(jid, 'corretor', 'corretor da Euro (grupo)');
+      else if (etqs.some(n => /import/.test(n))) marca(jid, 'cliente', 'etiqueta Importante');
       else if (etqs.some(n => /finaliz|pago|comprou|vendid/.test(n))) marca(jid, 'comprou', 'etiqueta ' + etqs.find(n => /finaliz|pago|comprou|vendid/.test(n)));
       else if (etqs.some(n => /capta|constru/.test(n))) marca(jid, 'construtor', 'etiqueta ' + etqs.find(n => /capta|constru/.test(n)));
       else if (t.length === 8 && comp.has(t)) marca(jid, 'comprou', 'comprador no CRM');
@@ -728,12 +729,18 @@ const CATS_ETQ = [   // espelho das colunas do CRM (status do cliente)
   { cat: 'pausado', nome: 'Pausado', re: /pausad/, cor: 9 },
   { cat: 'perdido', nome: 'Perdido', re: /perdid/, cor: 11 },
   { cat: 'desistiu', nome: 'Desistiu / comprou com outro', re: /desist/, cor: 13 },
-  { cat: 'corretor', nome: 'Corretores', re: /corret/, cor: 10 },
+  { cat: 'corretor_euro', nome: 'Corretor Euro', re: /corretor euro|corretores euro|equipe/, cor: 6 },
+  { cat: 'corretor', nome: 'Corretor parceiro', re: /parceir/, cor: 10 },
   { cat: 'construtor', nome: 'Construtores', re: /constru|capta/, cor: 12 },
   { cat: 'pessoal', nome: 'Pessoais', re: /pessoa|famil|amig/, cor: 15 }
 ];
 async function garantirEtiquetas() {
   const ids = {};
+  for (const [id, l] of Object.entries(etq.labels)) {   // a etiqueta "Corretor" criada antes pela ponte vira "Corretor parceiro"
+    if (Number(id) >= 90 && !l.apagada && String(l.nome || '').trim().toLowerCase() === 'corretor' && typeof sock.addLabel === 'function') {
+      try { await sock.addLabel('', { id, name: 'Corretor parceiro', color: l.cor || 10, deleted: false }); l.nome = 'Corretor parceiro'; salvarEtq(); log('etiqueta renomeada: Corretor -> Corretor parceiro'); } catch (e) { log('renomear etiqueta', e.message); }
+    }
+  }
   for (const c of CATS_ETQ) {
     const ach = Object.entries(etq.labels).find(([, l]) => !l.apagada && c.re.test(String(l.nome || '').toLowerCase()));
     if (ach) { ids[c.cat] = ach[0]; continue; }
@@ -745,9 +752,28 @@ async function garantirEtiquetas() {
   }
   return ids;
 }
+async function lerEquipe() {     // participantes do grupo "Euro Imobiliária" = corretores da casa
+  if (!sock || !conectado) return;
+  try {
+    const grupos = await sock.groupFetchAllParticipating();
+    const g = Object.values(grupos || {}).find(x => /euro\s*imobili/i.test(String(x.subject || '')));
+    if (!g) { log('grupo Euro Imobiliária não encontrado'); return; }
+    const tels = [];
+    for (const p of g.participants || []) {
+      let pn = [p.phoneNumber, p.jid, p.id].find(x => String(x || '').endsWith('@s.whatsapp.net')) || '';
+      if (!pn && String(p.id || '').endsWith('@lid')) pn = lidPn[p.id] || '';
+      if (p.id && String(p.id).endsWith('@lid') && pn) ligarLid(p.id, pn);
+      const t = String(pn).split('@')[0].replace(/\D/g, '').slice(-8);
+      if (t.length === 8 && !ehDono(pn)) tels.push(t);
+    }
+    estado.equipe = [...new Set(tels)]; salvarEstado();
+    log('equipe Euro:', estado.equipe.length, 'corretores no grupo', g.subject);
+  } catch (e) { log('ler equipe', e.message); }
+}
 function catEtiqueta(jid) {    // status do CRM manda; sem CRM, usa a organização (comprou -> fechado, cliente -> atendimento)
   const t = String((chats[jid] || {}).telefone || pnDe(jid).split('@')[0] || '').replace(/\D/g, '').slice(-8);
   const st = (estado.crmStatus || {})[t] || '';
+  if (t && (estado.equipe || []).includes(t)) return 'corretor_euro';
   if (CATS_ETQ.some(c => c.cat === st)) return st;
   const cl = (estado.classes || {})[jid]; const cat = cl ? cl.cat : '';
   return { comprou: 'fechado', cliente: 'atendimento', duvida: 'atendimento', perdido: 'perdido', corretor: 'corretor', construtor: 'construtor', pessoal: 'pessoal' }[cat] || '';
@@ -772,6 +798,7 @@ const etiquetando = { rodando: false, feitos: 0, total: 0 };
 const meusRotulos = new Map();   // trocas de etiqueta feitas pela ponte (para não confundir com as feitas no celular)
 async function etiquetarTudo() {
   if (etiquetando.rodando || !sock || !conectado) return;
+  await lerEquipe();
   const ids = await garantirEtiquetas();
   const lista = Object.keys(chats).filter(j => catEtiqueta(j));
   Object.assign(etiquetando, { rodando: true, feitos: 0, total: lista.length });
