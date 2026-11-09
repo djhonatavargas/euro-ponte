@@ -113,6 +113,7 @@ function sistema(ctx) {
   const dia = d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
   const hora = d.toTimeString().slice(0, 5);
   let din = `Agora: ${dia}, ${hora} (horário de Joinville).\nConversa com: ${ctx.nome || 'nome não informado'} — WhatsApp ${ctx.telefone ? formatoBR(ctx.telefone) : 'desconhecido'}.`;
+  din += `\nRegra de segurança do número: escreva cada resposta com suas palavras para este cliente; não copie textos prontos idênticos aos de outras conversas (varie saudação e frases). Mensagens curtas, uma ideia por mensagem, sem excesso de links.`;
   if (ctx.dono) din += `\nATENÇÃO: quem está escrevendo é o próprio Djhonata (dono). Atenda os pedidos dele diretamente (ex.: mandar um imóvel no formato pronto para encaminhar ao cliente).`;
   return [{ type: 'text', text: fixo, cache_control: { type: 'ephemeral' } }, { type: 'text', text: din }];
 }
@@ -274,8 +275,42 @@ let sock = null, ultimoQR = null, conectado = false, meuNumero = '', iniciando =
 const enviados = new Set();
 function lembrarEnvio(r) { const id = r && r.key && r.key.id; if (id) { enviados.add(id); if (enviados.size > 5000) enviados.delete(enviados.values().next().value); } return id; }
 
+// ---------- proteção contra banimento ----------
+const LIM_MIN = Number(ENV.LIMITE_POR_MINUTO || 12), LIM_HORA = Number(ENV.LIMITE_POR_HORA || 180);
+const envios = [];               // horários dos envios automáticos (assistente)
+let ultimoEnvio = 0;
+const dorme = (ms) => new Promise(r => setTimeout(r, ms));
+const acaso = (a, b) => a + Math.floor(Math.random() * (b - a));
+function ehDono(jid) { return String(jid || '').startsWith(DONO); }
+async function guardaEnvio(jid, autor, texto, tipo) {
+  if (autor !== 'ia' || ehDono(jid)) return;                 // você (painel/celular) e avisos ao dono não passam pelo freio
+  const c = chats[jid] || {};
+  if (!c.ultCliente || Date.now() - c.ultCliente > 24 * 3600e3) throw new Error('bloqueado: o cliente não falou nas últimas 24h (a assistente não puxa conversa)');
+  for (;;) {
+    const agora = Date.now();
+    while (envios.length && agora - envios[0] > 3600e3) envios.shift();
+    const noMinuto = envios.filter(t => agora - t < 60e3).length;
+    if (envios.length >= LIM_HORA) { pausarPorSeguranca(`limite de ${LIM_HORA} mensagens automáticas por hora atingido`); throw new Error('limite por hora atingido'); }
+    if (noMinuto < LIM_MIN) break;
+    await dorme(5000);
+  }
+  const desde = Date.now() - ultimoEnvio, intervalo = tipo === 'text' ? acaso(1500, 3500) : acaso(3000, 6000);
+  if (desde < intervalo) await dorme(intervalo - desde);
+  if (tipo === 'text') {                                     // "digitando…" proporcional ao tamanho, como uma pessoa
+    try { await sock.sendPresenceUpdate('composing', jid); } catch (e) { }
+    await dorme(Math.min(9000, 900 + String(texto || '').length * acaso(25, 45)));
+  }
+  envios.push(Date.now()); ultimoEnvio = Date.now();
+}
+const quedas = [];
+function pausarPorSeguranca(motivo) {
+  if (!estado.ativo) return;
+  estado.ativo = false; salvarEstado(); log('ASSISTENTE PAUSADA POR SEGURANÇA:', motivo); emitir('estado', estadoPublico());
+  setTimeout(() => { if (sock && conectado) sock.sendMessage(DONO + '@s.whatsapp.net', { text: `⚠️ Assistente pausada por segurança: ${motivo}. O WhatsApp continua conectado. Reative pelo CRM quando quiser.` }).then(lembrarEnvio).catch(() => { }); }, 3000);
+}
 async function enviarTexto(jid, texto, autor = 'ia') {
   if (!sock || !conectado || !String(texto || '').trim()) return null;
+  try { await guardaEnvio(jid, autor, texto, 'text'); } catch (e) { log('envio barrado', jid, e.message); return null; }
   const r = await sock.sendMessage(jid, { text: String(texto).trim() });
   const id = lembrarEnvio(r);
   registrarEspelho(jid, { id, autor, tipo: 'text', texto: String(texto).trim(), ts: Date.now() });
@@ -293,6 +328,7 @@ async function enviarArquivo(jid, caminho, legenda, autor = 'ia') {
     tipo = EXT_IMG.test(abs) ? 'image' : EXT_VID.test(abs) ? 'video' : 'document';
     ref = 'c/' + rel;
   }
+  try { await guardaEnvio(jid, autor, legenda, tipo); } catch (e) { return 'Não enviado: ' + e.message; }
   const msg = tipo === 'image' ? { image: conteudo, caption: legenda || undefined }
     : tipo === 'video' ? { video: conteudo, caption: legenda || undefined, mimetype: 'video/mp4' }
       : { document: conteudo, fileName: path.basename(caminho), caption: legenda || undefined, mimetype: 'application/octet-stream' };
@@ -505,7 +541,7 @@ async function iniciarWhatsApp() {
       if (sock !== s) return;
       if (u.qr) { ultimoQR = u.qr; log('QR novo disponível no painel'); emitir('estado', estadoPublico()); }
       if (u.qr || u.connection === 'open') falhasSeguidas = 0;
-      if (u.connection === 'open') { conectado = true; ultimoQR = null; meuNumero = (s.user && s.user.id || '').split(':')[0]; log('WhatsApp conectado', meuNumero); emitir('estado', estadoPublico()); }
+      if (u.connection === 'open') { conectadoDesde = Date.now(); conectado = true; ultimoQR = null; meuNumero = (s.user && s.user.id || '').split(':')[0]; log('WhatsApp conectado', meuNumero); emitir('estado', estadoPublico()); }
       if (u.connection === 'close') {
         conectado = false; ultimoQR = null;
         const code = u.lastDisconnect && u.lastDisconnect.error && u.lastDisconnect.error.output && u.lastDisconnect.error.output.statusCode;
@@ -514,6 +550,9 @@ async function iniciarWhatsApp() {
         sock = null;
         emitir('estado', estadoPublico());
         falhasSeguidas++;
+        if (conectadoDesde && Date.now() - conectadoDesde > 30e3) { quedas.push(Date.now()); while (quedas.length && Date.now() - quedas[0] > 3600e3) quedas.shift(); if (quedas.length >= 4) pausarPorSeguranca('a conexão caiu ' + quedas.length + ' vezes na última hora'); }
+        if (code === 403) pausarPorSeguranca('o WhatsApp recusou a conexão (403)');
+        conectadoDesde = 0;
         const espera = Math.min(60e3, 4e3 * Math.pow(1.6, Math.max(0, falhasSeguidas - 1)));
         if (falhasSeguidas >= 6 && code === 428 && !temSessao()) { log('sem QR após várias tentativas; recomeçando a sessão'); }
         clearTimeout(timerReconectar);
@@ -642,7 +681,7 @@ async function desconectarWhatsApp() {
   log('WhatsApp DESCONECTADO pelo painel');
   emitir('estado', estadoPublico());
 }
-let falhasSeguidas = 0, timerReconectar = null;
+let falhasSeguidas = 0, timerReconectar = null, conectadoDesde = 0;
 function temSessao() { try { return fs.readdirSync(AUTH).length > 0; } catch (e) { return false; } }
 async function conectarWhatsApp() {
   estado.whatsDesligado = false; salvarEstado(); falhasSeguidas = 0; clearTimeout(timerReconectar);
@@ -794,7 +833,9 @@ http.createServer(async (req, res) => {
           await new Promise(r => setTimeout(r, 500));
         }
         else if (ac === 'atualizar') {
-          const REPO = 'https://raw.githubusercontent.com/djhonatavargas/euro-ponte/main/';
+          let ref = 'main';
+          try { const c = await (await fetch('https://api.github.com/repos/djhonatavargas/euro-ponte/commits/main', { headers: { 'user-agent': 'euro-ponte' } })).json(); if (c && c.sha) ref = c.sha; } catch (e) { }
+          const REPO = 'https://raw.githubusercontent.com/djhonatavargas/euro-ponte/' + ref + '/';
           const novos = {};
           for (const f of ['index.js', 'painel.html']) { const r = await fetch(REPO + f + '?' + Date.now()); if (!r.ok) return json(res, { erro: 'GitHub ' + r.status + ' em ' + f }, 502); novos[f] = await r.text(); }
           try { new Function(novos['index.js'].replace(/^#!.*\n/, '')); } catch (e) { if (!/import|await/.test(e.message)) return json(res, { erro: 'index.js novo com erro: ' + e.message }, 400); }
