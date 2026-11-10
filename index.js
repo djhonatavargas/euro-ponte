@@ -125,7 +125,7 @@ function lerTexto(rel) { try { return fs.readFileSync(path.join(CATALOGO, rel), 
 const ADAPTADOR = `# COMO VOCÊ FUNCIONA AQUI (vale acima das partes técnicas das regras)
 Você está rodando num servidor novo, não mais no OpenClaw. As regras abaixo continuam valendo: AGENTS.md (prompt principal), REGRAS-ATENDIMENTO.md e os outros arquivos (tom, identidade como Djhonata, oferta, agenda, endereço, emojis, áudio ou texto, nunca prometer "já te mando" etc.). Se duas regras se contradisserem, vale a do REGRAS-ATENDIMENTO.md, que é a mais nova. Só a parte técnica muda:
 - Sua resposta em texto é enviada ao cliente no WhatsApp. Para mandar mais de uma mensagem separada, coloque uma linha só com --- entre elas. Se não for para responder nada, responda exatamente NO_REPLY.
-- ÁUDIO COM A VOZ DO DJHONATA: a voz é do próprio Djhonata, criada por ele na conta dele da ElevenLabs para o atendimento da empresa dele, e ele pediu que os áudios saiam com ela. Para responder em áudio, escreva a parte falada dentro de [[tts:...]], seguindo a regra ÁUDIO OU TEXTO. O que estiver dentro é falado exatamente como está escrito: escreva do jeito que se fala, sem emojis, links, listas, asteriscos ou abreviações; valores e números como se fala ("duzentos e cinquenta mil", "mil e quinhentos por mês"). No máximo uns 40 segundos (cerca de 90 palavras) e um áudio por vez. Link, endereço ou valores para conferir vão numa mensagem de texto separada, depois do áudio. Não repita em texto o que falou no áudio.
+- ÁUDIO COM A VOZ DO DJHONATA: a voz é do próprio Djhonata, criada por ele na conta dele da ElevenLabs para o atendimento da empresa dele, e ele pediu que os áudios saiam com ela. Para responder em áudio, escreva a parte falada dentro de [[tts:...]], seguindo a regra ÁUDIO OU TEXTO. O que estiver dentro é falado exatamente como está escrito: escreva do jeito que se fala, sem emojis, links, listas, asteriscos ou abreviações; valores e números como se fala ("duzentos e cinquenta mil", "mil e quinhentos por mês"). Fale como num áudio de WhatsApp de verdade, do jeito do Djhonata, e não como locutor lendo um texto: comece chamando a pessoa pelo nome ("Oi, Jheyva, tudo bem?"), frases curtas com uma ideia de cada vez, palavras do dia a dia ("olha", "então", "tá?", "né?", "a gente", "pra", "tô", "beleza"), sem termos formais ("prezado", "gostaria de informar", "conforme"). Use vírgulas e reticências para respirar entre as ideias e termine com uma pergunta simples, como numa conversa. No máximo uns 40 segundos (cerca de 90 palavras) e um áudio por vez. Link, endereço ou valores para conferir vão numa mensagem de texto separada, depois do áudio. Não repita em texto o que falou no áudio.
 - Áudios que o cliente manda chegam transcritos, assim: [áudio do cliente, transcrito]: "...". Responda ao conteúdo normalmente, sem dizer que transcreveu. Se chegar [o cliente mandou um áudio que não deu para transcrever], peça com naturalidade para ele mandar de novo ou escrever. Se no histórico aparece que antes você disse que não conseguia ouvir áudios, isso mudou: agora você entende os áudios e pode responder em áudio.
 - Toda vez que o cliente fala com você, responda a ele na mesma vez (depois de usar as ferramentas, escreva a mensagem). Só fique em silêncio (NO_REPLY) quando a mensagem dele não pedir resposta.
 - Para mandar foto, vídeo ou arquivo use a ferramenta enviar_arquivo (caminho relativo à pasta do catálogo, ex.: "escritorio/fachada.jpg" ou "rua lapa - boa vista (ref 913)/foto.jpg"; ou um link https de imagem, como os links de fotos que estão nas fichas). Onde as regras falam em ferramenta message, tool_call openclaw, ou caminhos C:\\Users\\Public\\catalogo\\..., use enviar_arquivo com o caminho a partir da pasta do catálogo. Mídia e texto saem na ordem em que você escreve e chama as ferramentas.
@@ -568,41 +568,103 @@ async function comFundo(audio) {   // devolve ogg/opus com o fundo, ou null (sem
   if (r.status === 0 && r.stdout.length > 200 && r.stdout.slice(0, 4).toString('latin1') === 'OggS') { voz.fundo = f ? path.basename(f) : 'ruído de sala'; return r.stdout; }
   log('fundo do áudio: ffmpeg falhou', String(r.stderr || '').slice(0, 200)); return null;
 }
-async function falar(texto) {
-  const limpo = String(texto || '').replace(/https?:\/\/\S+/g, '').replace(/[*_~`#>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 2500);
+// ---------- jeito da voz: muda pelo CRM/Claude (voz_config) sem subir arquivo ----------
+const VOZ_PADRAO = { voz: ELEVEN_VOZ, modelo: ELEVEN_MODELO, stability: 0.5, similarity: 0.8 };
+function vozCfg() { return Object.assign({}, VOZ_PADRAO, estado.vozCfg || {}); }
+const temValor = (v) => v !== undefined && v !== null && v !== '' && !isNaN(Number(v));
+function ajustesVoz(cfg, modelo) {   // só manda o que cada modelo aceita (no v3/v4 não existe estilo nem velocidade)
+  const v = {};
+  if (temValor(cfg.stability)) { let st = Math.max(0, Math.min(1, Number(cfg.stability))); if (/^eleven_v3/.test(modelo)) st = [0, 0.5, 1].reduce((a, b) => Math.abs(b - st) < Math.abs(a - st) ? b : a); v.stability = st; }
+  if (temValor(cfg.similarity)) v.similarity_boost = Math.max(0, Math.min(1, Number(cfg.similarity)));
+  if (!/^eleven_v[34]/.test(modelo)) {
+    if (temValor(cfg.style)) v.style = Math.max(0, Math.min(1, Number(cfg.style)));
+    if (temValor(cfg.speed)) v.speed = Math.max(0.7, Math.min(1.2, Number(cfg.speed)));
+    if (cfg.boost !== undefined && cfg.boost !== null) v.use_speaker_boost = !!cfg.boost;
+  }
+  return v;
+}
+// números por extenso (a voz lê "380.000" melhor como "trezentos e oitenta mil")
+const UNI_EXT = ['zero', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove', 'dez', 'onze', 'doze', 'treze', 'catorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
+const DEZ_EXT = ['', '', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
+const CEN_EXT = ['', 'cento', 'duzentos', 'trezentos', 'quatrocentos', 'quinhentos', 'seiscentos', 'setecentos', 'oitocentos', 'novecentos'];
+const unidadeExt = (u, fem) => fem && u === 1 ? 'uma' : fem && u === 2 ? 'duas' : UNI_EXT[u];
+function ate999(n, fem) {
+  if (n === 100) return 'cem';
+  const c = Math.floor(n / 100), r = n % 100, p = [];
+  if (c) p.push(fem && c > 1 ? CEN_EXT[c].replace(/os$/, 'as') : CEN_EXT[c]);
+  if (r) p.push(r < 20 ? unidadeExt(r, fem) : DEZ_EXT[Math.floor(r / 10)] + (r % 10 ? ' e ' + unidadeExt(r % 10, fem) : ''));
+  return p.join(' e ');
+}
+function porExtenso(n, fem) {
+  n = Math.floor(Number(n)); if (!isFinite(n) || n < 0 || n >= 1e9) return String(n); if (n === 0) return 'zero';
+  const g = [[Math.floor(n / 1e6), 'mi'], [Math.floor(n / 1e3) % 1000, 'mil'], [n % 1000, '']].filter(x => x[0]);
+  const t = g.map(([v, k]) => k === 'mi' ? (v === 1 ? 'um milhão' : ate999(v) + ' milhões') : k === 'mil' ? (v === 1 ? 'mil' : ate999(v, fem) + ' mil') : ate999(v, fem));
+  const ult = g[g.length - 1][0];
+  return t.length > 1 && (ult < 100 || ult % 100 === 0) ? t.slice(0, -1).join(' ') + ' e ' + t[t.length - 1] : t.join(' ');
+}
+const MESES_EXT = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const FEM_DEPOIS = /^\s*(suítes?|vagas?|casas?|unidades?|parcelas?|presta[cç](ão|ões)|horas?|semanas?|pessoas?|op[cç](ão|ões)|salas?|garagens?|entradas?|vezes|vez|crianças?|fotos?|plantas?|ruas?|quadras?|mensalidades?|semanas?|noites?|torres?)\b/i;
+const numeroLido = (txt, depois) => { const n = Number(String(txt).replace(/\./g, '')); return isFinite(n) ? porExtenso(n, FEM_DEPOIS.test(depois || '')) : txt; };
+// Deixa o texto do jeito que se fala: sem emoji, valores, metragem, horas, datas e números por extenso
+function falaHumana(texto) {
+  let t = String(texto || '');
+  t = t.replace(/https?:\/\/\S+/g, '').replace(/[*_~`#>]/g, '');
+  t = t.replace(/\p{Extended_Pictographic}/gu, '').replace(/[\u{1F3FB}-\u{1F3FF}\u{FE0F}‍]/gu, '');
+  t = t.replace(/^\s*(?:[-•]|\d+[.)])\s+/gm, '');                                         // listas viram frases
+  t = t.replace(/([^\s.,!?…:;])\s*\n+\s*(?=\p{Ll})/gu, '$1, ').replace(/([^\s.,!?…:;])\s*\n+\s*/g, '$1. ').replace(/\s*\n+\s*/g, ' ');   // quebra de linha = pausa
+  t = t.replace(/\bFGTS\b/g, 'éfe gê tê ésse').replace(/\bMCMV\b/g, 'Minha Casa Minha Vida').replace(/\bIPTU\b/g, 'i pê tê u').replace(/\bITBI\b/g, 'i tê bê i').replace(/\bn[º°]\s?/gi, 'número ');
+  t = t.replace(/R\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?(\s*(?:mil\b|milh(?:ão|ões)\b))?/gi, (m0, int, dec, suf) => {
+    let v = Number(int.replace(/\./g, '')), cent = dec ? Number(dec.padEnd(2, '0')) : 0;
+    if (suf && /mil\b/i.test(suf)) { v = Math.round((v + cent / 100) * 1000); cent = 0; }
+    else if (suf) { v = Math.round((v + cent / 100) * 1e6); cent = 0; }
+    const ext = porExtenso(v);
+    return ext + (/milh(ão|ões)$/.test(ext) ? ' de reais' : v === 1 ? ' real' : ' reais') + (cent ? ' e ' + porExtenso(cent) + (cent === 1 ? ' centavo' : ' centavos') : '');
+  });
+  t = t.replace(/(\d+)(?:,(\d+))?\s?(?:m²|m2(?![\w]))/gi, (m0, i, d) => porExtenso(i) + (d && Number(d) ? ' vírgula ' + porExtenso(d) : '') + ' metros quadrados');
+  t = t.replace(/(\d+)(?:,(\d+))?\s?%/g, (m0, i, d) => porExtenso(i) + (d ? ' vírgula ' + porExtenso(d) : '') + ' por cento');
+  t = t.replace(/\b(\d{1,2})\s?(?:h|:)\s?(\d{2})\b/gi, (m0, h, mi) => Number(h) > 23 || Number(mi) > 59 ? m0 : porExtenso(h, true) + (Number(mi) ? ' e ' + porExtenso(mi) : Number(h) === 1 ? ' hora' : ' horas'));
+  t = t.replace(/\b(\d{1,2})\s?h\b/gi, (m0, h) => Number(h) > 23 ? m0 : porExtenso(h, true) + (Number(h) === 1 ? ' hora' : ' horas'));
+  t = t.replace(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2}|\d{4}))?\b/g, (m0, d, m, a) => { const di = Number(d), me = Number(m); if (di < 1 || di > 31 || me < 1 || me > 12) return m0; return (di === 1 ? 'primeiro' : porExtenso(di)) + ' de ' + MESES_EXT[me - 1] + (a ? ' de ' + porExtenso(a.length === 2 ? 2000 + Number(a) : a) : ''); });
+  t = t.replace(/\b(\d+)\s?x\b/gi, (m0, n) => porExtenso(n, true) + ' vezes');
+  t = t.replace(/\b(\d+),(\d+)\b/g, (m0, i, d) => porExtenso(i) + ' vírgula ' + porExtenso(d));
+  t = t.replace(/\b(\d{1,3}(?:\.\d{3})+|\d{1,7})\b(?=([^\d]{0,30}))/g, (m0, n, depois) => numeroLido(n, depois));   // telefone e códigos grandes ficam como estão
+  t = t.replace(/\b([A-ZÁÉÍÓÚÂÊÔÃÕÇ]{4,})\b/g, (m0) => m0.toLowerCase());                       // CAIXA ALTA não vira grito
+  return t.replace(/\s+([,.!?…])/g, '$1').replace(/([.!?…])\1+/g, '$1').replace(/\s+/g, ' ').trim();
+}
+async function falar(texto, ajustes) {   // ajustes: { voz, modelo, stability, similarity, style, speed, boost, tag } (o teste de voz manda os dele)
+  const cfg = Object.assign(vozCfg(), ajustes || {});
+  const limpo = falaHumana(texto).slice(0, 2500);
   if (!limpo) throw new Error('texto vazio');
   let erro = '';
-  for (const modelo of [...new Set([ELEVEN_MODELO, 'eleven_v3', 'eleven_multilingual_v2'])]) {
+  for (const modelo of [...new Set([cfg.modelo || ELEVEN_MODELO, 'eleven_v3', 'eleven_multilingual_v2'])]) {
     let trocarModelo = false;
+    const corpo = { text: cfg.tag && /^eleven_v[34]/.test(modelo) ? String(cfg.tag).trim() + ' ' + limpo : limpo, model_id: modelo };
+    const vs = ajustesVoz(cfg, modelo); if (Object.keys(vs).length) corpo.voice_settings = vs;
     for (const fmt of ['opus_48000_64', 'mp3_44100_128']) {
       let r;
-      try { r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(ELEVEN_VOZ)}?output_format=${fmt}`, { method: 'POST', headers: { 'xi-api-key': ELEVEN_KEY, 'content-type': 'application/json' }, body: JSON.stringify({ text: limpo, model_id: modelo }) }); }
+      try { r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(cfg.voz || ELEVEN_VOZ)}?output_format=${fmt}`, { method: 'POST', headers: { 'xi-api-key': ELEVEN_KEY, 'content-type': 'application/json' }, body: JSON.stringify(corpo) }); }
       catch (e) { throw new Error('ElevenLabs fora do ar: ' + e.message); }
       if (r.ok) {
         const buf = Buffer.from(await r.arrayBuffer());
         voz.modelo = modelo; voz.formato = fmt;
         const misturado = await comFundo(buf).catch(() => null);   // voz + barulhinho de ambiente
-        if (misturado) return { buf: misturado, mime: 'audio/ogg; codecs=opus', ptt: true, ext: 'ogg', seg: duracaoOgg(misturado) || estimarSeg(limpo) };
-        if (buf.slice(0, 4).toString('latin1') === 'OggS') return { buf, mime: 'audio/ogg; codecs=opus', ptt: true, ext: 'ogg', seg: duracaoOgg(buf) || estimarSeg(limpo) };
+        if (misturado) return { buf: misturado, mime: 'audio/ogg; codecs=opus', ptt: true, ext: 'ogg', seg: duracaoOgg(misturado) || estimarSeg(limpo), modelo, fala: limpo };
+        if (buf.slice(0, 4).toString('latin1') === 'OggS') return { buf, mime: 'audio/ogg; codecs=opus', ptt: true, ext: 'ogg', seg: duracaoOgg(buf) || estimarSeg(limpo), modelo, fala: limpo };
         const ogg = paraOgg(buf);
-        if (ogg) return { buf: ogg, mime: 'audio/ogg; codecs=opus', ptt: true, ext: 'ogg', seg: duracaoOgg(ogg) || estimarSeg(limpo) };
-        if (fmt.startsWith('mp3')) return { buf, mime: 'audio/mpeg', ptt: false, ext: 'mp3', seg: estimarSeg(limpo) };
+        if (ogg) return { buf: ogg, mime: 'audio/ogg; codecs=opus', ptt: true, ext: 'ogg', seg: duracaoOgg(ogg) || estimarSeg(limpo), modelo, fala: limpo };
+        if (fmt.startsWith('mp3')) return { buf, mime: 'audio/mpeg', ptt: false, ext: 'mp3', seg: estimarSeg(limpo), modelo, fala: limpo };
         continue;   // o opus veio num formato inesperado: tenta mp3
       }
       const t = (await r.text()).slice(0, 300); erro = 'ElevenLabs ' + r.status + ' ' + t;
       if (r.status === 401 || r.status === 403 || r.status === 429 || /quota|credit|limit/i.test(t)) throw new Error(erro);
       if (/output_format|format/i.test(t) && fmt.startsWith('opus')) continue;   // formato não liberado no plano: tenta mp3
-      trocarModelo = true; break;                                                // modelo não aceito: tenta o próximo
+      trocarModelo = true; break;                                                // modelo (ou ajuste) não aceito: tenta o próximo
     }
     if (!trocarModelo) break;
   }
   throw new Error(erro || 'não consegui gerar o áudio');
 }
-async function enviarAudio(jid, fala, autor = 'ia', extra) {   // true = enviado; false = sem voz (manda texto); 'barrado' = freio de segurança
-  if (!ELEVEN_KEY || !sock || !conectado) return false;
-  let a;
-  try { a = await falar(fala); } catch (e) { voz.erros++; voz.ultimoErro = e.message; log('voz:', e.message); return false; }
-  try { await guardaEnvio(jid, autor, fala, 'audio', a.seg); } catch (e) { log('envio barrado', jid, e.message); return 'barrado'; }
+async function mandarAudio(jid, a, fala, autor, extra) {   // manda o áudio pronto e guarda no espelho
   const msg = { audio: a.buf, mimetype: a.mime, ptt: a.ptt, seconds: a.seg };
   if (a.ptt) msg.waveform = await ondaReal(a.buf).catch(() => ondaFake());
   const r = await sock.sendMessage(jid, msg);
@@ -610,6 +672,81 @@ async function enviarAudio(jid, fala, autor = 'ia', extra) {   // true = enviado
   const nome = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${a.ext}`;
   try { fs.writeFileSync(path.join(MIDIA, nome), a.buf); } catch (e) { }
   registrarEspelho(jid, Object.assign({ id, autor, tipo: 'audio', texto: String(fala).trim(), arquivo: 'm/' + nome, voz: true, ts: Date.now() }, extra || {}));
+  return id;
+}
+// ---------- teste de voz (manda versões no WhatsApp do Djhonata) e voz nova treinada com os áudios dele ----------
+const FALA_TESTE = 'Oi, tudo bem? Aqui é o Djhonata, da Euro. Olha, sobre a simulação: a entrada dá pra parcelar, e o restante a gente financia pela Caixa. Pra eu te passar o valor certinho, eu preciso ver a sua renda... então o ideal é você vir aqui no escritório, sem compromisso, tá? Me fala qual dia fica melhor pra você.';
+function versoesVoz() {
+  const v = [
+    { nome: 'A', desc: 'natural', modelo: 'eleven_v4', stability: 0.5, similarity: 0.8 },
+    { nome: 'B', desc: 'mais solta', modelo: 'eleven_v4', stability: 0, similarity: 0.8 },
+    { nome: 'C', desc: 'clássica', modelo: 'eleven_multilingual_v2', stability: 0.4, similarity: 0.8, style: 0.3, speed: 0.97, boost: true }
+  ];
+  if (estado.vozNova && estado.vozNova.id) v.push({ nome: 'D', desc: 'voz nova, treinada com os seus áudios', voz: estado.vozNova.id, modelo: 'eleven_v4', stability: 0.5, similarity: 0.85 });
+  return v;
+}
+let testandoVoz = false;
+async function testarVoz(fala, versoes) {
+  if (testandoVoz) throw new Error('já tem um teste de voz rodando');
+  testandoVoz = true;
+  const dono = DONO + '@s.whatsapp.net', res = [];
+  try {
+    const letras = versoes.map(v => v.nome);
+    await enviarTexto(dono, `🎧 Teste de voz da assistente: o mesmo áudio em ${versoes.length} jeitos. Ouça e me diga qual ficou mais parecido com você (${letras.length > 1 ? letras.slice(0, -1).join(', ') + ' ou ' : ''}${letras[letras.length - 1]}).`, 'aviso');
+    for (const v of versoes) {
+      try {
+        const a = await falar(fala, Object.assign({ voz: ELEVEN_VOZ, tag: '', stability: null, similarity: null, style: null, speed: null, boost: null }, v));   // cada versão só com os ajustes dela
+        await enviarTexto(dono, `Versão ${v.nome}${v.desc ? ': ' + v.desc : ''}`, 'aviso');
+        await mandarAudio(dono, a, fala, 'aviso');
+        res.push({ nome: v.nome, ok: true, modelo: a.modelo, seg: a.seg });
+      } catch (e) { res.push({ nome: v.nome, ok: false, erro: String(e.message).slice(0, 200) }); }
+    }
+  } finally { testandoVoz = false; estado.vozTeste = { em: Date.now(), fala, versoes, res }; salvarEstado(); }
+  return res;
+}
+function audiosDoDono() {   // áudios que o próprio Djhonata gravou no celular para clientes (mais novos primeiro)
+  const out = [];
+  for (const jid of Object.keys(chats)) {
+    if (ehDono(jid) || jid.endsWith('@g.us')) continue;
+    for (const m of lerEsp(jid)) {
+      if (m.autor !== 'celular' || m.tipo !== 'audio' || !m.arquivo) continue;
+      const f = path.join(MIDIA, path.basename(m.arquivo));
+      let seg = 0; try { seg = duracaoOgg(fs.readFileSync(f)); } catch (e) { continue; }
+      if (seg >= 4 && seg <= 180) out.push({ f, seg, ts: m.ts || 0 });
+    }
+  }
+  return out.sort((a, b) => b.ts - a.ts);
+}
+async function clonarVoz() {
+  if (!temFfmpeg()) throw new Error('o servidor não tem ffmpeg para juntar os áudios');
+  const escolhidos = []; let total = 0;
+  for (const a of audiosDoDono()) { if (total >= 180 || escolhidos.length >= 25) break; escolhidos.push(a); total += a.seg; }
+  if (total < 45) throw new Error(`achei só ${total} segundos de áudios gravados por você (preciso de pelo menos 45)`);
+  const args = ['-hide_banner', '-loglevel', 'error'];
+  escolhidos.forEach(a => args.push('-i', a.f));
+  args.push('-filter_complex', escolhidos.map((_, i) => `[${i}:a]`).join('') + `concat=n=${escolhidos.length}:v=0:a=1[s]`, '-map', '[s]', '-ac', '1', '-ar', '44100', '-c:a', 'libmp3lame', '-b:a', '128k', '-f', 'mp3', 'pipe:1');
+  const r = require('child_process').spawnSync('ffmpeg', args, { maxBuffer: 80e6, timeout: 120000 });
+  if (r.status !== 0 || !r.stdout || r.stdout.length < 10000) throw new Error('não consegui juntar os áudios: ' + String(r.stderr || '').slice(0, 200));
+  const fd = new FormData();
+  fd.append('name', 'Djhonata (áudios do WhatsApp)');
+  fd.append('description', 'Voz treinada com áudios reais do Djhonata no WhatsApp, para a assistente da Euro');
+  fd.append('remove_background_noise', 'true');
+  fd.append('files', new Blob([r.stdout], { type: 'audio/mpeg' }), 'djhonata-whatsapp.mp3');
+  const resp = await fetch('https://api.elevenlabs.io/v1/voices/add', { method: 'POST', headers: { 'xi-api-key': ELEVEN_KEY }, body: fd });
+  const txt = await resp.text();
+  if (!resp.ok) throw new Error(resp.status === 401 || /permission/i.test(txt) ? 'a chave da ElevenLabs precisa da permissão Vozes → Escrita' : 'ElevenLabs ' + resp.status + ' ' + txt.slice(0, 200));
+  let j = {}; try { j = JSON.parse(txt); } catch (e) { }
+  if (!j.voice_id) throw new Error('a ElevenLabs não devolveu a voz nova');
+  estado.vozNova = { id: j.voice_id, segundos: Math.round(total), audios: escolhidos.length, em: Date.now(), verificar: !!j.requires_verification };
+  salvarEstado(); log('voz nova criada com', escolhidos.length, 'áudios do Djhonata,', Math.round(total), 's');
+  return estado.vozNova;
+}
+async function enviarAudio(jid, fala, autor = 'ia', extra) {   // true = enviado; false = sem voz (manda texto); 'barrado' = freio de segurança
+  if (!ELEVEN_KEY || !sock || !conectado) return false;
+  let a;
+  try { a = await falar(fala); } catch (e) { voz.erros++; voz.ultimoErro = e.message; log('voz:', e.message); return false; }
+  try { await guardaEnvio(jid, autor, fala, 'audio', a.seg); } catch (e) { log('envio barrado', jid, e.message); return 'barrado'; }
+  await mandarAudio(jid, a, fala, autor, extra);
   voz.feitas++;
   return true;
 }
@@ -1814,6 +1951,37 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           if (p.manual) for (const k of Object.keys(p.manual)) delete (s.avisos || {})[k];       // recarregou: pode avisar de novo quando baixar
           salvarEstado(); log('saldos atualizados pelo CRM:', Object.keys(p).join(', '));
           return json(res, { ok: true, saldos: dadosSaldos(), baixos: saldosBaixos() });
+        } else if (ac === 'voz_info') {
+          return json(res, { cfg: vozCfg(), padrao: VOZ_PADRAO, vozNova: estado.vozNova || null, teste: estado.vozTeste || null, clonagem: estado.vozClonagem || null, testando: testandoVoz, voz });
+        } else if (ac === 'voz_teste') {   // manda as versões no WhatsApp do Djhonata (em segundo plano); texto = frase do teste ou JSON {fala, versoes}
+          if (!ELEVEN_KEY) return json(res, { erro: 'sem chave da ElevenLabs' }, 409);
+          if (!sock || !conectado) return json(res, { erro: 'WhatsApp desconectado' }, 409);
+          if (testandoVoz) return json(res, { erro: 'já tem um teste de voz rodando' }, 409);
+          const tx = String(b.texto || '').trim(); let p = { fala: tx };
+          if (tx.startsWith('{')) { try { p = JSON.parse(tx); } catch (e) { return json(res, { erro: 'dados inválidos' }, 400); } }
+          const versoes = Array.isArray(p.versoes) && p.versoes.length ? p.versoes.slice(0, 6) : versoesVoz();
+          testarVoz(p.fala || FALA_TESTE, versoes).catch(e => log('teste de voz:', e.message));
+          return json(res, { ok: true, versoes: versoes.map(v => v.nome + (v.desc ? ' ' + v.desc : '')) });
+        } else if (ac === 'voz_clonar') {   // cria a voz nova com os áudios do Djhonata; com on=sim, manda o teste no WhatsApp quando terminar
+          if (!ELEVEN_KEY) return json(res, { erro: 'sem chave da ElevenLabs' }, 409);
+          const vc = estado.vozClonagem;
+          if (vc && vc.status === 'rodando' && Date.now() - vc.em < 5 * 60e3) return json(res, { erro: 'já está criando a voz' }, 409);
+          if (estado.vozNova && estado.vozNova.id && String(b.texto || '') !== 'de novo') return json(res, { erro: 'a voz nova já existe (mande texto "de novo" para criar outra)', vozNova: estado.vozNova }, 409);
+          estado.vozClonagem = { status: 'rodando', em: Date.now() }; salvarEstado();
+          const testarDepois = !!b.on;
+          clonarVoz().then(v => { estado.vozClonagem = { status: 'ok', em: Date.now(), voz: v }; salvarEstado(); if (testarDepois && sock && conectado) return testarVoz(FALA_TESTE, versoesVoz()); })
+            .catch(e => { estado.vozClonagem = { status: 'erro', em: Date.now(), erro: String(e.message).slice(0, 300) }; salvarEstado(); log('voz nova:', e.message); });
+          return json(res, { ok: true, criando: true });
+        } else if (ac === 'voz_config') {   // salva o jeito da voz (texto = JSON com voz, modelo, stability, similarity, style, speed, boost, tag) ou 'padrao'
+          const tx = String(b.texto || '').trim();
+          if (tx === 'padrao') delete estado.vozCfg;
+          else {
+            let p; try { p = JSON.parse(tx); } catch (e) { return json(res, { erro: 'dados inválidos' }, 400); }
+            const campos = ['voz', 'modelo', 'stability', 'similarity', 'style', 'speed', 'boost', 'tag'];
+            estado.vozCfg = Object.assign({}, estado.vozCfg || {}, Object.fromEntries(Object.entries(p || {}).filter(([k]) => campos.includes(k))));
+          }
+          salvarEstado(); log('jeito da voz:', JSON.stringify(vozCfg()));
+          return json(res, { ok: true, cfg: vozCfg() });
         } else if (ac === 'responder_agora') {   // a assistente responde agora o que o cliente mandou e ficou sem resposta
           if (!sock || !conectado) return json(res, { erro: 'WhatsApp desconectado' }, 409);
           const r = reenfileirar(jid, 'pedido do CRM', String(b.texto || '').trim());
