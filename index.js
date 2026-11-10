@@ -972,8 +972,91 @@ function registrarUso(u) {
   const t = lerJson(f, {});
   const d = t[dia] || { entrada: 0, cache_escrita: 0, cache_lida: 0, saida: 0, chamadas: 0 };
   d.entrada += u.input_tokens || 0; d.cache_escrita += u.cache_creation_input_tokens || 0; d.cache_lida += u.cache_read_input_tokens || 0; d.saida += u.output_tokens || 0; d.chamadas++;
+  const custo = custoUso(u); d.custo = Math.round(((d.custo || 0) + custo) * 1e6) / 1e6;
   t[dia] = d; gravarJson(f, t);
+  const s = estado.saldos || (estado.saldos = {}); s.claudeGasto = (s.claudeGasto || 0) + custo;   // gasto desde o último saldo informado
 }
+
+// ---------- Saldos e pagamentos (aba Pagamentos do CRM) ----------
+// Preço do Claude Haiku 5.5 em US$ por milhão de tokens (página de preços da Anthropic, nov/2026). Acima de 100 mil tokens de entrada no pedido, tudo custa 5x.
+const PRECO_IA = { limite: 100000, normal: { ent: 0.10, cw5: 0.125, cw1h: 0.20, lida: 0.01, sai: 0.50 }, longo: { ent: 0.50, cw5: 0.625, cw1h: 1, lida: 0.05, sai: 2.50 } };
+function custoUso(u) {
+  u = u || {};
+  const ent = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
+  const p = ent > PRECO_IA.limite ? PRECO_IA.longo : PRECO_IA.normal;
+  const cw1h = (u.cache_creation && u.cache_creation.ephemeral_1h_input_tokens) || 0, cw5 = Math.max(0, (u.cache_creation_input_tokens || 0) - cw1h);
+  return ((u.input_tokens || 0) * p.ent + cw5 * p.cw5 + cw1h * p.cw1h + (u.cache_read_input_tokens || 0) * p.lida + (u.output_tokens || 0) * p.sai) / 1e6;
+}
+// quando avisar (pode mudar pelo CRM): Claude em US$, Meta em R$, Runway em créditos, Make em créditos livres, ElevenLabs em % que sobra, Contabo e conexões do Make em dias para vencer
+const LIM_SALDO = { claude: 3, meta: 100, runwayApi: 100, runwayApp: 100, make: 1000, eleven: 10, contabo: 3, conexao: 7 };
+const LINK_SALDO = {
+  claude: 'https://platform.claude.com/settings/billing', meta: 'https://business.facebook.com/billing_hub/accounts/details?asset_id=439489114629228',
+  contabo: 'https://my.contabo.com/invoices', make: 'https://us2.make.com/organization/9032431/subscription',
+  runwayApi: 'https://dev.runwayml.com/', runwayApp: 'https://app.runwayml.com/', eleven: 'https://elevenlabs.io/app/subscription',
+  conexao: 'https://us2.make.com/2984722/connections'
+};
+const r2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
+// dias de calendário (Joinville) daqui até a data: hoje = 0, amanhã = 1, ontem = -1
+function diasAteSP(ms) { const f = (t) => { const d = new Date(new Date(t).toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })); return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()); }; return Math.round((f(ms) - f(Date.now())) / 864e5); }
+// Meta pré-pago: saldo que o Djhonata anotou - o que gastou desde então (o CRM lê no Make) - o ritmo do dia desde a última leitura
+function metaEstimado(man, auto) {
+  const m = man.meta; if (!m || m.valor === undefined) return null;
+  const g = auto.metaGasto && auto.metaGasto.desde === m.em ? auto.metaGasto : null;
+  const gasto = g ? Math.max(0, (g.gasto || 0) - (m.base || 0)) : 0;
+  const ritmo = (auto.metaRitmo && auto.metaRitmo.porDia) || 0;
+  const desde = g ? Number(g.em) || Date.parse(g.em) || 0 : Date.parse(m.em) || 0;
+  const extra = desde ? ritmo * Math.max(0, Date.now() - desde) / 864e5 : 0;
+  return { informado: m.valor, em: m.em, gasto: r2(gasto), extra: r2(extra), ritmo: r2(ritmo), estimado: r2(m.valor - gasto - extra), leitura: g ? g.em : null };
+}
+let elevenSaldo = null;
+async function lerEleven(forcar) {
+  if (!ELEVEN_KEY) return { erro: 'sem chave da ElevenLabs no servidor' };
+  if (!forcar && elevenSaldo && Date.now() - elevenSaldo.em < 20 * 60e3) return elevenSaldo;
+  try {
+    const r = await fetch('https://api.elevenlabs.io/v1/user/subscription', { headers: { 'xi-api-key': ELEVEN_KEY } });
+    if (!r.ok) throw new Error('ElevenLabs ' + r.status + (r.status === 401 ? ' (a chave não tem permissão de ler a assinatura)' : ''));
+    const j = await r.json();
+    elevenSaldo = { usados: Number(j.character_count) || 0, limite: Number(j.character_limit) || 0, renova: j.next_character_count_reset_unix ? j.next_character_count_reset_unix * 1000 : 0, plano: j.tier || '', status: j.status || '', em: Date.now() };
+  } catch (e) { elevenSaldo = { erro: e.message, em: Date.now() }; }
+  return elevenSaldo;
+}
+function dadosSaldos() {   // tudo o que o servidor sabe, para o CRM montar os cartões
+  const s = estado.saldos || {};
+  const man = s.manual || {}, auto = s.auto || {}, lim = Object.assign({}, LIM_SALDO, s.limites || {});
+  const cl = man.claude ? { informado: man.claude.valor, em: man.claude.em, gasto: Math.round((s.claudeGasto || 0) * 100) / 100, estimado: Math.round(((man.claude.valor || 0) - (s.claudeGasto || 0)) * 100) / 100 } : { gasto: Math.round((s.claudeGasto || 0) * 100) / 100 };
+  const uso = lerJson(path.join(DADOS, 'uso.json'), {}), mes = agoraSP().toISOString().slice(0, 7);
+  cl.gastoMes = Math.round(Object.entries(uso).filter(([d]) => d.startsWith(mes)).reduce((t, [, v]) => t + (v.custo || 0), 0) * 100) / 100;
+  return { claude: cl, meta: metaEstimado(man, auto), eleven: elevenSaldo, manual: man, auto, limites: lim, links: LINK_SALDO, avisos: s.avisos || {}, modelo: MODELO };
+}
+function saldosBaixos() {   // [{id, nome, texto}] do que está abaixo do limite
+  const d = dadosSaldos(), lim = d.limites, out = [], br = (v) => 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (d.claude.informado !== undefined && d.claude.estimado < lim.claude) out.push({ id: 'claude', nome: 'Claude Console (IA da assistente)', texto: `sobram uns US$ ${d.claude.estimado.toFixed(2)}` });
+  const e = d.eleven; if (e && e.limite) { const resta = e.limite - e.usados; if (resta / e.limite * 100 < lim.eleven) out.push({ id: 'eleven', nome: 'ElevenLabs (voz)', texto: `sobram ${resta.toLocaleString('pt-BR')} de ${e.limite.toLocaleString('pt-BR')} caracteres` }); }
+  const m = d.meta; if (m && m.estimado < lim.meta) out.push({ id: 'meta', nome: 'Meta Ads (patrocinado)', texto: m.estimado <= 0 ? 'o saldo pode ter acabado (os anúncios param)' : `saldo estimado ${br(m.estimado)}` + (m.ritmo ? ` (dá uns ${Math.max(0, Math.floor(m.estimado / m.ritmo))} dia(s))` : '') });
+  const ra = d.auto.runwayApi; if (ra && ra.creditos !== undefined && ra.creditos < lim.runwayApi) out.push({ id: 'runwayApi', nome: 'Runway API (vídeos automáticos)', texto: `${ra.creditos} créditos` });
+  const rp = d.manual.runwayApp; if (rp && rp.valor !== undefined && rp.valor < lim.runwayApp) out.push({ id: 'runwayApp', nome: 'Runway (app)', texto: `${rp.valor} créditos` });
+  const mk = d.auto.make; if (mk && mk.livres !== undefined && mk.livres < lim.make) out.push({ id: 'make', nome: 'Make', texto: `${mk.livres.toLocaleString('pt-BR')} créditos livres até ${mk.renova ? new Date(mk.renova).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'renovar'}` });
+  const ct = d.manual.contabo; if (ct && ct.vence) { const dias = diasAteSP(quandoMs(ct.vence)); if (dias <= lim.contabo) out.push({ id: 'contabo', nome: 'Servidor Contabo', texto: dias < 0 ? `venceu em ${ct.vence.split('-').reverse().join('/')}` : dias === 0 ? 'vence hoje' : `vence em ${dias} dia(s)` }); }
+  // conexões do Make que vencem (ex.: a do Facebook liga/pausa os anúncios e lê o gasto): avisa com 7 dias
+  const cx = (d.auto.conexoes && d.auto.conexoes.lista) || [];
+  const vencendo = cx.filter(c => Date.parse(c.vence)).map(c => ({ nome: c.nome, dias: diasAteSP(Date.parse(c.vence)) })).filter(c => c.dias <= lim.conexao).sort((a, b) => a.dias - b.dias);
+  if (vencendo.length) out.push({ id: 'conexao', nome: 'Conexão no Make', texto: vencendo.map(c => `${c.nome} ${c.dias < 0 ? 'venceu' : c.dias === 0 ? 'vence hoje' : `vence em ${c.dias} dia(s)`}`).join('; ') + ' — renove (Reautorizar) para não parar' });
+  return out;
+}
+async function verificarSaldos() {   // aviso no WhatsApp pessoal: no máximo 1 por dia por serviço
+  if (!sock || !conectado || !dentroRotina()) return;
+  await lerEleven();
+  const s = estado.saldos || (estado.saldos = {}), av = s.avisos || (s.avisos = {}), hoje = agoraSP().toISOString().slice(0, 10);
+  for (const b of saldosBaixos()) {
+    if (av[b.id] === hoje) continue;
+    av[b.id] = hoje; salvarEstado();
+    const [tit, acao] = b.id === 'contabo' ? ['Pagamento', 'Para pagar'] : b.id === 'conexao' ? ['Atenção', 'Para renovar'] : ['Saldo baixo', 'Para colocar saldo'];
+    await enviarTexto(DONO + '@s.whatsapp.net', `⚠️ ${tit} — ${b.nome}: ${b.texto}.\n${acao}: ${LINK_SALDO[b.id]}\n(Tudo na aba 💳 Pagamentos do CRM.)`, 'aviso');
+    log('aviso de saldo baixo', b.id, b.texto);
+  }
+}
+setInterval(() => verificarSaldos().catch(e => log('saldos', e.message)), 3 * 3600e3);
+setTimeout(() => verificarSaldos().catch(e => log('saldos', e.message)), 5 * 60e3);
 
 async function responder(f) {
   const ctx = { jid: f.jid, telefone: f.telefone, nome: f.nome, dono: f.dono, notas: [], audioAgora: !!f.audio };
@@ -1696,6 +1779,18 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const id = await enviarTexto(jid, texto, 'voce');
           if (!id) return json(res, { erro: 'WhatsApp desconectado' }, 409);
           anotar(jid, 'assistant', `(Djhonata escreveu) ${texto}`);
+        } else if (ac === 'saldos') {   // aba Pagamentos do CRM
+          await lerEleven(!!b.on);
+          return json(res, { saldos: dadosSaldos(), baixos: saldosBaixos() });
+        } else if (ac === 'saldos_salvar') {   // o CRM manda o saldo digitado (manual), o que ele leu no Make (auto) e os limites
+          let p = {}; try { p = JSON.parse(b.texto || '{}'); } catch (e) { return json(res, { erro: 'dados inválidos' }, 400); }
+          const s = estado.saldos || (estado.saldos = {});
+          if (p.limites && typeof p.limites === 'object') p.limites = Object.fromEntries(Object.entries(p.limites).filter(([k, v]) => k in LIM_SALDO && v !== '' && v !== null && isFinite(+v)).map(([k, v]) => [k, +v]));
+          for (const k of ['manual', 'auto', 'limites']) if (p[k] && typeof p[k] === 'object') s[k] = Object.assign({}, s[k] || {}, p[k]);
+          if (p.manual && p.manual.claude) { s.claudeGasto = 0; delete (s.avisos || {}).claude; }   // saldo novo do Claude: o gasto volta a contar do zero
+          if (p.manual) for (const k of Object.keys(p.manual)) delete (s.avisos || {})[k];       // recarregou: pode avisar de novo quando baixar
+          salvarEstado(); log('saldos atualizados pelo CRM:', Object.keys(p).join(', '));
+          return json(res, { ok: true, saldos: dadosSaldos(), baixos: saldosBaixos() });
         } else if (ac === 'responder_agora') {   // a assistente responde agora o que o cliente mandou e ficou sem resposta
           if (!sock || !conectado) return json(res, { erro: 'WhatsApp desconectado' }, 409);
           const r = reenfileirar(jid, 'pedido do CRM', String(b.texto || '').trim());
