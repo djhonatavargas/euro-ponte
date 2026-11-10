@@ -114,6 +114,10 @@ function anotar(id, role, texto, mid) {   // mid = id da mensagem do WhatsApp (e
   h.push(e);
   gravarJson(arqConv(id), h.slice(-200));
 }
+function esquecerConversa(jid) {   // guarda uma cópia e a IA começa do zero nessa conversa (ex.: depois de um teste)
+  const f = arqConv(jid); if (!fs.existsSync(f)) return false;
+  try { fs.renameSync(f, f.replace(/\.json$/, `.esquecida-${Date.now()}.bak`)); return true; } catch (e) { return false; }
+}
 function quandoFoi(ts) { return new Date(ts).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
 function avisoDemora(ts) { return `[o cliente mandou esta mensagem em ${quandoFoi(ts)} e ela ficou sem resposta até agora: comece pedindo desculpa pela demora]\n`; }
 
@@ -160,7 +164,9 @@ function sistema(ctx) {
   }
   if (ctx.dono) {
     din += `\nATENÇÃO: quem está escrevendo é o próprio Djhonata (dono), pelo WhatsApp pessoal dele. Ele NÃO é cliente: não se apresente, não mande agenda, material nem endereço para ele.
-Siga a seção 13 do AGENTS.md: quando ele der uma orientação sobre um cliente (ex.: "fala pra ele que aposentado também pode"), descubra de qual cliente é (o nome/número que ele citou ou, se não citou, o último aviso abaixo; na dúvida, pergunte curto: "É o Emerson (+55 47 9991-5821)?"), use a ferramenta mandar_ao_cliente para mandar a mensagem ao cliente falando como o Djhonata (primeira pessoa, frases naturais, sem copiar o texto dele ao pé da letra; pode usar [[tts:...]] e ---), e depois responda a ele curto: "Feito! Mandei pro Emerson: [resumo]". Se a mensagem dele não for sobre cliente (ex.: "quem marcou hoje?"), responda direto e curto, com os dados abaixo.`;
+Siga a seção 13 do AGENTS.md: quando ele der uma orientação sobre um cliente (ex.: "fala pra ele que aposentado também pode"), descubra de qual cliente é (o nome/número que ele citou ou, se não citou, o último aviso abaixo; na dúvida, pergunte curto: "É o Emerson (+55 47 9991-5821)?"), use a ferramenta mandar_ao_cliente para mandar a mensagem ao cliente falando como o Djhonata (primeira pessoa, frases naturais, sem copiar o texto dele ao pé da letra; pode usar [[tts:...]] e ---), e depois responda a ele curto: "Feito! Mandei pro Emerson: [resumo]". Se a mensagem dele não for sobre cliente (ex.: "quem marcou hoje?"), responda direto e curto, com os dados abaixo.
+Se ele mandar só um link, arquivo, contato ou nome, sem dizer o que fazer (ex.: o link de um contrato com o nome do cliente), não mande nada a cliente nenhum e não responda como se ele fosse cliente: pergunte curto o que ele quer (ex.: "Quer que eu mande esse link para o João Carlos Teixeira?") e só mande depois que ele confirmar.
+Esta conversa pode ter mensagens antigas de quando ele testou a assistente fingindo ser cliente: ignore essas mensagens, ele não está esperando resposta delas. Nunca fale com o Djhonata como se ele fosse cliente.`;
     const av = (estado.avisos || []).slice(-8).reverse().map(a => `- ${new Date(a.ts).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}: ${a.nome || 'sem nome'} (${a.telefone ? formatoBR(a.telefone) : 'sem número'}) — ${String(a.texto || '').slice(0, 220)}`).join('\n');
     din += `\nÚltimos avisos que você mandou ao Djhonata (o mais recente primeiro):\n${av || '(nenhum)'}`;
     const vis = Object.entries(estado.visitas || {}).map(([j, v]) => ({ j, v, T: quandoMs(v.q) })).filter(x => x.T > Date.now() - 3600e3).sort((a, b) => a.T - b.T).slice(0, 15)
@@ -1951,6 +1957,10 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           if (p.manual) for (const k of Object.keys(p.manual)) delete (s.avisos || {})[k];       // recarregou: pode avisar de novo quando baixar
           salvarEstado(); log('saldos atualizados pelo CRM:', Object.keys(p).join(', '));
           return json(res, { ok: true, saldos: dadosSaldos(), baixos: saldosBaixos() });
+        } else if (ac === 'esquecer') {   // a IA esquece o que conversou nesse contato (fica uma cópia no servidor)
+          if (!jidValido(jid)) return json(res, { erro: 'conversa inválida' }, 400);
+          const ok = esquecerConversa(jid); filas.delete(jid); quitarResposta(jid); log('memória da conversa apagada', jid, ok ? '' : '(estava vazia)');
+          return json(res, { ok: true, apagou: ok });
         } else if (ac === 'voz_info') {
           return json(res, { cfg: vozCfg(), padrao: VOZ_PADRAO, vozNova: estado.vozNova || null, teste: estado.vozTeste || null, clonagem: estado.vozClonagem || null, testando: testandoVoz, voz });
         } else if (ac === 'voz_teste') {   // manda as versões no WhatsApp do Djhonata (em segundo plano); texto = frase do teste ou JSON {fala, versoes}
@@ -2067,12 +2077,15 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           return json(res, { ok: true, arquivo: arq, em: Date.now() });
         }
         else if (ac === 'teste') {
+          const limparTeste = (nums) => { const t8 = new Set((nums || []).map(n => String(n).replace(/\D/g, '').slice(-8))); let n = 0; for (const j of Object.keys(chats)) if (t8.has(tel8De(j))) { if (esquecerConversa(j)) n++; filas.delete(j); quitarResposta(j); } if (n) log('memória do teste apagada em', n, 'conversa(s)'); };
+          limparTeste((estado.teste || {}).numeros);   // o que a IA conversou no teste (ou antes dele) não passa para a próxima fase
           if (b.on) {
             let nums = []; try { nums = (JSON.parse(b.texto || '{}').numeros) || []; } catch (e) { }
             if (!nums.length) nums = [DONO];
             estado.teste = { ativo: true, numeros: nums.map(n => String(n).replace(/\D/g, '')) }; salvarEstado();
             try { await resolverTelefones(estado.teste.numeros); } catch (e) { }
             log('MODO TESTE ligado para', estado.teste.numeros.join(', '));
+            limparTeste(estado.teste.numeros);
           } else { estado.teste = { ativo: false, numeros: [] }; salvarEstado(); log('modo teste desligado'); }
           emitir('estado', estadoPublico());
         }
