@@ -1179,7 +1179,7 @@ async function processar(jid) {
   f.timer = null;
   const emTeste = !!(estado.teste && estado.teste.ativo);
   if (emTeste) {                                                             // modo teste: responde SÓ os números de teste, como se fossem clientes
-    if (!ehNumeroTeste(jid, f.telefone)) { filas.delete(jid); quitarResposta(jid); return; }
+    if (!ehNumeroTeste(jid, f.telefone)) { filas.delete(jid); return; }   // cliente de verdade: fica devendo e é respondido quando o teste acabar
     f.dono = false;
   } else if (!estado.ativo) { filas.delete(jid); quitarResposta(jid); return; }                  // assistente pausada: só espelha
   if ((estado.pausas[jid] || 0) > Date.now()) { filas.delete(jid); quitarResposta(jid); return; } // assistente desligada nessa conversa
@@ -1234,6 +1234,10 @@ async function retomarPendentes(motivo) {   // põe de volta na fila quem ficou 
     if (Date.now() - (v.ts || 0) > JANELA_ATRASADA) { delete d[jid]; salvarEstado(); continue; }   // velha demais: não responde mais
     if (v.em && Date.now() - v.em < 4 * 60e3) continue;   // falhou agora há pouco: espera um pouco
     const c = chatPublico(jid);
+    if (estado.teste && estado.teste.ativo && !ehNumeroTeste(jid, c.telefone)) continue;   // em teste: guarda para quando o teste acabar
+    if (!(estado.teste && estado.teste.ativo) && !estado.ativo) continue;                     // assistente pausada: não responde
+    const conv = lerConv(jid), ultC = conv[conv.length - 1];
+    if (Date.now() - (v.ts || 0) > 20 * 60e3 && ultC && ultC.role === 'user' && !/ficou sem resposta até agora/.test(ultC.texto || '')) anotar(jid, 'user', avisoDemora(v.ts).trim());
     const f = { jid, telefone: c.telefone, nome: c.nome, dono: !!c.telefone && normal(c.telefone) === normal(DONO), imagens: [], timer: null, ultTs: v.ts, liberar24h: !!v.liberar24h };
     filas.set(jid, f); n++;
     log('retomando resposta pendente (' + motivo + ')', c.telefone || jid);
@@ -2325,7 +2329,10 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
             try { await resolverTelefones(estado.teste.numeros); } catch (e) { }
             log('MODO TESTE ligado para', estado.teste.numeros.join(', '));
             limparTeste(estado.teste.numeros);
-          } else { estado.teste = { ativo: false, numeros: [] }; salvarEstado(); log('modo teste desligado'); }
+          } else {
+            estado.teste = { ativo: false, numeros: [] }; salvarEstado(); log('modo teste desligado');
+            setTimeout(() => retomarPendentes('fim do teste').then(n => { if (n) log('clientes que escreveram durante o teste:', n); }).catch(e => log('pendentes', e.message)), 1500);
+          }
           emitir('estado', estadoPublico());
         }
         else if (ac === 'crm_status') { let m = {}; try { m = JSON.parse(b.texto || '{}'); } catch (e) { } atualizarStatusCrm(m).catch(e => log('crm_status', e.message)); return json(res, { ok: true }); }
