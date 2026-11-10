@@ -826,18 +826,19 @@ async function processar(jid) {
   }
   filas.delete(jid);
   ocupado.add(jid);
+  if (f.liberar24h) liberado24h.add(jid);   // "responder agora" pedido pelo Djhonata
   emitir('digitando', { jid, on: true });
   try { await responder(f); quitarResposta(jid, f.ultTs); }
   catch (e) { falhouResposta(jid, f, e); throw e; }
-  finally { ocupado.delete(jid); emitir('digitando', { jid, on: false }); }
+  finally { if (f.liberar24h) liberado24h.delete(jid); ocupado.delete(jid); emitir('digitando', { jid, on: false }); }
 }
 setInterval(() => { if (dentroDoHorario()) for (const [jid, f] of filas) { if (!f.timer) processar(jid).catch(e => log('erro processar', e.message)); } }, 60e3);
 
 // ---------- respostas devidas: o que o cliente mandou e a assistente ainda não respondeu ----------
 // Fica gravado no estado, então sobrevive a queda do WhatsApp, reinício do servidor e erro da IA (tenta até 3 vezes).
-function deverResposta(jid, ts) {
+function deverResposta(jid, ts, extra) {
   const d = estado.devendo || (estado.devendo = {}); const v = d[jid];
-  d[jid] = { ts: Math.max(ts || 0, v ? v.ts || 0 : 0), tent: v ? v.tent || 0 : 0, em: v ? v.em || 0 : 0 };
+  d[jid] = Object.assign({ ts: Math.max(ts || 0, v ? v.ts || 0 : 0), tent: v ? v.tent || 0 : 0, em: v ? v.em || 0 : 0 }, v && v.liberar24h ? { liberar24h: true } : {}, extra || {});
   salvarEstado();
 }
 function quitarResposta(jid, ate) {   // respondeu (ou não era para responder): apaga, a não ser que já tenha chegado mensagem mais nova
@@ -866,7 +867,7 @@ async function retomarPendentes(motivo) {   // põe de volta na fila quem ficou 
     if (Date.now() - (v.ts || 0) > JANELA_ATRASADA) { delete d[jid]; salvarEstado(); continue; }   // velha demais: não responde mais
     if (v.em && Date.now() - v.em < 4 * 60e3) continue;   // falhou agora há pouco: espera um pouco
     const c = chatPublico(jid);
-    const f = { jid, telefone: c.telefone, nome: c.nome, dono: !!c.telefone && normal(c.telefone) === normal(DONO), imagens: [], timer: null, ultTs: v.ts };
+    const f = { jid, telefone: c.telefone, nome: c.nome, dono: !!c.telefone && normal(c.telefone) === normal(DONO), imagens: [], timer: null, ultTs: v.ts, liberar24h: !!v.liberar24h };
     filas.set(jid, f); n++;
     log('retomando resposta pendente (' + motivo + ')', c.telefone || jid);
     if (f.dono || dentroDoHorario()) processar(jid).catch(e => log('erro processar', e.message));   // fora do horário: espera abrir
@@ -883,7 +884,7 @@ function entradaDoEspelho(m) {
   const rot = { image: '[o cliente mandou uma imagem]', video: '[o cliente mandou um vídeo]', document: `[o cliente mandou um arquivo: ${m.nomeArquivo || ''}]`, sticker: '[figurinha]', contact: '[o cliente mandou um contato]', location: '[o cliente mandou uma localização]' }[m.tipo];
   return rot ? (t && m.tipo !== 'sticker' ? t + '\n' : '') + rot : t;
 }
-function reenfileirar(jid, motivo) {
+function reenfileirar(jid, motivo, orientacao) {   // orientacao = o que o Djhonata quer nessa resposta (opcional)
   if (!jidValido(jid) || !chats[jid]) return { erro: 'conversa não encontrada' };
   if (filas.has(jid) || ocupado.has(jid)) return { erro: 'essa conversa já está na fila da assistente' };
   const c = chatPublico(jid);
@@ -897,18 +898,29 @@ function reenfileirar(jid, motivo) {
   if (Date.now() - ult.ts > 7 * 864e5) return { erro: 'a última mensagem do cliente tem mais de 7 dias' };
   const conv = lerConv(jid), ja = new Set(conv.map(e => e.mid).filter(Boolean));
   const ultUser = conv.reduce((t, e) => e.role === 'user' ? Math.max(t, e.ts || 0) : t, 0);
-  let novas = 0;
+  const ultAssist = conv.reduce((t, e) => e.role === 'assistant' ? Math.max(t, e.ts || 0) : t, 0);
+  // a IA não tem o começo desta conversa (foi atendida antes pelo celular/OpenClaw): leva as últimas mensagens do WhatsApp
+  const antes = l.filter(m => m.ts < pend[0].ts && m.autor !== 'aviso' && (String(m.texto || '').trim() || m.tipo !== 'text')).slice(-12);
+  const ultEuro = antes.filter(m => m.autor !== 'cliente').pop();
+  if (ultEuro && ultAssist < ultEuro.ts - 60e3) {
+    const linhas = antes.map(m => `${quandoFoi(m.ts)} ${m.autor === 'cliente' ? 'Cliente' : 'Euro'}: ${resumoMsg(m).replace(/\s+/g, ' ').slice(0, 500)}`);
+    anotar(jid, 'user', '[conversa anterior neste WhatsApp, só para você saber o que já foi falado e oferecido (não responda a isto):\n' + linhas.join('\n') + ']');
+  }
+  let novas = 0, avisou = false;
   for (const m of pend) {
     if (ja.has(m.id) || m.ts <= ultUser) continue;   // essa a IA já tem na conversa
     let e = entradaDoEspelho(m); if (!e) continue;
-    if (novas === 0 && Date.now() - m.ts > 20 * 60e3) e = avisoDemora(m.ts) + e;
+    if (!avisou && Date.now() - m.ts > 20 * 60e3) { e = avisoDemora(m.ts) + e; avisou = true; }
     anotar(jid, 'user', e, m.id); novas++;
   }
-  const f = { jid, telefone: c.telefone, nome: c.nome, dono: false, imagens: [], timer: null, ultTs: ult.ts, audio: pend.some(m => m.tipo === 'audio') };
-  filas.set(jid, f); deverResposta(jid, ult.ts);
-  log('responder agora (' + motivo + ')', c.telefone || jid, pend.length, 'mensagem(ns) do cliente');
+  if (!avisou && Date.now() - ult.ts > 20 * 60e3) anotar(jid, 'user', avisoDemora(ult.ts).trim());
+  if (orientacao) anotar(jid, 'user', `[orientação do Djhonata para esta resposta (o cliente não vê isto): ${String(orientacao).slice(0, 1500)}]`);
+  // pedido do Djhonata vale como ordem dele: passa pela regra das 24h (a assistente não puxa conversa sozinha)
+  const f = { jid, telefone: c.telefone, nome: c.nome, dono: false, imagens: [], timer: null, ultTs: ult.ts, audio: pend.some(m => m.tipo === 'audio'), liberar24h: true };
+  filas.set(jid, f); deverResposta(jid, ult.ts, { liberar24h: true });
+  log('responder agora (' + motivo + ')', c.telefone || jid, pend.length, 'mensagem(ns) do cliente', orientacao ? 'com orientação' : '');
   if (dentroDoHorario()) f.timer = setTimeout(() => processar(jid).catch(e => log('erro processar', e.message)), 1500);
-  return { ok: true, mensagens: pend.length, novas, agora: dentroDoHorario() };
+  return { ok: true, mensagens: pend.length, novas, orientacao: !!orientacao, agora: dentroDoHorario() };
 }
 
 function montarMensagens(jid, imagens, rotina) {
@@ -1686,7 +1698,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           anotar(jid, 'assistant', `(Djhonata escreveu) ${texto}`);
         } else if (ac === 'responder_agora') {   // a assistente responde agora o que o cliente mandou e ficou sem resposta
           if (!sock || !conectado) return json(res, { erro: 'WhatsApp desconectado' }, 409);
-          const r = reenfileirar(jid, 'pedido do CRM');
+          const r = reenfileirar(jid, 'pedido do CRM', String(b.texto || '').trim());
           if (r.erro) return json(res, { erro: r.erro }, 409);
           b._resultado = r;
         } else if (ac === 'ia_conversa') {
