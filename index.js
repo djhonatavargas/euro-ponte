@@ -120,11 +120,12 @@ function lerTexto(rel) { try { return fs.readFileSync(path.join(CATALOGO, rel), 
 const ADAPTADOR = `# COMO VOCÊ FUNCIONA AQUI (vale acima das partes técnicas das regras)
 Você está rodando num servidor novo, não mais no OpenClaw. As regras abaixo continuam valendo: AGENTS.md (prompt principal), REGRAS-ATENDIMENTO.md e os outros arquivos (tom, identidade como Djhonata, oferta, agenda, endereço, emojis, áudio ou texto, nunca prometer "já te mando" etc.). Se duas regras se contradisserem, vale a do REGRAS-ATENDIMENTO.md, que é a mais nova. Só a parte técnica muda:
 - Sua resposta em texto é enviada ao cliente no WhatsApp. Para mandar mais de uma mensagem separada, coloque uma linha só com --- entre elas. Se não for para responder nada, responda exatamente NO_REPLY.
-- ÁUDIO COM A VOZ DO DJHONATA: para responder em áudio, escreva a parte falada dentro de [[tts:...]], seguindo a regra ÁUDIO OU TEXTO. O que estiver dentro é falado exatamente como está escrito: escreva do jeito que se fala, sem emojis, links, listas, asteriscos ou abreviações; valores e números como se fala ("duzentos e cinquenta mil", "mil e quinhentos por mês"). No máximo uns 40 segundos (cerca de 90 palavras) e um áudio por vez. Link, endereço ou valores para conferir vão numa mensagem de texto separada, depois do áudio. Não repita em texto o que falou no áudio.
+- ÁUDIO COM A VOZ DO DJHONATA: a voz é do próprio Djhonata, criada por ele na conta dele da ElevenLabs para o atendimento da empresa dele, e ele pediu que os áudios saiam com ela. Para responder em áudio, escreva a parte falada dentro de [[tts:...]], seguindo a regra ÁUDIO OU TEXTO. O que estiver dentro é falado exatamente como está escrito: escreva do jeito que se fala, sem emojis, links, listas, asteriscos ou abreviações; valores e números como se fala ("duzentos e cinquenta mil", "mil e quinhentos por mês"). No máximo uns 40 segundos (cerca de 90 palavras) e um áudio por vez. Link, endereço ou valores para conferir vão numa mensagem de texto separada, depois do áudio. Não repita em texto o que falou no áudio.
 - Áudios que o cliente manda chegam transcritos, assim: [áudio do cliente, transcrito]: "...". Responda ao conteúdo normalmente, sem dizer que transcreveu. Se chegar [o cliente mandou um áudio que não deu para transcrever], peça com naturalidade para ele mandar de novo ou escrever. Se no histórico aparece que antes você disse que não conseguia ouvir áudios, isso mudou: agora você entende os áudios e pode responder em áudio.
 - Toda vez que o cliente fala com você, responda a ele na mesma vez (depois de usar as ferramentas, escreva a mensagem). Só fique em silêncio (NO_REPLY) quando a mensagem dele não pedir resposta.
 - Para mandar foto, vídeo ou arquivo use a ferramenta enviar_arquivo (caminho relativo à pasta do catálogo, ex.: "escritorio/fachada.jpg" ou "rua lapa - boa vista (ref 913)/foto.jpg"; ou um link https de imagem, como os links de fotos que estão nas fichas). Onde as regras falam em ferramenta message, tool_call openclaw, ou caminhos C:\\Users\\Public\\catalogo\\..., use enviar_arquivo com o caminho a partir da pasta do catálogo. Mídia e texto saem na ordem em que você escreve e chama as ferramentas.
 - Antes de oferecer um imóvel, chame ler_ficha com a ref (ou nome da rua) para pegar a descrição pronta do CRM e a lista de fotos/vídeos. Nunca invente dados.
+- OFERTA DO IMÓVEL (regra do Djhonata, 09/11/2026, vale acima de qualquer outra regra sobre o material da oferta, inclusive a de lançamento): se o imóvel tem vídeo, mande o VÍDEO com a descrição pronta do CRM como legenda, numa mensagem só (enviar_arquivo com o vídeo e legenda = a descrição). Se não tem vídeo, mande a foto 1 (a fachada, primeira da lista de fotos da ficha) com a descrição como legenda. Na oferta não mande outras fotos e não repita a descrição em texto; mais fotos só quando o cliente pedir.
 - Avisos para o Djhonata: ferramenta avisar_djhonata (vai para o WhatsApp pessoal dele). Não use a ferramenta de envio para isso. O aviso é INTERNO: depois de avisar, SEMPRE responda o cliente na mesma vez, de forma natural e sem dizer que foi consultar alguém (por exemplo, fazendo uma pergunta para entender melhor o que ele procura: bairro, quartos, faixa de valor, se é pronto ou na planta). Nunca deixe o cliente sem resposta. Use NO_REPLY só quando a mensagem do cliente não pede resposta (ex.: "ok", "👍", "obrigado" no fim da conversa).
 - Quem escreve é um CLIENTE (lead), a não ser que o sistema diga explicitamente que é o Djhonata. Trate a pessoa como cliente: nunca fale com ela como se fosse o dono, o chefe ou o corretor.
 - Eventos do CRM (visita marcada com data e hora, remarcar, negociação, cliente pausado, nome real, imóvel de interesse): ferramenta registrar_crm. Onde as regras mandam escrever em arquivos (visitas-agendadas.md, avisos-enviados.md, resultados-assistente.jsonl, AGENTS.md, combinados), não escreva arquivos: use registrar_crm e avisar_djhonata. O sistema guarda as visitas e os avisos.
@@ -191,6 +192,31 @@ function acharPasta(busca) {
   return ps.find(n => semAcento(n).includes(b)) || null;
 }
 const EXT_IMG = /\.(jpe?g|png|webp)$/i, EXT_VID = /\.(mp4)$/i;
+// ---------- oferta do imóvel: qual é o vídeo e a foto da fachada de cada pasta ----------
+function pastaDoCaminho(c) {   // caminho local "pasta/arquivo" ou link do Loft ".../fotos/963/..." -> pasta do imóvel
+  c = String(c || '');
+  if (/^https?:\/\//i.test(c)) { const m = /\/fotos\/(\d{2,5})\//.exec(c); return m ? (pastasImoveis().find(n => n.endsWith(`(ref ${m[1]})`)) || '') : ''; }
+  const rel = c.replace(/\\/g, '/').replace(/^[a-z]:\/users\/public\/catalogo\//i, '').replace(/^\/+/, '');
+  const p = rel.split('/')[0];
+  try { return p && !p.startsWith('_') && p !== 'escritorio' && fs.statSync(path.join(CATALOGO, p)).isDirectory() ? p : ''; } catch (e) { return ''; }
+}
+function midiaDaOferta(pasta) {   // { video: 'pasta/video-whatsapp.mp4' ou '', foto1: primeira foto da lista da ficha (local ou link) }
+  let video = '', foto1 = '';
+  try { if (fs.existsSync(path.join(CATALOGO, pasta, 'video-whatsapp.mp4'))) video = pasta + '/video-whatsapp.mp4'; } catch (e) { }
+  const m = /^- Fotos[^\n]*\n((?:[ \t]+- .+\n?)+)/m.exec(lerTexto(path.join(pasta, 'ficha.md')));
+  if (m) {
+    const l = (m[1].split('\n').map(x => x.replace(/^[ \t]+- /, '').trim()).filter(Boolean)[0] || '');
+    foto1 = /^https?:/i.test(l) ? l : l.replace(/\\/g, '/').replace(/^[a-z]:\/users\/public\/catalogo\//i, '');
+  }
+  if (!foto1) { try { const f = fs.readdirSync(path.join(CATALOGO, pasta)).filter(a => EXT_IMG.test(a)).sort()[0]; if (f) foto1 = pasta + '/' + f; } catch (e) { } }
+  return { video, foto1 };
+}
+function textoRecenteCliente(jid) {   // o que o cliente mandou desde a última resposta
+  const h = lerConv(jid); const t = [];
+  for (let i = h.length - 1; i >= 0 && h[i].role === 'user'; i--) t.push(h[i].texto);
+  return t.join(' ');
+}
+function clientePediuFotos(jid) { return /\b(fotos?|imagens?)\b/i.test(textoRecenteCliente(jid)); }
 
 async function executar(nome, entrada, ctx) {
   try {
@@ -198,13 +224,42 @@ async function executar(nome, entrada, ctx) {
       const p = acharPasta(entrada.busca || '');
       if (!p) return 'Imóvel não encontrado no catálogo. Confira a ref no CATALOGO.md.';
       const ficha = lerTexto(path.join(p, 'ficha.md'));
-      const arqs = fs.readdirSync(path.join(CATALOGO, p)).filter(f => EXT_IMG.test(f) || EXT_VID.test(f));
-      return `Pasta: ${p}\nArquivos de mídia: ${arqs.map(a => `${p}/${a}`).join(' | ') || 'nenhum'}\n\n${ficha}`;
+      const arqs = fs.readdirSync(path.join(CATALOGO, p)).filter(f => EXT_IMG.test(f) || /^video-whatsapp\.mp4$/i.test(f));
+      const { video, foto1 } = midiaDaOferta(p);
+      const guia = video
+        ? `OFERTA DESTE IMÓVEL: mande o VÍDEO "${video}" com enviar_arquivo, com a descrição pronta (seção "Descrição pronta para o WhatsApp") como legenda, numa mensagem só. Não mande fotos agora; mais fotos só se o cliente pedir.`
+        : `OFERTA DESTE IMÓVEL (sem vídeo): mande a foto 1 (fachada) "${foto1 || 'primeira foto da ficha'}" com enviar_arquivo, com a descrição pronta como legenda, numa mensagem só. Mais fotos só se o cliente pedir.`;
+      return `Pasta: ${p}\n${guia}\nArquivos de mídia na pasta: ${arqs.map(a => `${p}/${a}`).join(' | ') || 'nenhum (as fotos são os links da ficha)'}\n\n${ficha}`;
     }
     if (nome === 'enviar_arquivo') {
-      const r = await enviarArquivo(ctx.jid, entrada.caminho || '', entrada.legenda || '');
-      ctx.notas.push(`[enviei ${entrada.caminho}${entrada.legenda ? ' com a legenda: ' + entrada.legenda.slice(0, 300) : ''}]`);
-      return r;
+      let caminho = String(entrada.caminho || ''); const legenda = entrada.legenda || '';
+      // regra da oferta: com vídeo vai o vídeo; sem vídeo, a foto da fachada; outras fotos só se o cliente pediu
+      const pasta = ctx.dono ? '' : pastaDoCaminho(caminho);
+      let extra;
+      if (pasta) {
+        const ehVideo = EXT_VID.test(caminho.split('?')[0]);
+        ctx.ofertas = ctx.ofertas || {};
+        const pediuFotos = clientePediuFotos(ctx.jid);
+        if (ctx.ofertas[pasta] && !ehVideo && !pediuFotos) return `Não enviado: a oferta deste imóvel já foi agora (${ctx.ofertas[pasta]} com a descrição). Mais fotos só se o cliente pedir.`;
+        if (!ctx.ofertas[pasta] && !lerEsp(ctx.jid).some(m => m.oferta === pasta)) {   // primeira vez deste imóvel na conversa
+          const { video, foto1 } = midiaDaOferta(pasta);
+          if (!pediuFotos && !ehVideo) {
+            if (video) { log('oferta: vídeo no lugar da foto', pasta); caminho = video; }
+            else if (foto1 && caminho !== foto1) caminho = foto1;
+          }
+          ctx.ofertas[pasta] = EXT_VID.test(caminho.split('?')[0]) ? 'o vídeo' : 'a foto da fachada';
+          extra = { oferta: pasta };
+        }
+      }
+      // nunca reenvia o mesmo arquivo na conversa (a não ser que o cliente peça de novo)
+      const refArq = /^https?:\/\//i.test(caminho) ? caminho : 'c/' + caminho.replace(/^[\\/]+/, '').replace(/\\/g, '/');
+      if (lerEsp(ctx.jid).some(m => m.arquivo === refArq) && !/de novo|novamente|reenvi|outra vez/i.test(textoRecenteCliente(ctx.jid))) {
+        if (extra) delete ctx.ofertas[pasta];
+        return 'Não enviado: esse arquivo já foi enviado antes nesta conversa. Não reenvie; continue a conversa.';
+      }
+      const r = await enviarArquivo(ctx.jid, caminho, legenda, 'ia', extra);
+      ctx.notas.push(`[enviei ${caminho}${legenda ? ' com a legenda: ' + legenda.slice(0, 300) : ''}]`);
+      return caminho !== String(entrada.caminho || '') && r === 'Enviado.' ? `Enviado: ${caminho} (o vídeo/foto da oferta, com a legenda). Não mande mais fotos agora.` : r;
     }
     if (nome === 'avisar_djhonata') {
       const txt = String(entrada.texto || '').trim(); if (!txt) return 'Aviso vazio: nada enviado.';
@@ -608,7 +663,7 @@ async function transcrever(buf, mime) {
   if (erro) { ouvido.erros++; ouvido.ultimoErro = erro; log('transcrição falhou:', erro); }
   return '';
 }
-async function enviarArquivo(jid, caminho, legenda, autor = 'ia') {
+async function enviarArquivo(jid, caminho, legenda, autor = 'ia', extra) {
   if (!sock || !conectado) return 'WhatsApp desconectado.';
   let conteudo, tipo, ref = '';
   if (/^https?:\/\//i.test(caminho)) { conteudo = { url: caminho }; tipo = EXT_VID.test(caminho) ? 'video' : 'image'; ref = caminho; }
@@ -626,7 +681,7 @@ async function enviarArquivo(jid, caminho, legenda, autor = 'ia') {
       : { document: conteudo, fileName: path.basename(caminho), caption: legenda || undefined, mimetype: 'application/octet-stream' };
   const r = await sock.sendMessage(jid, msg);
   const id = lembrarEnvio(r);
-  registrarEspelho(jid, { id, autor, tipo, texto: legenda || '', arquivo: ref, nomeArquivo: tipo === 'document' ? path.basename(caminho) : undefined, ts: Date.now() });
+  registrarEspelho(jid, Object.assign({ id, autor, tipo, texto: legenda || '', arquivo: ref, nomeArquivo: tipo === 'document' ? path.basename(caminho) : undefined, ts: Date.now() }, extra || {}));
   return 'Enviado.';
 }
 async function enviarFotoPainel(jid, buf, mime, legenda) {
@@ -807,11 +862,14 @@ async function responder(f) {
   const messages = montarMensagens(f.jid, f.imagens, f.rotina);
   const ferramentas = f.dono && !(estado.teste && estado.teste.ativo) ? [...FERRAMENTAS, FERRAMENTA_DONO] : FERRAMENTAS;
   if (!f.rotina) { try { await sock.sendPresenceUpdate('composing', f.jid); } catch (e) { } }
-  const saida = [], textosIA = [];
-  let usouFerramenta = false, cutucou = false;
-  for (let volta = 0; volta < 8; volta++) {
+  const saida = [], textosIA = [], paradas = [];
+  let usouFerramenta = false, cutucou = 0;
+  for (let volta = 0; volta < 9; volta++) {
     const resp = await claude(system, messages, ferramentas);
-    messages.push({ role: 'assistant', content: resp.content });
+    paradas.push(resp.stop_reason + ':' + (resp.content || []).map(b => b.type + (b.type === 'text' ? '(' + String(b.text || '').trim().length + ')' : '')).join('+'));
+    // resposta vazia (sem texto e sem ferramenta): guarda para conferir depois
+    if (!(resp.content || []).some(b => (b.type === 'text' && String(b.text || '').trim()) || b.type === 'tool_use')) { try { gravarJson(path.join(DADOS, 'ia-vazia.json'), { ts: new Date().toISOString(), jid: f.jid, stop_reason: resp.stop_reason, content: resp.content, usage: resp.usage }); } catch (e) { } }
+    messages.push({ role: 'assistant', content: (resp.content || []).length ? resp.content : [{ type: 'text', text: '(sem resposta)' }] });
     const resultados = [];
     for (const bloco of resp.content || []) {
       if (bloco.type === 'text') {
@@ -828,17 +886,20 @@ async function responder(f) {
       }
     }
     if (resp.stop_reason === 'tool_use' && resultados.length) { messages.push({ role: 'user', content: resultados }); continue; }
-    // usou ferramenta (ex.: registrou no CRM) e terminou sem falar nada com o cliente: lembra uma vez de responder
-    if (!saida.length && usouFerramenta && !cutucou && !f.rotina && !f.dono) {
-      cutucou = true; log('IA terminou sem responder; pedindo a resposta', f.telefone || f.jid);
-      messages.push({ role: 'user', content: [{ type: 'text', text: '(sistema) Você ainda não mandou nenhuma mensagem ao cliente nesta vez. Responda agora ao que ele disse' + (ctx.audioAgora || ((estado.prefAudio || {})[f.jid] > 0) ? ', em áudio ([[tts:...]]), porque ele mandou ou pediu áudio' : '') + '. Se realmente não houver nada a responder, escreva só NO_REPLY.' }] });
+    // terminou sem falar nada com o cliente (resposta vazia, ou só usou ferramenta): pede a resposta.
+    // 1ª vez: como ele prefere (áudio, se mandou ou pediu); 2ª vez: em texto, para o cliente nunca ficar sem resposta.
+    const disseNoReply = textosIA.some(t => /^NO_REPLY\b/.test(t) || /^nada a fazer\W*$/i.test(t));
+    if (!saida.length && cutucou < 2 && !f.rotina && !f.dono && (usouFerramenta || !disseNoReply)) {
+      cutucou++; log('IA terminou sem responder (' + paradas.slice(-1)[0] + '); pedindo a resposta', cutucou, f.telefone || f.jid);
+      const querAudio = cutucou === 1 && ELEVEN_KEY && (ctx.audioAgora || ((estado.prefAudio || {})[f.jid] > 0));
+      messages.push({ role: 'user', content: [{ type: 'text', text: '(sistema) Você ainda não mandou nenhuma mensagem ao cliente nesta vez. Responda agora ao que ele disse' + (querAudio ? ', em áudio ([[tts:...]]), porque ele mandou ou pediu áudio' : cutucou === 2 ? ', em TEXTO' : '') + '. Se realmente não houver nada a responder, escreva só NO_REPLY.' }] });
       continue;
     }
     break;
   }
   try { await sock.sendPresenceUpdate('paused', f.jid); } catch (e) { }
   if (saida.length) anotar(f.jid, 'assistant', saida.join('\n'));
-  else if (textosIA.length) log('IA não mandou nada; texto dela:', JSON.stringify(textosIA).slice(0, 400));
+  else log('IA não mandou nada:', paradas.join(' | '), JSON.stringify(textosIA).slice(0, 300));
   log('respondido', f.telefone || f.jid, saida.length, 'mensagens');
 }
 
@@ -1595,7 +1656,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
         else if (ac === 'crm_status') { let m = {}; try { m = JSON.parse(b.texto || '{}'); } catch (e) { } atualizarStatusCrm(m).catch(e => log('crm_status', e.message)); return json(res, { ok: true }); }
         else if (ac === 'crm_visitas') { let m = {}; try { m = JSON.parse(b.texto || '{}'); } catch (e) { } atualizarVisitasCrm(m); return json(res, { ok: true, visitas: Object.keys(estado.visitas || {}).length }); }
         else if (ac === 'rotinas') {   // o que o sistema sabe das visitas e das rotinas (para conferir)
-          return json(res, { rotinas, visitas: Object.entries(estado.visitas || {}).map(([j, v]) => ({ nome: chatPublico(j).nome, telefone: chatPublico(j).telefone, quando: descreverQuando(v.q), origem: v.origem, enviados: v.enviados })), retomadas: Object.keys(estado.retomadas || {}).length, voz, ouvido, ffmpeg: temFfmpeg() });
+          return json(res, { rotinas, visitas: Object.entries(estado.visitas || {}).map(([j, v]) => ({ nome: chatPublico(j).nome, telefone: chatPublico(j).telefone, quando: descreverQuando(v.q), origem: v.origem, enviados: v.enviados })), retomadas: Object.keys(estado.retomadas || {}).length, voz, ouvido, ffmpeg: temFfmpeg(), iaVazia: lerJson(path.join(DADOS, 'ia-vazia.json'), null) });
         }
         else if (ac === 'sincronizar') {
           if (!sock || !conectado) return json(res, { erro: 'WhatsApp desconectado' }, 409);
