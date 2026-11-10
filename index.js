@@ -49,6 +49,8 @@ const DONO = ENV.DONO || '554799043294';          // WhatsApp pessoal do Djhonat
 const PAUSA_HORAS = Number(ENV.PAUSA_HORAS || 0);  // 0 = quando o Djhonata escreve, a assistente continua junto (lendo o que ele mandou)
 const SENHA = ENV.SENHA || '';                     // senha do painel (além do TOKEN)
 const ESPERA_MS = Number(ENV.ESPERA_MS || 9000);  // espera o cliente terminar de digitar
+// mensagem que chegou atrasada (WhatsApp caiu e voltou, servidor reiniciou) ainda é respondida até este tempo
+const JANELA_ATRASADA = Number(ENV.JANELA_ATRASADA_HORAS || 12) * 3600e3;
 const HORA_INI = ENV.HORA_INI || '08:00';
 const HORA_FIM = ENV.HORA_FIM || '23:30';
 // Voz e ouvido (como no OpenClaw): ElevenLabs fala com a voz do Djhonata e transcreve os áudios recebidos.
@@ -106,11 +108,14 @@ function dentroDoHorario() { const d = agoraSP(); const x = d.getHours() * 60 + 
 // ---------- conversas (memória) ----------
 function arqConv(id) { return path.join(CONV, id.replace(/[^0-9a-zA-Z@._-]/g, '_') + '.json'); }
 function lerConv(id) { return lerJson(arqConv(id), []); }
-function anotar(id, role, texto) {
+function anotar(id, role, texto, mid) {   // mid = id da mensagem do WhatsApp (evita a IA ler a mesma mensagem duas vezes)
   const h = lerConv(id);
-  h.push({ role, texto: String(texto).slice(0, 6000), ts: Date.now() });
+  const e = { role, texto: String(texto).slice(0, 6000), ts: Date.now() }; if (mid) e.mid = mid;
+  h.push(e);
   gravarJson(arqConv(id), h.slice(-200));
 }
+function quandoFoi(ts) { return new Date(ts).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
+function avisoDemora(ts) { return `[o cliente mandou esta mensagem em ${quandoFoi(ts)} e ela ficou sem resposta até agora: comece pedindo desculpa pela demora]\n`; }
 
 // ---------- regras e catálogo (vêm do computador do Djhonata pelo enviar-catalogo.ps1) ----------
 // AGENTS.md = prompt principal que o OpenClaw usava (base das 51 perguntas, bloco da agenda, regras obrigatórias).
@@ -724,7 +729,9 @@ async function aoReceber(m, tipoUpsert) {
   const texto = cifrada ? '🔒 (mensagem ainda não decifrada — veja no celular)' : textoDe(x);
   const tipo = tipoDe(x);
   const ts = tsDe(m);
-  const recente = Date.now() - ts < 180e3;
+  // "append" = o WhatsApp entregou atrasado o que chegou enquanto a conexão caía e voltava (ou o servidor reiniciava)
+  const atrasada = tipoUpsert === 'append';
+  const recente = Date.now() - ts < (atrasada ? JANELA_ATRASADA : 180e3);
   const telefone = telefoneDe(m);
 
   // espelho: grava tudo (menos o que a própria ponte já gravou ao enviar)
@@ -758,7 +765,7 @@ async function aoReceber(m, tipoUpsert) {
     if (PAUSA_HORAS > 0) { estado.pausas[jid] = Date.now() + PAUSA_HORAS * 3600e3; salvarEstado(); filas.delete(jid); emitir('chat', chatPublico(jid)); }
     return;
   }
-  if (tipoUpsert !== 'notify') return;
+  if (tipoUpsert !== 'notify' && !atrasada) return;
 
   const dono = telefone && normal(telefone) === normal(DONO);
   if (!dono && telefone && lerBloqueados().has(normal(telefone))) { log('bloqueado, ignorado', telefone); return; }
@@ -778,8 +785,11 @@ async function aoReceber(m, tipoUpsert) {
   if (x.locationMessage) entrada = (entrada ? entrada + '\n' : '') + '[o cliente mandou uma localização]';
   if (x.stickerMessage) entrada = (entrada ? entrada + '\n' : '') + '[figurinha]';
   if (!entrada) return;
+  if (m.key.id && lerConv(jid).some(e => e.mid === m.key.id)) return;   // o WhatsApp reentregou: a IA já leu essa
+  if (atrasada) log('mensagem atrasada (chegou na reconexão) entrou na fila', telefone || jid);
+  if (Date.now() - ts > 20 * 60e3) entrada = avisoDemora(ts) + entrada;
 
-  anotar(jid, 'user', entrada);
+  anotar(jid, 'user', entrada, m.key.id);
   // preferência de áudio do cliente: pediu áudio / pediu para não mandar áudio (vale para as próximas respostas)
   const falou = (texto || '') + ' ' + (m._transc || '');
   if (/n[ãa]o\s+(consigo|posso|d[áa]\s+pra|tenho\s+como)\s+(ouvir|escutar)|n[ãa]o\s+(me\s+)?(mand[ae]|envi[ae])\s+([áa]udio)|s[óo]\s+(por\s+)?(texto|escrito|mensagem)/i.test(falou)) { estado.prefAudio = estado.prefAudio || {}; estado.prefAudio[jid] = -Date.now(); salvarEstado(); }
@@ -789,6 +799,8 @@ async function aoReceber(m, tipoUpsert) {
   if (m.pushName) f.nome = m.pushName;
   if (imagem) f.imagens.push(imagem);
   if (x.audioMessage) f.audio = true;
+  f.ultTs = Math.max(f.ultTs || 0, ts);
+  deverResposta(jid, ts);
   clearTimeout(f.timer);
   f.timer = setTimeout(() => processar(jid).catch(e => log('erro processar', e.message)), ESPERA_MS);
 }
@@ -800,18 +812,104 @@ async function processar(jid) {
   f.timer = null;
   const emTeste = !!(estado.teste && estado.teste.ativo);
   if (emTeste) {                                                             // modo teste: responde SÓ os números de teste, como se fossem clientes
-    if (!ehNumeroTeste(jid, f.telefone)) { filas.delete(jid); return; }
+    if (!ehNumeroTeste(jid, f.telefone)) { filas.delete(jid); quitarResposta(jid); return; }
     f.dono = false;
-  } else if (!estado.ativo) { filas.delete(jid); return; }                  // assistente pausada: só espelha
-  if ((estado.pausas[jid] || 0) > Date.now()) { filas.delete(jid); return; } // assistente desligada nessa conversa
+  } else if (!estado.ativo) { filas.delete(jid); quitarResposta(jid); return; }                  // assistente pausada: só espelha
+  if ((estado.pausas[jid] || 0) > Date.now()) { filas.delete(jid); quitarResposta(jid); return; } // assistente desligada nessa conversa
   if (!dentroDoHorario() && !f.dono && !emTeste) { return; }                // fica na fila até abrir o horário
-  if (ocupado.has(jid)) { f.timer = setTimeout(() => processar(jid), 3000); return; }
+  if (ocupado.has(jid)) { f.timer = setTimeout(() => processar(jid).catch(e => log('erro processar', e.message)), 3000); return; }
+  if (!sock || !conectado) { f.timer = setTimeout(() => processar(jid).catch(e => log('erro processar', e.message)), 15e3); return; }   // WhatsApp caindo: espera voltar
+  // o Djhonata respondeu (celular ou CRM) depois da última mensagem do cliente: a conversa é dele agora
+  const conv = lerConv(jid), ultConv = conv[conv.length - 1];
+  if (!f.dono && ultConv && ultConv.role === 'assistant' && /^\(Djhonata escreveu\)/.test(ultConv.texto || '')) {
+    filas.delete(jid); quitarResposta(jid, f.ultTs); log('o Djhonata já respondeu; a assistente fica quieta', f.telefone || jid); return;
+  }
   filas.delete(jid);
   ocupado.add(jid);
   emitir('digitando', { jid, on: true });
-  try { await responder(f); } finally { ocupado.delete(jid); emitir('digitando', { jid, on: false }); }
+  try { await responder(f); quitarResposta(jid, f.ultTs); }
+  catch (e) { falhouResposta(jid, f, e); throw e; }
+  finally { ocupado.delete(jid); emitir('digitando', { jid, on: false }); }
 }
-setInterval(() => { if (dentroDoHorario()) for (const [jid, f] of filas) { if (!f.timer) processar(jid).catch(() => { }); } }, 60e3);
+setInterval(() => { if (dentroDoHorario()) for (const [jid, f] of filas) { if (!f.timer) processar(jid).catch(e => log('erro processar', e.message)); } }, 60e3);
+
+// ---------- respostas devidas: o que o cliente mandou e a assistente ainda não respondeu ----------
+// Fica gravado no estado, então sobrevive a queda do WhatsApp, reinício do servidor e erro da IA (tenta até 3 vezes).
+function deverResposta(jid, ts) {
+  const d = estado.devendo || (estado.devendo = {}); const v = d[jid];
+  d[jid] = { ts: Math.max(ts || 0, v ? v.ts || 0 : 0), tent: v ? v.tent || 0 : 0, em: v ? v.em || 0 : 0 };
+  salvarEstado();
+}
+function quitarResposta(jid, ate) {   // respondeu (ou não era para responder): apaga, a não ser que já tenha chegado mensagem mais nova
+  const d = estado.devendo || {}, v = d[jid]; if (!v) return;
+  if (ate && (v.ts || 0) > ate) return;
+  delete d[jid]; salvarEstado();
+}
+function falhouResposta(jid, f, e) {
+  const d = estado.devendo || {}, v = d[jid]; if (!v) return;
+  const erro = String((e && e.message) || e || 'erro').slice(0, 160);
+  v.tent = (v.tent || 0) + 1; v.erro = erro;
+  v.em = /WhatsApp/.test(erro) ? 0 : Date.now();   // caiu o WhatsApp: tenta assim que voltar; erro da IA: espera uns minutos
+  if (v.tent >= 3) {
+    delete d[jid];
+    const c = chatPublico(jid);
+    log('desisti de responder depois de 3 tentativas', c.telefone || jid, erro);
+    if (!f.dono) enviarTexto(DONO + '@s.whatsapp.net', `⚠️ Não consegui responder ${c.nome || 'um cliente'} (${c.telefone ? formatoBR(c.telefone) : 'sem número'}) depois de 3 tentativas (${erro}). Responda pelo celular, por favor.`, 'aviso').catch(() => { });
+  } else log('a resposta falhou; tento de novo', f.telefone || jid, v.tent + '/3', erro);
+  salvarEstado();
+}
+async function retomarPendentes(motivo) {   // põe de volta na fila quem ficou sem resposta (queda, reinício, erro)
+  if (!sock || !conectado) return 0;
+  const d = estado.devendo || {}; let n = 0;
+  for (const [jid, v] of Object.entries(d)) {
+    if (filas.has(jid) || ocupado.has(jid)) continue;
+    if (Date.now() - (v.ts || 0) > JANELA_ATRASADA) { delete d[jid]; salvarEstado(); continue; }   // velha demais: não responde mais
+    if (v.em && Date.now() - v.em < 4 * 60e3) continue;   // falhou agora há pouco: espera um pouco
+    const c = chatPublico(jid);
+    const f = { jid, telefone: c.telefone, nome: c.nome, dono: !!c.telefone && normal(c.telefone) === normal(DONO), imagens: [], timer: null, ultTs: v.ts };
+    filas.set(jid, f); n++;
+    log('retomando resposta pendente (' + motivo + ')', c.telefone || jid);
+    if (f.dono || dentroDoHorario()) processar(jid).catch(e => log('erro processar', e.message));   // fora do horário: espera abrir
+  }
+  return n;
+}
+setInterval(() => retomarPendentes('varredura').catch(e => log('pendentes', e.message)), 5 * 60e3);
+
+// Mensagens do cliente que estão no espelho e nunca entraram na fila (ex.: chegaram antes desta correção): o CRM pede e a IA responde.
+function entradaDoEspelho(m) {
+  const t = String(m.texto || '').trim();
+  if (/^🔒/.test(t)) return '';
+  if (m.tipo === 'audio') return t ? `[áudio do cliente, transcrito]: "${t}"` : '[o cliente mandou um áudio que não deu para transcrever]';
+  const rot = { image: '[o cliente mandou uma imagem]', video: '[o cliente mandou um vídeo]', document: `[o cliente mandou um arquivo: ${m.nomeArquivo || ''}]`, sticker: '[figurinha]', contact: '[o cliente mandou um contato]', location: '[o cliente mandou uma localização]' }[m.tipo];
+  return rot ? (t && m.tipo !== 'sticker' ? t + '\n' : '') + rot : t;
+}
+function reenfileirar(jid, motivo) {
+  if (!jidValido(jid) || !chats[jid]) return { erro: 'conversa não encontrada' };
+  if (filas.has(jid) || ocupado.has(jid)) return { erro: 'essa conversa já está na fila da assistente' };
+  const c = chatPublico(jid);
+  if (c.telefone && normal(c.telefone) === normal(DONO)) return { erro: 'essa é a conversa do Djhonata' };
+  if (!podeResponder(jid, c.telefone)) return { erro: 'a assistente está desligada, em teste ou pausada nessa conversa' };
+  if (c.telefone && lerBloqueados().has(normal(c.telefone))) return { erro: 'número bloqueado para a assistente' };
+  const l = lerEsp(jid), pend = [];
+  for (let i = l.length - 1; i >= 0; i--) { const m = l[i]; if (m.autor === 'aviso') continue; if (m.autor !== 'cliente') break; pend.unshift(m); }
+  if (!pend.length) return { erro: 'a última mensagem não é do cliente: não há o que responder' };
+  const ult = pend[pend.length - 1];
+  if (Date.now() - ult.ts > 7 * 864e5) return { erro: 'a última mensagem do cliente tem mais de 7 dias' };
+  const conv = lerConv(jid), ja = new Set(conv.map(e => e.mid).filter(Boolean));
+  const ultUser = conv.reduce((t, e) => e.role === 'user' ? Math.max(t, e.ts || 0) : t, 0);
+  let novas = 0;
+  for (const m of pend) {
+    if (ja.has(m.id) || m.ts <= ultUser) continue;   // essa a IA já tem na conversa
+    let e = entradaDoEspelho(m); if (!e) continue;
+    if (novas === 0 && Date.now() - m.ts > 20 * 60e3) e = avisoDemora(m.ts) + e;
+    anotar(jid, 'user', e, m.id); novas++;
+  }
+  const f = { jid, telefone: c.telefone, nome: c.nome, dono: false, imagens: [], timer: null, ultTs: ult.ts, audio: pend.some(m => m.tipo === 'audio') };
+  filas.set(jid, f); deverResposta(jid, ult.ts);
+  log('responder agora (' + motivo + ')', c.telefone || jid, pend.length, 'mensagem(ns) do cliente');
+  if (dentroDoHorario()) f.timer = setTimeout(() => processar(jid).catch(e => log('erro processar', e.message)), 1500);
+  return { ok: true, mensagens: pend.length, novas, agora: dentroDoHorario() };
+}
 
 function montarMensagens(jid, imagens, rotina) {
   const h = lerConv(jid).slice(-40);
@@ -834,11 +932,20 @@ function montarMensagens(jid, imagens, rotina) {
 
 async function claude(system, messages, ferramentas = FERRAMENTAS) {
   for (let tentativa = 0; tentativa < 3; tentativa++) {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: MODELO, max_tokens: 1500, system, tools: ferramentas, messages })
-    });
+    let r;
+    try {
+      r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        // a IA pensa antes de responder: 1500 era pouco e às vezes acabava só pensando (max_tokens)
+        body: JSON.stringify({ model: MODELO, max_tokens: 4000, system, tools: ferramentas, messages })
+      });
+    } catch (e) {   // internet do servidor oscilou ("fetch failed"): tenta de novo
+      log('erro de rede com a IA', e.message, 'tentativa', tentativa + 1);
+      if (tentativa === 2) throw e;
+      await new Promise(res => setTimeout(res, 4000 * (tentativa + 1)));
+      continue;
+    }
     if (r.ok) { const j = await r.json(); if (j.usage) registrarUso(j.usage); return j; }
     const corpo = await r.text();
     log('erro API', r.status, corpo.slice(0, 300));
@@ -864,6 +971,7 @@ async function responder(f) {
   if (!f.rotina) { try { await sock.sendPresenceUpdate('composing', f.jid); } catch (e) { } }
   const saida = [], textosIA = [], paradas = [];
   let usouFerramenta = false, cutucou = 0;
+  try {
   for (let volta = 0; volta < 9; volta++) {
     const resp = await claude(system, messages, ferramentas);
     paradas.push(resp.stop_reason + ':' + (resp.content || []).map(b => b.type + (b.type === 'text' ? '(' + String(b.text || '').trim().length + ')' : '')).join('+'));
@@ -885,11 +993,12 @@ async function responder(f) {
         resultados.push({ type: 'tool_result', tool_use_id: bloco.id, content: String(r).slice(0, 20000) });
       }
     }
-    if (resp.stop_reason === 'tool_use' && resultados.length) { messages.push({ role: 'user', content: resultados }); continue; }
+    // usou ferramenta: devolve o resultado sempre (mesmo quando ela marca "end_turn"; sem isso a IA dá erro 400)
+    if (resultados.length) { messages.push({ role: 'user', content: resultados }); continue; }
     // terminou sem falar nada com o cliente (resposta vazia, ou só usou ferramenta): pede a resposta.
     // 1ª vez: como ele prefere (áudio, se mandou ou pediu); 2ª vez: em texto, para o cliente nunca ficar sem resposta.
     const disseNoReply = textosIA.some(t => /^NO_REPLY\b/.test(t) || /^nada a fazer\W*$/i.test(t));
-    if (!saida.length && cutucou < 2 && !f.rotina && !f.dono && (usouFerramenta || !disseNoReply)) {
+    if (!saida.length && cutucou < 2 && !f.rotina && !f.dono && (usouFerramenta || !disseNoReply) && sock && conectado) {
       cutucou++; log('IA terminou sem responder (' + paradas.slice(-1)[0] + '); pedindo a resposta', cutucou, f.telefone || f.jid);
       const querAudio = cutucou === 1 && ELEVEN_KEY && (ctx.audioAgora || ((estado.prefAudio || {})[f.jid] > 0));
       messages.push({ role: 'user', content: [{ type: 'text', text: '(sistema) Você ainda não mandou nenhuma mensagem ao cliente nesta vez. Responda agora ao que ele disse' + (querAudio ? ', em áudio ([[tts:...]]), porque ele mandou ou pediu áudio' : cutucou === 2 ? ', em TEXTO' : '') + '. Se realmente não houver nada a responder, escreva só NO_REPLY.' }] });
@@ -897,9 +1006,17 @@ async function responder(f) {
     }
     break;
   }
-  try { await sock.sendPresenceUpdate('paused', f.jid); } catch (e) { }
+  } catch (e) {   // erro no meio: se já mandou alguma coisa, guarda o que saiu e não tenta de novo (para não repetir)
+    if (!saida.length) { try { if (sock) await sock.sendPresenceUpdate('paused', f.jid); } catch (_) { } throw e; }
+    log('erro no meio da resposta (já tinha mandado ' + saida.length + '):', e.message);
+  }
+  try { if (sock) await sock.sendPresenceUpdate('paused', f.jid); } catch (e) { }
   if (saida.length) anotar(f.jid, 'assistant', saida.join('\n'));
-  else log('IA não mandou nada:', paradas.join(' | '), JSON.stringify(textosIA).slice(0, 300));
+  else {
+    log('IA não mandou nada:', paradas.join(' | '), JSON.stringify(textosIA).slice(0, 300));
+    // tinha resposta, mas o WhatsApp caiu antes de sair: vira "pendente" e sai quando ele voltar
+    if ((!sock || !conectado) && textosIA.some(t => !/^NO_REPLY\b/.test(t) && !/^nada a fazer\W*$/i.test(t))) throw new Error('WhatsApp caiu antes de a resposta sair');
+  }
   log('respondido', f.telefone || f.jid, saida.length, 'mensagens');
 }
 
@@ -1062,7 +1179,8 @@ function estadoPublico() {
     usoHoje: hoje, modelo: MODELO, teste: estado.teste && estado.teste.ativo ? (estado.teste.numeros || []) : [],
     voz: !!ELEVEN_KEY, transcricao: ELEVEN_KEY ? 'ElevenLabs' : GEMINI_KEY ? 'Gemini' : '',
     audio: { transcritos: ouvido.feitas, falados: voz.feitas, erros: ouvido.erros + voz.erros, ultimoErro: (voz.ultimoErro || ouvido.ultimoErro || '').slice(0, 160) },
-    rotinas: ROTINAS ? { visitas: Object.keys(estado.visitas || {}).length, lembretesHoje: rotinas.lembretes, retomadasHoje: rotinas.retomadas, horario: `${ROT_INI}–${ROT_FIM}` } : null
+    rotinas: ROTINAS ? { visitas: Object.keys(estado.visitas || {}).length, lembretesHoje: rotinas.lembretes, retomadasHoje: rotinas.retomadas, horario: `${ROT_INI}–${ROT_FIM}` } : null,
+    pendentes: Object.keys(estado.devendo || {}).length, naFila: filas.size
   };
 }
 
@@ -1085,7 +1203,9 @@ async function iniciarWhatsApp() {
       if (u.qr) { ultimoQR = u.qr; log('QR novo disponível no painel'); emitir('estado', estadoPublico()); }
       if (u.qr || u.connection === 'open') falhasSeguidas = 0;
       if (u.connection === 'open' && !global.__sincronizou) { global.__sincronizou = true; setTimeout(() => { if (sock === s) s.resyncAppState(['critical_block', 'critical_unblock_low', 'regular_high', 'regular_low', 'regular'], true).then(() => { log('etiquetas e contatos sincronizados', Object.keys(etq.labels).length, 'etiquetas'); return lerEquipe(); }).catch(e => log('sincronizar', e.message)); }, 20e3); }
-      if (u.connection === 'open') { if (BAILEYS_VERSAO.startsWith('baileys 7')) abriuComV7 = true; conectadoDesde = Date.now(); conectado = true; ultimoQR = null; meuNumero = (s.user && s.user.id || '').split(':')[0]; log('WhatsApp conectado', meuNumero); emitir('estado', estadoPublico()); }
+      if (u.connection === 'open') { if (BAILEYS_VERSAO.startsWith('baileys 7')) abriuComV7 = true; conectadoDesde = Date.now(); conectado = true; ultimoQR = null; meuNumero = (s.user && s.user.id || '').split(':')[0]; log('WhatsApp conectado', meuNumero); emitir('estado', estadoPublico());
+        // depois que o WhatsApp entregar o que chegou atrasado, confere quem ficou sem resposta (queda, reinício)
+        setTimeout(() => { if (sock === s) retomarPendentes('ao conectar').catch(e => log('pendentes', e.message)); }, 45e3); }
       if (u.connection === 'close') {
         conectado = false; ultimoQR = null;
         const code = u.lastDisconnect && u.lastDisconnect.error && u.lastDisconnect.error.output && u.lastDisconnect.error.output.statusCode;
@@ -1564,6 +1684,11 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const id = await enviarTexto(jid, texto, 'voce');
           if (!id) return json(res, { erro: 'WhatsApp desconectado' }, 409);
           anotar(jid, 'assistant', `(Djhonata escreveu) ${texto}`);
+        } else if (ac === 'responder_agora') {   // a assistente responde agora o que o cliente mandou e ficou sem resposta
+          if (!sock || !conectado) return json(res, { erro: 'WhatsApp desconectado' }, 409);
+          const r = reenfileirar(jid, 'pedido do CRM');
+          if (r.erro) return json(res, { erro: r.erro }, 409);
+          b._resultado = r;
         } else if (ac === 'ia_conversa') {
           if (!jidValido(jid)) return json(res, { erro: 'conversa inválida' }, 400);
           if (b.on) delete estado.pausas[jid]; else { estado.pausas[jid] = Date.now() + 3650 * 864e5; filas.delete(jid); }
