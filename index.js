@@ -625,6 +625,22 @@ function partesResposta(t) {
   const resto = t.slice(i); if (resto.trim()) out.push({ tipo: 'texto', t: resto });
   return out;
 }
+// A agenda (Escolha seu dia / Escolha seu horário / link) sai SEMPRE numa mensagem separada, no formato fixo do AGENTS.md (regra do Djhonata, 10/11/2026)
+const RE_LINK_AGENDA = /hook\.us2\.make\.com\/\S+/i;
+const linhaDaAgenda = (l) => /^(escolha (o )?seu (dia|hor[aá]rio)|marque (o )?seu hor[aá]rio)/i.test(String(l).trim());
+function inicioAgenda(linhas, iLink) { let ini = iLink; for (let i = iLink - 1; i >= 0; i--) { const l = linhas[i].trim(); if (!l) continue; if (linhaDaAgenda(l)) { ini = i; continue; } break; } return ini; }
+function agendaFixa() {   // o "Bloco fixo da agenda" do AGENTS.md, do jeito que está lá
+  const t = lerTexto('AGENTS.md').replace(/\r/g, ''), i = t.search(/###\s*Bloco fixo da agenda/i); if (i < 0) return '';
+  const linhas = t.slice(i).split('\n'), iLink = linhas.findIndex(l => RE_LINK_AGENDA.test(l)); if (iLink < 0) return '';
+  return linhas.slice(inicioAgenda(linhas, iLink), iLink + 1).join('\n').trim();
+}
+function separarAgenda(t) {   // -> [texto antes, agenda, texto depois], só os que existem
+  const linhas = String(t).split('\n'), iLink = linhas.findIndex(l => RE_LINK_AGENDA.test(l));
+  if (iLink < 0) return [t];
+  const ini = inicioAgenda(linhas, iLink);
+  const bloco = agendaFixa() || linhas.slice(ini, iLink + 1).join('\n').trim();
+  return [linhas.slice(0, ini).join('\n').trim(), bloco, linhas.slice(iLink + 1).join('\n').trim()].filter(Boolean);
+}
 async function enviarSaida(jid, texto, autor = 'ia', extra) {   // devolve o que saiu (para a memória da conversa)
   const feitos = [];
   for (const p of partesResposta(String(texto || ''))) {
@@ -633,7 +649,7 @@ async function enviarSaida(jid, texto, autor = 'ia', extra) {   // devolve o que
       if (ok === true) { feitos.push('[áudio] ' + p.t); continue; }
       if (ok === 'barrado') continue;
     }
-    for (const parte of p.t.split(/\n\s*---\s*\n/)) { const s = parte.replace(/^\s*---\s*$/gm, '').trim(); if (s && await enviarTexto(jid, s, autor, extra)) feitos.push(s); }
+    for (const parte of p.t.split(/\n\s*---\s*\n/)) for (const sub of separarAgenda(parte)) { const s = sub.replace(/^\s*---\s*$/gm, '').trim(); if (s && await enviarTexto(jid, s, autor, extra)) feitos.push(s); }
   }
   return feitos;
 }
@@ -998,16 +1014,22 @@ const LINK_SALDO = {
 const r2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
 // dias de calendário (Joinville) daqui até a data: hoje = 0, amanhã = 1, ontem = -1
 function diasAteSP(ms) { const f = (t) => { const d = new Date(new Date(t).toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })); return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()); }; return Math.round((f(ms) - f(Date.now())) / 864e5); }
-// Meta pré-pago: saldo que o Djhonata anotou - o que gastou desde então (o CRM lê no Make) - o ritmo do dia desde a última leitura
-function metaEstimado(man, auto) {
-  const m = man.meta; if (!m || m.valor === undefined) return null;
-  const g = auto.metaGasto && auto.metaGasto.desde === m.em ? auto.metaGasto : null;
+// Contas de anúncio da Meta. Cada uma tem o seu saldo: chaves meta_<conta> (o que você anotou), metaGasto_<conta> e metaRitmo_<conta> (o que o CRM lê no Make)
+const META_CONTAS = { act_439489114629228: 'CA01 Vargas', act_1326465429307211: 'CA03 Djhonata', act_1402275433424996: 'CA02 Euro' };
+const linkSaldo = (id) => /^meta_act_\d+$/.test(id) ? 'https://business.facebook.com/billing_hub/accounts/details?asset_id=' + id.slice(9) : LINK_SALDO[id];
+function contasMeta(man, auto) { const c = new Set(Object.keys(META_CONTAS)); for (const k of [...Object.keys(man), ...Object.keys(auto)]) { const m = /^meta(?:Gasto|Ritmo)?_(act_\d+)$/.exec(k); if (m) c.add(m[1]); } return [...c]; }
+// Pré-pago: saldo que o Djhonata anotou - o que gastou desde então - o ritmo do dia desde a última leitura
+function metaEstimado(man, auto, conta) {
+  const m = man['meta_' + conta]; if (!m || m.valor === undefined) return null;
+  const g0 = auto['metaGasto_' + conta], g = g0 && g0.desde === m.em ? g0 : null;
   const gasto = g ? Math.max(0, (g.gasto || 0) - (m.base || 0)) : 0;
-  const ritmo = (auto.metaRitmo && auto.metaRitmo.porDia) || 0;
+  const rt = auto['metaRitmo_' + conta], ritmo = (rt && rt.porDia) || 0;
   const desde = g ? Number(g.em) || Date.parse(g.em) || 0 : Date.parse(m.em) || 0;
   const extra = desde ? ritmo * Math.max(0, Date.now() - desde) / 864e5 : 0;
-  return { informado: m.valor, em: m.em, gasto: r2(gasto), extra: r2(extra), ritmo: r2(ritmo), estimado: r2(m.valor - gasto - extra), leitura: g ? g.em : null };
+  return { conta, nome: META_CONTAS[conta] || conta, informado: m.valor, em: m.em, gasto: r2(gasto), extra: r2(extra), ritmo: r2(ritmo), estimado: r2(m.valor - gasto - extra), leitura: g ? g.em : null };
 }
+// custo de um dia do uso.json; os dias de antes da conta em dólar entram pelo número de tokens (preço normal, cache de 5 min)
+const custoDia = (v) => Math.max(v.custo || 0, ((v.entrada || 0) * PRECO_IA.normal.ent + (v.cache_escrita || 0) * PRECO_IA.normal.cw5 + (v.cache_lida || 0) * PRECO_IA.normal.lida + (v.saida || 0) * PRECO_IA.normal.sai) / 1e6);
 let elevenSaldo = null;
 async function lerEleven(forcar) {
   if (!ELEVEN_KEY) return { erro: 'sem chave da ElevenLabs no servidor' };
@@ -1025,14 +1047,15 @@ function dadosSaldos() {   // tudo o que o servidor sabe, para o CRM montar os c
   const man = s.manual || {}, auto = s.auto || {}, lim = Object.assign({}, LIM_SALDO, s.limites || {});
   const cl = man.claude ? { informado: man.claude.valor, em: man.claude.em, gasto: Math.round((s.claudeGasto || 0) * 100) / 100, estimado: Math.round(((man.claude.valor || 0) - (s.claudeGasto || 0)) * 100) / 100 } : { gasto: Math.round((s.claudeGasto || 0) * 100) / 100 };
   const uso = lerJson(path.join(DADOS, 'uso.json'), {}), mes = agoraSP().toISOString().slice(0, 7);
-  cl.gastoMes = Math.round(Object.entries(uso).filter(([d]) => d.startsWith(mes)).reduce((t, [, v]) => t + (v.custo || 0), 0) * 100) / 100;
-  return { claude: cl, meta: metaEstimado(man, auto), eleven: elevenSaldo, manual: man, auto, limites: lim, links: LINK_SALDO, avisos: s.avisos || {}, modelo: MODELO };
+  cl.gastoMes = Math.round(Object.entries(uso).filter(([d]) => d.startsWith(mes)).reduce((t, [, v]) => t + custoDia(v), 0) * 100) / 100;
+  const metas = Object.fromEntries(contasMeta(man, auto).map(c => [c, metaEstimado(man, auto, c)]).filter(([, v]) => v));
+  return { claude: cl, metas, metaContas: META_CONTAS, eleven: elevenSaldo, manual: man, auto, limites: lim, links: LINK_SALDO, avisos: s.avisos || {}, modelo: MODELO };
 }
 function saldosBaixos() {   // [{id, nome, texto}] do que está abaixo do limite
   const d = dadosSaldos(), lim = d.limites, out = [], br = (v) => 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (d.claude.informado !== undefined && d.claude.estimado < lim.claude) out.push({ id: 'claude', nome: 'Claude Console (IA da assistente)', texto: `sobram uns US$ ${d.claude.estimado.toFixed(2)}` });
   const e = d.eleven; if (e && e.limite) { const resta = e.limite - e.usados; if (resta / e.limite * 100 < lim.eleven) out.push({ id: 'eleven', nome: 'ElevenLabs (voz)', texto: `sobram ${resta.toLocaleString('pt-BR')} de ${e.limite.toLocaleString('pt-BR')} caracteres` }); }
-  const m = d.meta; if (m && m.estimado < lim.meta) out.push({ id: 'meta', nome: 'Meta Ads (patrocinado)', texto: m.estimado <= 0 ? 'o saldo pode ter acabado (os anúncios param)' : `saldo estimado ${br(m.estimado)}` + (m.ritmo ? ` (dá uns ${Math.max(0, Math.floor(m.estimado / m.ritmo))} dia(s))` : '') });
+  for (const m of Object.values(d.metas)) if (m.estimado < lim.meta) out.push({ id: 'meta_' + m.conta, nome: `Meta Ads ${m.nome}`, texto: m.estimado <= 0 ? 'o saldo pode ter acabado (os anúncios param)' : `saldo estimado ${br(m.estimado)}` + (m.ritmo ? ` (dá uns ${Math.max(0, Math.floor(m.estimado / m.ritmo))} dia(s))` : '') });
   const ra = d.auto.runwayApi; if (ra && ra.creditos !== undefined && ra.creditos < lim.runwayApi) out.push({ id: 'runwayApi', nome: 'Runway API (vídeos automáticos)', texto: `${ra.creditos} créditos` });
   const rp = d.manual.runwayApp; if (rp && rp.valor !== undefined && rp.valor < lim.runwayApp) out.push({ id: 'runwayApp', nome: 'Runway (app)', texto: `${rp.valor} créditos` });
   const mk = d.auto.make; if (mk && mk.livres !== undefined && mk.livres < lim.make) out.push({ id: 'make', nome: 'Make', texto: `${mk.livres.toLocaleString('pt-BR')} créditos livres até ${mk.renova ? new Date(mk.renova).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'renovar'}` });
@@ -1051,7 +1074,7 @@ async function verificarSaldos() {   // aviso no WhatsApp pessoal: no máximo 1 
     if (av[b.id] === hoje) continue;
     av[b.id] = hoje; salvarEstado();
     const [tit, acao] = b.id === 'contabo' ? ['Pagamento', 'Para pagar'] : b.id === 'conexao' ? ['Atenção', 'Para renovar'] : ['Saldo baixo', 'Para colocar saldo'];
-    await enviarTexto(DONO + '@s.whatsapp.net', `⚠️ ${tit} — ${b.nome}: ${b.texto}.\n${acao}: ${LINK_SALDO[b.id]}\n(Tudo na aba 💳 Pagamentos do CRM.)`, 'aviso');
+    await enviarTexto(DONO + '@s.whatsapp.net', `⚠️ ${tit} — ${b.nome}: ${b.texto}.\n${acao}: ${linkSaldo(b.id)}\n(Tudo na aba 💳 Pagamentos do CRM.)`, 'aviso');
     log('aviso de saldo baixo', b.id, b.texto);
   }
 }
