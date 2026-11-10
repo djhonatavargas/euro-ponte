@@ -142,9 +142,9 @@ Você está rodando num servidor novo, não mais no OpenClaw. As regras abaixo c
 - Imagens que o cliente mandar chegam para você ver (ex.: comprovante do agendamento).
 - RESPONDA TODAS AS PERGUNTAS (regra do Djhonata, 10/11/2026): antes de responder, veja todas as perguntas que o cliente fez desde a sua última resposta, inclusive as que vieram em mensagens separadas (ex.: "como funciona pela Caixa?" e "precisa de nome limpo e score bom?"), e responda cada uma, curto, antes de convidar ou mandar outro assunto. Nunca deixe pergunta sem resposta.
 - NOME (regra do Djhonata, 10/11/2026): se o cliente já disse o nome (mesmo numa mensagem solta, ex.: "Stefani") ou o nome do WhatsApp dele já é um nome de pessoa, use esse nome e não pergunte. Pergunte o nome no máximo uma vez na conversa.
-- CONVITE PARA O ESCRITÓRIO (regra do Djhonata, 10/11/2026): toda vez que convidar para o escritório, mande a agenda no formato fixo. Logo depois da agenda o sistema manda sozinho a foto do escritório e o endereço com a localização: não mande você a foto nem o endereço junto com a agenda.
+- CONVITE PARA O ESCRITÓRIO E AGENDA (regra do Djhonata, 10/11/2026, vale acima de qualquer regra ou exemplo que mande a agenda toda vez): convide para o escritório na hora certa, quando o cliente mostrar interesse (gostou do imóvel, quer ver de perto, quer fechar, pergunta como faz para comprar). Não convide depois de cada simulação ou dúvida. No PRIMEIRO convite mande a agenda no formato fixo; logo depois o sistema manda sozinho a foto do escritório e o endereço com a localização (não mande você a foto nem o endereço junto com a agenda). Depois disso NÃO mande a agenda de novo: quando o cliente der abertura para vir, convide e diga algo como "é só marcar na agenda que eu te passei ali em cima e me mandar o comprovante aqui". Mande a agenda de novo só se o cliente pedir (não achou o link, pediu de novo, quer remarcar) ou numa retomada em que você convida para vir tirar as dúvidas.
 - OFERTAS (análise das conversas de 10/11/2026): no máximo 2 imóveis por vez. Se o cliente pedir "mais em conta" ou "pronto", pergunte antes quanto ele quer pagar (ou a renda) e mostre a melhor opção dentro disso, em vez de mandar vários. Confira na ficha se é casa geminada ou apartamento antes de oferecer: se ele pediu casa/geminado, não ofereça apartamento sem dizer antes que é apartamento. O preço que vale para o cliente é o preço de venda: só fale da avaliação do banco se ele perguntar, deixando claro que não é o preço.
-- SIMULAÇÃO E FLUXO DE PAGAMENTO (regra do Djhonata, 10/11/2026): quando o cliente pedir simulação ou perguntar como fica a entrada/pagamento de um imóvel, monte e mande a simulação você mesma: (1) se ainda não sabe, pergunte numa mensagem só quanto ele consegue dar de sinal, quanto fica bom por mês até a entrega e se tem FGTS (a renda bruta da família ajuda); (2) com as respostas, ou com o padrão se ele não souber (sinal de R$ 10 mil e R$ 1.500 por mês), use a ferramenta simular_fluxo com o imóvel que ele está vendo e mande o texto que ela devolver, por texto; (3) pergunte se cabe no bolso ou se prefere ajustar (ex.: "quer dar um pouquinho mais de sinal?") e convide para fechar os detalhes no escritório. Nunca invente números fora da ferramenta e nunca prometa aprovação. Isso vale acima da regra antiga de não passar número fechado.
+- SIMULAÇÃO E FLUXO DE PAGAMENTO (regra do Djhonata, 10/11/2026): o objetivo é o cliente sair de casa sabendo que consegue comprar. Quando ele pedir simulação ou perguntar como fica a entrada/pagamento de um imóvel, monte e mande a simulação você mesma: (1) se ainda não sabe, pergunte numa mensagem só quanto ele consegue dar de sinal (o padrão é R$ 10 mil, mas se tiver um pouco menos dá para ajustar), quanto fica bom por mês até a entrega, se tem FGTS (quanto tem hoje) e se trabalha de carteira assinada, e a renda bruta da família; (2) com as respostas, ou com o padrão se ele não souber (sinal de R$ 10 mil e R$ 1.500 por mês), use a ferramenta simular_fluxo com o imóvel que ele está vendo e mande o texto que ela devolver, por texto; (3) pergunte se cabe no bolso ou se achou pesado: dá para diluir o reforço em mais vezes (chame a ferramenta de novo com mais reforços), subir um pouco a parcela ou ajustar o sinal. O financiamento já sai calculado pela avaliação do banco: não fale da avaliação ao cliente (só se ele perguntar). O FGTS diminui a entrada e cresce até a entrega: a ferramenta já soma isso. Não convide para o escritório depois de cada simulação: só quando ele mostrar interesse em fechar ou ver de perto. Nunca invente números fora da ferramenta e nunca prometa aprovação. Isso vale acima da regra antiga de não passar número fechado.
 - O Djhonata acompanha as conversas por um painel e às vezes escreve direto para o cliente. As mensagens dele aparecem no histórico como "(Djhonata escreveu)"; as que você mandou a pedido dele, como "(mensagem a pedido do Djhonata)". Continue a conversa a partir disso: não repita o que ele já mandou, não contradiga e não se apresente de novo.`;
 
 function sistema(ctx) {
@@ -182,6 +182,11 @@ Esta conversa pode ter mensagens antigas de quando ele testou a assistente fingi
     if (comb && comb.length) din += `\nCombinados com este cliente (orientações do Djhonata, siga):\n` + comb.map(c => '- ' + c.texto).join('\n');
     const v = (estado.visitas || {})[ctx.jid];
     if (v && quandoMs(v.q) > Date.now() - 3600e3) din += `\nVisita marcada deste cliente: ${descreverQuando(v.q)}, no escritório.`;
+    const ag = agendaEnviadaEm(ctx.jid);
+    if (ag && Date.now() - ag <= AGENDA_VALE) {
+      if (ctx.rotina === 'retomada' && Date.now() - ag > 24 * 3600e3) din += `\nAGENDA: você mandou a agenda para este cliente em ${quandoFoi(ag)}. Nesta retomada, se convidar para vir ao escritório tirar as dúvidas, pode mandar a agenda de novo.`;
+      else din += `\nAGENDA: você já mandou a agenda para este cliente em ${quandoFoi(ag)}. Não mande de novo: quando for convidar, diga para ele marcar na agenda que você passou ali em cima e mandar o comprovante aqui. Só mande a agenda de novo se ele pedir (não achou o link, quer remarcar).`;
+    }
   }
   return [{ type: 'text', text: fixo, cache_control: { type: 'ephemeral' } }, { type: 'text', text: din }];
 }
@@ -190,7 +195,7 @@ Esta conversa pode ter mensagens antigas de quando ele testou a assistente fingi
 const FERRAMENTAS = [
   { name: 'ler_ficha', description: 'Lê a ficha de um imóvel do catálogo (descrição pronta do CRM, dados e lista de fotos e vídeo). Use a ref (ex.: "913") ou parte do nome da rua/residencial.', input_schema: { type: 'object', properties: { busca: { type: 'string' } }, required: ['busca'] } },
   { name: 'enviar_arquivo', description: 'Envia ao cliente uma foto, vídeo ou arquivo do catálogo (caminho relativo à pasta do catálogo) ou uma imagem por link https. A legenda vai junto com a mídia.', input_schema: { type: 'object', properties: { caminho: { type: 'string' }, legenda: { type: 'string' } }, required: ['caminho'] } },
-  { name: 'simular_fluxo', description: 'Monta a simulação inicial do pagamento de um imóvel com os números do cliente (sinal, parcela por mês até a entrega, FGTS, renda) e devolve o texto pronto para mandar ao cliente, por texto, do jeito que veio. Sem os números do cliente, usa o padrão (sinal de R$ 10 mil e R$ 1.500 por mês). imovel = ref (ex.: "832") ou parte do nome da rua/residencial.', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, sinal: { type: 'number' }, parcela: { type: 'number' }, fgts: { type: 'number' }, renda: { type: 'number' } }, required: ['imovel'] } },
+  { name: 'simular_fluxo', description: 'Monta a simulação do pagamento de um imóvel com os números do cliente e devolve o texto pronto para mandar ao cliente, por texto, do jeito que veio. O financiamento já sai calculado pela avaliação do banco (não fale da avaliação ao cliente). Sem os números dele, usa o padrão (sinal de R$ 10 mil e R$ 1.500 por mês). imovel = ref (ex.: "832") ou parte do nome da rua/residencial. sinal = quanto ele dá na assinatura. parcela = quanto fica bom por mês até a entrega. fgts = saldo de FGTS que ele tem hoje (0 se não tem; não mande se ainda não sabe). carteira = true se ele (ou a família) trabalha de carteira assinada: aí o FGTS cresce todo mês até a entrega e diminui a entrada. renda = renda bruta mensal da família. reforcos = em quantos reforços dividir o que faltar (o último é na entrega das chaves); mande um número maior quando ele achar o reforço pesado.', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, sinal: { type: 'number' }, parcela: { type: 'number' }, fgts: { type: 'number' }, carteira: { type: 'boolean' }, renda: { type: 'number' }, reforcos: { type: 'number' } }, required: ['imovel'] } },
   { name: 'avisar_djhonata', description: 'Manda um aviso no WhatsApp pessoal do Djhonata.', input_schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
   { name: 'registrar_crm', description: 'Registra no CRM um evento do cliente atual e move o card dele: novoStatus = atendimento, visita_marcada, negociacao, remarcar, sem_interesse ou pausado. Em visita_marcada mande data (AAAA-MM-DD) e hora (HH:MM): o sistema usa para os lembretes da visita. Se o cliente cancelar ou pedir para remarcar, use remarcar (os lembretes param). Mande nomeReal quando o cliente disser o nome e imovel quando souber qual imóvel interessa. resultado = frase curta do que aconteceu.', input_schema: { type: 'object', properties: { novoStatus: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nomeReal: { type: 'string' }, imovel: { type: 'string' }, resumo: { type: 'string' }, resultado: { type: 'string' } } } }
 ];
@@ -206,21 +211,73 @@ function acharPasta(busca) {
   const ps = pastasImoveis();
   const ref = /(\d{2,4})/.exec(b);
   if (ref) { const p = ps.find(n => new RegExp(`\\(ref ${ref[1]}\\)`).test(n)); if (p) return p; }
-  return ps.find(n => semAcento(n).includes(b)) || null;
+  const porNome = b && ps.find(n => semAcento(n).includes(b)); if (porNome) return porNome;
+  // pasta sem "(ref N)" no nome (ex.: Residencial Alira = "rua witmarsum - comasa"): procura pela referência e pelo título da ficha
+  for (const n of ps) {
+    const t = semAcento(lerTexto(path.join(n, 'ficha.md')).slice(0, 800)), tit = (/^#\s*(.+)$/m.exec(t) || [])[1] || '';
+    if ((ref && new RegExp(`referencia no sistema:\\s*${ref[1]}\\b`).test(t)) || (b.length >= 4 && tit.includes(b))) return n;
+  }
+  return null;
 }
 const EXT_IMG = /\.(jpe?g|png|webp)$/i, EXT_VID = /\.(mp4)$/i;
 // ---------- simulação do pagamento (o Djhonata pediu: a assistente monta e manda sozinha, 10/11/2026) ----------
-// Regras do fluxo do CRM: entrada (sinal + parcelas + FGTS + reforços) de pelo menos 20% do valor; a Caixa financia até 80%.
+// Financiamento = 80% da avaliação do banco (sem falar da avaliação ao cliente). Avaliação: a anotada na ficha; se não tiver,
+// a sugestão do CRM (menor área × R$ 6.300 o m², a média), nunca abaixo do preço e no máximo 10% acima dele. Construtora que
+// "não aceita avaliação superior": vale o preço. O resto da entrada: sinal, parcelas até a entrega, FGTS (o de hoje mais o que
+// entra até a entrega, cerca de 1/12 da renda por mês, para quem é de carteira assinada) e reforços, o último na entrega das chaves.
 const brl = (v) => 'R$ ' + (Math.round((Number(v) || 0) * 100) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const MESES_CURTOS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const M2_AVALIACAO = 6300, AVAL_MAX_ACIMA = 0.10, REFORCO_MIN = 5000;   // reforço do padrão: no mínimo uns R$ 5 mil cada (valor pequeno vai num só, na entrega das chaves)
+function valorBR(s) {   // "430.000,00" | "305.000" | "580 mil" -> número
+  s = String(s || '').trim();
+  const mil = /^(\d+(?:[.,]\d+)?)\s*mil$/i.exec(s); if (mil) return Math.round(parseFloat(mil[1].replace(',', '.')) * 1000);
+  const m = /^(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?$/.exec(s);
+  return m ? Number(m[1].replace(/\./g, '')) + (m[2] ? Number(m[2].padEnd(2, '0')) / 100 : 0) : 0;
+}
+const numArea = (s) => /^\d{1,3}(\.\d{3})+(,\d+)?$/.test(s) ? parseFloat(s.replace(/\./g, '').replace(',', '.')) : parseFloat(String(s).replace(',', '.'));
+function avaliacaoDaFicha(t, preco) {   // valor anotado na ficha ("avaliação CEF R$ 430.000,00", "580 mil avaliação caixa", tabela "VALOR AVALIADO")
+  const ok = (v) => v > 0 && (!preco || (v >= preco * 0.5 && v <= preco * 2));
+  let m = /avalia[çc][ãa]o[^\d\n]{0,25}?(\d{1,3}(?:\.\d{3})+(?:,\d{2})?|\d+(?:[.,]\d+)?\s*mil\b)/i.exec(t);
+  if (m && ok(valorBR(m[1]))) return valorBR(m[1]);
+  m = /(\d{2,4}(?:[.,]\d+)?)\s*mil\s+(?:de\s+)?avalia[çc][ãa]o/i.exec(t);
+  if (m && ok(valorBR(m[1] + ' mil'))) return valorBR(m[1] + ' mil');
+  if (preco && /valor avaliado/i.test(t)) {   // tabela por unidade: a linha com o preço da ficha
+    for (const l of t.split(/\n|;/)) {
+      const v = [...l.matchAll(/R\$\s*([\d.]+(?:,\d{2})?)/g)].map(x => valorBR(x[1]));
+      if (v.length >= 2 && Math.abs(v[0] - preco) < 1 && ok(v[1])) return v[1];
+    }
+  }
+  return 0;
+}
 function dadosDaFicha(pasta) {
-  const t = lerTexto(path.join(pasta, 'ficha.md'));
+  const t = lerTexto(path.join(pasta, 'ficha.md')).replace(/\r/g, '');
   const nome = (/^#\s*(.+)$/m.exec(t) || [])[1] || pasta;
   const pm = /-\s*Preço:\s*R\$\s*([\d.]+)(?:,(\d{2}))?/i.exec(t);
   const preco = pm ? Number(pm[1].replace(/\./g, '')) + (pm[2] ? Number(pm[2]) / 100 : 0) : 0;
   const em = /-\s*Entrega:\s*([^\n]+)/i.exec(t), ent = em ? em[1].trim() : '';
   const d = /(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(ent);
-  return { nome: nome.replace(/\s+—\s+/, ' – ').trim(), preco, entrega: d ? { mes: Number(d[2]), ano: Number(d[3]) } : null, pronto: /pronto/i.test(ent) || (!d && /entregue|pronto/i.test(t)) };
+  const am = /-\s*[ÁA]rea:\s*([^\n]+)/i.exec(t);
+  const areas = am ? [...am[1].matchAll(/(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)\s*m²/g)].map(x => numArea(x[1])).filter(v => v > 0) : [];
+  const tipo = (/-\s*Tipo[^:\n]*:\s*([^\n]+)/i.exec(t) || [])[1] || '';
+  return {
+    nome: nome.replace(/\s+—\s+/, ' – ').trim(), preco, entrega: d ? { mes: Number(d[2]), ano: Number(d[3]) } : null, pronto: /pronto/i.test(ent) || (!d && /entregue|pronto/i.test(t)),
+    area: areas.length ? Math.min(...areas) : 0, terreno: /terreno|\blote\b/i.test(tipo),
+    aval: avaliacaoDaFicha(t, preco), naoAceitaSuperior: /n[aã]o aceita avalia[çc][ãa]o superior/i.test(t)
+  };
+}
+function avaliacaoUsada(f) {
+  let av = f.aval;   // anotada na ficha: vale como está
+  if (!av) av = f.area > 0 && !f.terreno ? Math.min(Math.max(f.area * M2_AVALIACAO, f.preco), f.preco * (1 + AVAL_MAX_ACIMA)) : f.preco;
+  if (f.naoAceitaSuperior) av = Math.min(av, f.preco);
+  return av;
+}
+// meses (contados de hoje) dos reforços: o último na entrega das chaves e os outros de 12 em 12 meses para trás;
+// se pedir mais reforços do que cabem por ano, ficam mais perto um do outro. Nunca nos 2 primeiros meses.
+function mesesDosReforcos(n, pedidos) {
+  const anuais = Math.max(1, Math.floor((n - 2) / 12) + 1);
+  const q = Math.max(1, Math.min(Math.round(pedidos) || anuais, Math.max(1, n - 1)));
+  const passo = q <= anuais ? 12 : Math.max(1, Math.floor((n - 2) / (q - 1)));
+  return Array.from({ length: q }, (_, k) => n - passo * (q - 1 - k));
 }
 function simularFluxo(e) {
   const pasta = acharPasta(String(e.imovel || ''));
@@ -228,41 +285,54 @@ function simularFluxo(e) {
   const f = dadosDaFicha(pasta);
   if (!f.preco) return { erro: 'Esse imóvel está sem preço na ficha: não monte simulação; diga que o valor certinho você confirma e convide para o escritório.' };
   const num = (v, pad) => { const n = Number(v); return isFinite(n) && n > 0 ? n : pad; };
-  const sinal = num(e.sinal, 10000), parcela = num(e.parcela, 1500), fgts = num(e.fgts, 0), renda = num(e.renda, 0);
-  const minimo = Math.round(f.preco * 0.20 * 100) / 100;                   // entrada mínima: 20% do valor
+  const informado = (v) => v !== undefined && v !== null && v !== '' && isFinite(Number(v));
+  const cent = (v) => Math.round(v * 100) / 100, acima = (v) => Math.ceil(v * 100 - 1e-6) / 100;
+  const sinal = num(e.sinal, 10000), parcela = num(e.parcela, 1500), renda = num(e.renda, 0);
+  const fgtsHoje = informado(e.fgts) ? Math.max(0, Number(e.fgts)) : 0;
+  const carteira = e.carteira === true || /^(true|sim|s)$/i.test(String(e.carteira || ''));
+  const av = avaliacaoUsada(f);
+  const financ = Math.max(0, Math.min(Math.floor(0.8 * av / 1000) * 1000, f.preco - sinal));   // 80% da avaliação, arredondado para baixo no milhar
+  const entrada = cent(f.preco - financ);                                                       // o que o cliente paga até a entrega
   const hoje = agoraSP(); let meses = 0, quando = '';
   if (f.entrega) { meses = (f.entrega.ano - hoje.getFullYear()) * 12 + (f.entrega.mes - (hoje.getMonth() + 1)); quando = `${MESES_CURTOS[f.entrega.mes - 1]}/${f.entrega.ano}`; }
   const mesRot = (k) => { const d = new Date(hoje.getFullYear(), hoje.getMonth() + k, 1); return `${MESES_CURTOS[d.getMonth()]}/${d.getFullYear()}`; };
+  const obra = !f.pronto && meses >= 2;   // pronto (ou entrega muito perto): não dá para parcelar a entrada durante a obra
   const L = [`📋 *Simulação inicial – ${f.nome}*`, `💰 Valor: ${brl(f.preco)}`, ''];
-  let entrada = sinal + fgts, linhaRef = '', alt = '';
-  if (f.pronto || meses < 2) {
-    // imóvel pronto (ou entrega muito perto): não dá para parcelar a entrada durante a obra
-    L.push(`✅ Sinal: ${brl(sinal)}`);
-    if (fgts) L.push(`✅ FGTS: ${brl(fgts)}`);
-    const falta = Math.max(0, minimo - entrada);
-    if (falta > 0) { L.push(`✅ Complemento da entrada: ${brl(falta)} (a gente combina como fica, com FGTS, subsídio ou outra forma)`); entrada += falta; }
-  } else {
-    const n = meses, parcelado = parcela * n;
-    entrada += parcelado;
-    L.push(`✅ Sinal: ${brl(sinal)}`);
-    L.push(`✅ Entrada parcelada: ${n}x de ${brl(parcela)} até a entrega (${quando}) = ${brl(parcelado)}`);
-    if (fgts) L.push(`✅ FGTS: ${brl(fgts)}`);
-    const falta = Math.max(0, minimo - entrada);
-    if (falta > 0) {
-      const q = Math.max(1, Math.floor(n / 12)), v = Math.round(falta / q * 100) / 100;
-      const datas = Array.from({ length: q }, (_, k) => mesRot(Math.min(n, 12 * (k + 1)))).join(' e ');
-      linhaRef = `✅ Reforço: ${q > 1 ? q + 'x de ' : ''}${brl(v)} (${q > 1 ? '1 por ano: ' : ''}${datas})`;
-      L.push(linhaRef); entrada += falta;
-      const semReforco = Math.ceil((minimo - sinal - fgts) / n * 100) / 100;
-      alt = `Se preferir sem reforço, a parcela mensal até a entrega fica em ${brl(semReforco)}.`;
+  L.push(`✅ Sinal: ${brl(sinal)}${informado(e.sinal) ? '' : ' (é o padrão; se ficar apertado, me fala que eu coloco o sinal que você consegue dar na assinatura)'}`);
+  let resto = Math.max(0, cent(entrada - sinal)), q = 0, alt = '', parcelaUsada = 0;
+  const fgtsMes = obra && carteira && renda > 0 ? renda / 12 : 0;
+  const fgtsTotal = cent(fgtsHoje + fgtsMes * (obra ? meses : 0)), fgtsUsado = Math.min(fgtsTotal, resto);
+  if (fgtsUsado > 0) {
+    const detalhe = fgtsMes ? ` (${fgtsHoje ? `os ${brl(fgtsHoje)} de hoje + ` : ''}uns ${brl(fgtsMes)} por mês que entram até a entrega)` : '';
+    L.push(`✅ FGTS${obra ? ' na entrega' : ''}: ${brl(fgtsUsado)}${detalhe}${fgtsTotal > fgtsUsado + 1 ? ' — já cobre o resto da entrada' : ''}`);
+    resto = cent(resto - fgtsUsado);
+  }
+  if (!obra) {
+    if (resto > 0) L.push(`✅ Complemento da entrada: ${brl(resto)} (a gente combina como fica: com subsídio, FGTS ou outra forma)`);
+  } else if (resto > 0) {
+    const n = meses;
+    parcelaUsada = Math.min(parcela, acima(resto / n));   // não pede por mês mais do que precisa
+    const parcelado = Math.min(resto, cent(parcelaUsada * n));
+    L.push(`✅ Entrada parcelada: ${n}x de ${brl(parcelaUsada)} até a entrega (${quando}) = ${brl(parcelado)}`);
+    resto = cent(resto - parcelado);
+    if (resto >= 1) {
+      const pedidos = num(e.reforcos, 0), padrao = mesesDosReforcos(n, 0);
+      const ms = pedidos ? mesesDosReforcos(n, pedidos) : padrao.slice(-Math.max(1, Math.floor(resto / REFORCO_MIN))); q = ms.length;
+      const datas = ms.map(k => mesRot(k) + (k === n ? ' na entrega das chaves' : ''));
+      const lista = datas.length > 1 ? datas.slice(0, -1).join(', ') + ' e ' + datas[datas.length - 1] : datas[0];
+      L.push(`✅ Reforço: ${q > 1 ? q + 'x de ' : ''}${brl(acima(resto / q))} (${lista})`);
+      alt = `Se preferir sem reforço, a parcela mensal até a entrega fica em ${brl(acima((entrada - sinal - fgtsUsado) / n))}.`;
     }
   }
-  const financ = Math.max(0, Math.round((f.preco - entrada) * 100) / 100);
-  L.push(`🏦 Financiamento pela Caixa: ${brl(financ)}${f.pronto ? '' : ' (começa quando o imóvel ficar pronto)'}`);
+  L.push(`🏦 Financiamento pela Caixa: ${brl(financ)}${obra ? ' (começa quando o imóvel ficar pronto)' : ''}`);
   L.push(`💵 A parcela do financiamento a Caixa calcula pela renda e fica em até 30% dela${renda ? `: com renda de ${brl(renda)}, até ${brl(renda * 0.3)} por mês` : ''}.`);
   if (alt) L.push('', alt);
-  L.push('', 'É uma simulação inicial pelo valor de tabela. O valor certinho (avaliação do banco, subsídio e FGTS) eu fecho com você aqui no escritório, sem compromisso.');
-  return { texto: L.join('\n'), resumo: `${f.nome}, ${brl(f.preco)}, sinal ${brl(sinal)}, parcela ${brl(parcela)}, financiamento ${brl(financ)}${linhaRef ? ', com reforço' : ''}` };
+  L.push('', 'É uma simulação inicial, sujeita à aprovação do banco. Dá pra ajustar do jeito que ficar melhor pra você.');
+  return {
+    texto: L.join('\n'),
+    resumo: `${f.nome}, ${brl(f.preco)}, sinal ${brl(sinal)}${parcelaUsada ? ', parcela ' + brl(parcelaUsada) : ''}${fgtsUsado ? ', FGTS ' + brl(fgtsUsado) : ''}${q ? `, ${q} reforço(s)` : ''}, financiamento ${brl(financ)} (avaliação ${brl(av)}${f.aval ? ' da ficha' : ''})`,
+    semFgts: !informado(e.fgts) && !carteira, perguntarCarteira: obra && fgtsHoje > 0 && e.carteira === undefined, perguntarRenda: obra && carteira && !renda, temReforco: q > 0
+  };
 }
 
 // ---------- oferta do imóvel: qual é o vídeo e a foto da fachada de cada pasta ----------
@@ -297,7 +367,13 @@ async function executar(nome, entrada, ctx) {
       const r = simularFluxo(entrada);
       if (r.erro) return r.erro;
       ctx.notas.push('[simulação montada: ' + r.resumo + ']');
-      return 'Mande este texto ao cliente por TEXTO, do jeito que está (pode tirar ou trocar uma palavra, nunca os números), e depois pergunte se cabe no bolso dele ou se prefere ajustar, e convide para fechar no escritório (agenda):\n\n' + r.texto;
+      log('simulação', ctx.telefone || ctx.jid, r.resumo);
+      const depois = ['pergunte se cabe no bolso'];
+      if (r.temReforco) depois.push('se achou pesado o reforço (dá para diluir em mais reforços: chame simular_fluxo de novo com reforcos maior; ou subir um pouco a parcela)');
+      if (r.semFgts) depois.push('se ele tem FGTS (quanto tem hoje) e se trabalha de carteira assinada, porque o FGTS diminui a entrada e vai crescendo até a entrega');
+      else if (r.perguntarCarteira) depois.push('se ele trabalha de carteira assinada (aí o FGTS cresce até a entrega e a entrada diminui)');
+      else if (r.perguntarRenda) depois.push('a renda bruta, para somar o FGTS que entra até a entrega');
+      return `Mande este texto ao cliente por TEXTO, do jeito que está (pode tirar ou trocar uma palavra, nunca os números). Depois, numa mensagem curta, ${depois.join('; ')}. Não fale da avaliação do banco e não convide para o escritório por causa da simulação: só se ele mostrar interesse em fechar ou ver de perto.\n\n${r.texto}`;
     }
     if (nome === 'ler_ficha') {
       const p = acharPasta(entrada.busca || '');
@@ -852,21 +928,39 @@ function separarAgenda(t) {   // -> [texto antes, agenda, texto depois], só os 
   const bloco = agendaFixa() || linhas.slice(ini, iLink + 1).join('\n').trim();
   return [linhas.slice(0, ini).join('\n').trim(), bloco, linhas.slice(iLink + 1).join('\n').trim()].filter(Boolean);
 }
-// Convite para o escritório: depois da agenda vão SEMPRE a foto do escritório e o endereço com a localização (regra do Djhonata, 10/11/2026)
+// Convite para o escritório (regra do Djhonata, 10/11/2026): a agenda, a foto do escritório e o endereço com a localização vão no
+// PRIMEIRO convite. Depois a assistente só lembra de marcar na agenda que já mandou. A agenda volta só se o cliente pedir (não achou,
+// quer remarcar), numa retomada (se a última foi há mais de 1 dia), a pedido do Djhonata, ou depois de 7 dias (aí é um convite novo).
 const FOTO_ESCRITORIO = 'escritorio/fachada.jpg';
 const ENDERECO_ESCRITORIO = ENV.ENDERECO_ESCRITORIO || 'O endereço é Rua Dona Francisca, 1222 - Saguaçu, Joinville. Aqui a localização: https://share.google/rJ6TI7xChk5JvpKEN';
 const ehEnderecoEscritorio = (t) => /dona francisca/i.test(t || '') && /(share\.google|maps|localiza)/i.test(t || '');
+const AGENDA_VALE = 7 * 864e5;
+const RE_PEDE_AGENDA = /\b(agenda|link|hor[aá]rios?|remarc\w*|desmarc\w*|cancel\w*)\b|outr[oa]s? (dia|data|hor[aá]rio)|n[aã]o (vou|vai|vamos) (poder|conseguir|dar)|n[aã]o (consigo|posso|consegui) ir|n[aã]o (achei|acho|encontr\w*|abr\w*)\b/i;
+const LEMBRA_AGENDA = 'É só marcar na agenda que eu te passei ali em cima e me mandar o comprovante aqui ✅';
 function mandouHaPouco(jid, teste, ms) { const lim = Date.now() - ms; return lerEsp(jid).some(m => (m.ts || 0) >= lim && m.autor !== 'cliente' && teste(m)); }
-async function pacoteEscritorio(jid, autor, extra) {   // não repete se já foi nas últimas 2 horas
+function agendaEnviadaEm(jid) {   // última vez que a agenda saiu nesta conversa (desde o começo da memória da IA, para o teste "do zero" valer)
+  const ini = (lerConv(jid)[0] || {}).ts || 0; let ult = 0;
+  for (const m of lerEsp(jid)) if (m.autor !== 'cliente' && (m.ts || 0) >= ini && (m.ts || 0) > ult && RE_LINK_AGENDA.test(m.texto || '')) ult = m.ts;
+  return ult;
+}
+function podeMandarAgenda(jid, extra) {
+  const ult = agendaEnviadaEm(jid);
+  if (!ult || Date.now() - ult > AGENDA_VALE) return true;                       // primeiro convite
+  if (extra && extra.ordem) return true;                                          // o Djhonata pediu
+  if (extra && extra.rotina) return extra.rotina === 'retomada' && Date.now() - ult > 24 * 3600e3;   // lembrete de visita vai sem agenda
+  return RE_PEDE_AGENDA.test(textoRecenteCliente(jid));                          // o cliente pediu de novo (ou quer remarcar)
+}
+async function pacoteEscritorio(jid, autor, extra) {   // foto e endereço só no primeiro convite (não repete por 7 dias)
   const feitos = [];
-  if (!mandouHaPouco(jid, m => m.arquivo === 'c/' + FOTO_ESCRITORIO, 2 * 3600e3) && fs.existsSync(path.join(CATALOGO, FOTO_ESCRITORIO))) {
+  if (!mandouHaPouco(jid, m => m.arquivo === 'c/' + FOTO_ESCRITORIO, AGENDA_VALE) && fs.existsSync(path.join(CATALOGO, FOTO_ESCRITORIO))) {
     if (await enviarArquivo(jid, FOTO_ESCRITORIO, '', autor, extra) === 'Enviado.') feitos.push('[foto do escritório]');
   }
-  if (!mandouHaPouco(jid, m => ehEnderecoEscritorio(m.texto), 2 * 3600e3) && await enviarTexto(jid, ENDERECO_ESCRITORIO, autor, extra)) feitos.push(ENDERECO_ESCRITORIO);
+  if (!mandouHaPouco(jid, m => ehEnderecoEscritorio(m.texto), AGENDA_VALE) && await enviarTexto(jid, ENDERECO_ESCRITORIO, autor, extra)) feitos.push(ENDERECO_ESCRITORIO);
   return feitos;
 }
 async function enviarSaida(jid, texto, autor = 'ia', extra) {   // devolve o que saiu (para a memória da conversa)
   const feitos = [];
+  const proprio = String(texto || '').split('\n').filter(l => !RE_LINK_AGENDA.test(l) && !linhaDaAgenda(l)).join('\n');   // o texto da IA sem o bloco da agenda
   for (const p of partesResposta(String(texto || ''))) {
     if (p.tipo === 'audio') {
       const ok = await enviarAudio(jid, p.t, autor, extra);
@@ -874,8 +968,14 @@ async function enviarSaida(jid, texto, autor = 'ia', extra) {   // devolve o que
       if (ok === 'barrado') continue;
     }
     for (const parte of p.t.split(/\n\s*---\s*\n/)) for (const sub of separarAgenda(parte)) {
-      const s = sub.replace(/^\s*---\s*$/gm, '').trim(); if (!s) continue;
+      let s = sub.replace(/^\s*---\s*$/gm, '').trim(); if (!s) continue;
       if (autor === 'ia' && ehEnderecoEscritorio(s) && mandouHaPouco(jid, m => ehEnderecoEscritorio(m.texto), 10 * 60e3)) continue;   // o endereço já foi junto com a agenda
+      if (autor === 'ia' && RE_LINK_AGENDA.test(s) && !podeMandarAgenda(jid, extra)) {
+        log('agenda não reenviada (já foi mandada e o cliente não pediu)', jid);
+        // no lugar da agenda vai só o lembrete de marcar, se a própria resposta ainda não lembra da agenda que já foi
+        if (feitos.includes(LEMBRA_AGENDA) || /(te (passei|mandei|enviei)|ali em cima|l[aá] em cima|acima)/i.test(proprio)) continue;
+        s = LEMBRA_AGENDA;
+      }
       if (await enviarTexto(jid, s, autor, extra)) { feitos.push(s); if (autor === 'ia' && RE_LINK_AGENDA.test(s)) feitos.push(...await pacoteEscritorio(jid, autor, extra)); }
     }
   }
@@ -1338,7 +1438,7 @@ setInterval(() => verificarSaldos().catch(e => log('saldos', e.message)), 3 * 36
 setTimeout(() => verificarSaldos().catch(e => log('saldos', e.message)), 5 * 60e3);
 
 async function responder(f) {
-  const ctx = { jid: f.jid, telefone: f.telefone, nome: f.nome, dono: f.dono, notas: [], audioAgora: !!f.audio };
+  const ctx = { jid: f.jid, telefone: f.telefone, nome: f.nome, dono: f.dono, notas: [], audioAgora: !!f.audio, rotina: (f.extra && f.extra.rotina) || '' };
   const system = sistema(ctx);
   const messages = montarMensagens(f.jid, f.imagens, f.rotina);
   const ferramentas = f.dono && !(estado.teste && estado.teste.ativo) ? [...FERRAMENTAS, FERRAMENTA_DONO] : FERRAMENTAS;
