@@ -140,6 +140,11 @@ Você está rodando num servidor novo, não mais no OpenClaw. As regras abaixo c
 - Eventos do CRM (visita marcada com data e hora, remarcar, negociação, cliente pausado, nome real, imóvel de interesse): ferramenta registrar_crm. Onde as regras mandam escrever em arquivos (visitas-agendadas.md, avisos-enviados.md, resultados-assistente.jsonl, AGENTS.md, combinados), não escreva arquivos: use registrar_crm e avisar_djhonata. O sistema guarda as visitas e os avisos.
 - ROTINAS: os lembretes de visita e a retomada de quem parou de responder são disparados pelo sistema, com uma mensagem [ROTINA AUTOMÁTICA ...]. Siga o que ela pedir; quando não houver nada a fazer, responda NO_REPLY (nunca escreva "nada a fazer", porque iria para o cliente). Fora disso, não prometa mandar mensagem depois e não marque nada por conta própria.
 - Imagens que o cliente mandar chegam para você ver (ex.: comprovante do agendamento).
+- RESPONDA TODAS AS PERGUNTAS (regra do Djhonata, 10/11/2026): antes de responder, veja todas as perguntas que o cliente fez desde a sua última resposta, inclusive as que vieram em mensagens separadas (ex.: "como funciona pela Caixa?" e "precisa de nome limpo e score bom?"), e responda cada uma, curto, antes de convidar ou mandar outro assunto. Nunca deixe pergunta sem resposta.
+- NOME (regra do Djhonata, 10/11/2026): se o cliente já disse o nome (mesmo numa mensagem solta, ex.: "Stefani") ou o nome do WhatsApp dele já é um nome de pessoa, use esse nome e não pergunte. Pergunte o nome no máximo uma vez na conversa.
+- CONVITE PARA O ESCRITÓRIO (regra do Djhonata, 10/11/2026): toda vez que convidar para o escritório, mande a agenda no formato fixo. Logo depois da agenda o sistema manda sozinho a foto do escritório e o endereço com a localização: não mande você a foto nem o endereço junto com a agenda.
+- OFERTAS (análise das conversas de 10/11/2026): no máximo 2 imóveis por vez. Se o cliente pedir "mais em conta" ou "pronto", pergunte antes quanto ele quer pagar (ou a renda) e mostre a melhor opção dentro disso, em vez de mandar vários. Confira na ficha se é casa geminada ou apartamento antes de oferecer: se ele pediu casa/geminado, não ofereça apartamento sem dizer antes que é apartamento. O preço que vale para o cliente é o preço de venda: só fale da avaliação do banco se ele perguntar, deixando claro que não é o preço.
+- SIMULAÇÃO E FLUXO DE PAGAMENTO (regra do Djhonata, 10/11/2026): quando o cliente pedir simulação ou perguntar como fica a entrada/pagamento de um imóvel, monte e mande a simulação você mesma: (1) se ainda não sabe, pergunte numa mensagem só quanto ele consegue dar de sinal, quanto fica bom por mês até a entrega e se tem FGTS (a renda bruta da família ajuda); (2) com as respostas, ou com o padrão se ele não souber (sinal de R$ 10 mil e R$ 1.500 por mês), use a ferramenta simular_fluxo com o imóvel que ele está vendo e mande o texto que ela devolver, por texto; (3) pergunte se cabe no bolso ou se prefere ajustar (ex.: "quer dar um pouquinho mais de sinal?") e convide para fechar os detalhes no escritório. Nunca invente números fora da ferramenta e nunca prometa aprovação. Isso vale acima da regra antiga de não passar número fechado.
 - O Djhonata acompanha as conversas por um painel e às vezes escreve direto para o cliente. As mensagens dele aparecem no histórico como "(Djhonata escreveu)"; as que você mandou a pedido dele, como "(mensagem a pedido do Djhonata)". Continue a conversa a partir disso: não repita o que ele já mandou, não contradiga e não se apresente de novo.`;
 
 function sistema(ctx) {
@@ -185,6 +190,7 @@ Esta conversa pode ter mensagens antigas de quando ele testou a assistente fingi
 const FERRAMENTAS = [
   { name: 'ler_ficha', description: 'Lê a ficha de um imóvel do catálogo (descrição pronta do CRM, dados e lista de fotos e vídeo). Use a ref (ex.: "913") ou parte do nome da rua/residencial.', input_schema: { type: 'object', properties: { busca: { type: 'string' } }, required: ['busca'] } },
   { name: 'enviar_arquivo', description: 'Envia ao cliente uma foto, vídeo ou arquivo do catálogo (caminho relativo à pasta do catálogo) ou uma imagem por link https. A legenda vai junto com a mídia.', input_schema: { type: 'object', properties: { caminho: { type: 'string' }, legenda: { type: 'string' } }, required: ['caminho'] } },
+  { name: 'simular_fluxo', description: 'Monta a simulação inicial do pagamento de um imóvel com os números do cliente (sinal, parcela por mês até a entrega, FGTS, renda) e devolve o texto pronto para mandar ao cliente, por texto, do jeito que veio. Sem os números do cliente, usa o padrão (sinal de R$ 10 mil e R$ 1.500 por mês). imovel = ref (ex.: "832") ou parte do nome da rua/residencial.', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, sinal: { type: 'number' }, parcela: { type: 'number' }, fgts: { type: 'number' }, renda: { type: 'number' } }, required: ['imovel'] } },
   { name: 'avisar_djhonata', description: 'Manda um aviso no WhatsApp pessoal do Djhonata.', input_schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
   { name: 'registrar_crm', description: 'Registra no CRM um evento do cliente atual e move o card dele: novoStatus = atendimento, visita_marcada, negociacao, remarcar, sem_interesse ou pausado. Em visita_marcada mande data (AAAA-MM-DD) e hora (HH:MM): o sistema usa para os lembretes da visita. Se o cliente cancelar ou pedir para remarcar, use remarcar (os lembretes param). Mande nomeReal quando o cliente disser o nome e imovel quando souber qual imóvel interessa. resultado = frase curta do que aconteceu.', input_schema: { type: 'object', properties: { novoStatus: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nomeReal: { type: 'string' }, imovel: { type: 'string' }, resumo: { type: 'string' }, resultado: { type: 'string' } } } }
 ];
@@ -203,6 +209,62 @@ function acharPasta(busca) {
   return ps.find(n => semAcento(n).includes(b)) || null;
 }
 const EXT_IMG = /\.(jpe?g|png|webp)$/i, EXT_VID = /\.(mp4)$/i;
+// ---------- simulação do pagamento (o Djhonata pediu: a assistente monta e manda sozinha, 10/11/2026) ----------
+// Regras do fluxo do CRM: entrada (sinal + parcelas + FGTS + reforços) de pelo menos 20% do valor; a Caixa financia até 80%.
+const brl = (v) => 'R$ ' + (Math.round((Number(v) || 0) * 100) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const MESES_CURTOS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+function dadosDaFicha(pasta) {
+  const t = lerTexto(path.join(pasta, 'ficha.md'));
+  const nome = (/^#\s*(.+)$/m.exec(t) || [])[1] || pasta;
+  const pm = /-\s*Preço:\s*R\$\s*([\d.]+)(?:,(\d{2}))?/i.exec(t);
+  const preco = pm ? Number(pm[1].replace(/\./g, '')) + (pm[2] ? Number(pm[2]) / 100 : 0) : 0;
+  const em = /-\s*Entrega:\s*([^\n]+)/i.exec(t), ent = em ? em[1].trim() : '';
+  const d = /(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(ent);
+  return { nome: nome.replace(/\s+—\s+/, ' – ').trim(), preco, entrega: d ? { mes: Number(d[2]), ano: Number(d[3]) } : null, pronto: /pronto/i.test(ent) || (!d && /entregue|pronto/i.test(t)) };
+}
+function simularFluxo(e) {
+  const pasta = acharPasta(String(e.imovel || ''));
+  if (!pasta) return { erro: 'Imóvel não encontrado no catálogo: confira a ref no CATALOGO.md e tente de novo.' };
+  const f = dadosDaFicha(pasta);
+  if (!f.preco) return { erro: 'Esse imóvel está sem preço na ficha: não monte simulação; diga que o valor certinho você confirma e convide para o escritório.' };
+  const num = (v, pad) => { const n = Number(v); return isFinite(n) && n > 0 ? n : pad; };
+  const sinal = num(e.sinal, 10000), parcela = num(e.parcela, 1500), fgts = num(e.fgts, 0), renda = num(e.renda, 0);
+  const minimo = Math.round(f.preco * 0.20 * 100) / 100;                   // entrada mínima: 20% do valor
+  const hoje = agoraSP(); let meses = 0, quando = '';
+  if (f.entrega) { meses = (f.entrega.ano - hoje.getFullYear()) * 12 + (f.entrega.mes - (hoje.getMonth() + 1)); quando = `${MESES_CURTOS[f.entrega.mes - 1]}/${f.entrega.ano}`; }
+  const mesRot = (k) => { const d = new Date(hoje.getFullYear(), hoje.getMonth() + k, 1); return `${MESES_CURTOS[d.getMonth()]}/${d.getFullYear()}`; };
+  const L = [`📋 *Simulação inicial – ${f.nome}*`, `💰 Valor: ${brl(f.preco)}`, ''];
+  let entrada = sinal + fgts, linhaRef = '', alt = '';
+  if (f.pronto || meses < 2) {
+    // imóvel pronto (ou entrega muito perto): não dá para parcelar a entrada durante a obra
+    L.push(`✅ Sinal: ${brl(sinal)}`);
+    if (fgts) L.push(`✅ FGTS: ${brl(fgts)}`);
+    const falta = Math.max(0, minimo - entrada);
+    if (falta > 0) { L.push(`✅ Complemento da entrada: ${brl(falta)} (a gente combina como fica, com FGTS, subsídio ou outra forma)`); entrada += falta; }
+  } else {
+    const n = meses, parcelado = parcela * n;
+    entrada += parcelado;
+    L.push(`✅ Sinal: ${brl(sinal)}`);
+    L.push(`✅ Entrada parcelada: ${n}x de ${brl(parcela)} até a entrega (${quando}) = ${brl(parcelado)}`);
+    if (fgts) L.push(`✅ FGTS: ${brl(fgts)}`);
+    const falta = Math.max(0, minimo - entrada);
+    if (falta > 0) {
+      const q = Math.max(1, Math.floor(n / 12)), v = Math.round(falta / q * 100) / 100;
+      const datas = Array.from({ length: q }, (_, k) => mesRot(Math.min(n, 12 * (k + 1)))).join(' e ');
+      linhaRef = `✅ Reforço: ${q > 1 ? q + 'x de ' : ''}${brl(v)} (${q > 1 ? '1 por ano: ' : ''}${datas})`;
+      L.push(linhaRef); entrada += falta;
+      const semReforco = Math.ceil((minimo - sinal - fgts) / n * 100) / 100;
+      alt = `Se preferir sem reforço, a parcela mensal até a entrega fica em ${brl(semReforco)}.`;
+    }
+  }
+  const financ = Math.max(0, Math.round((f.preco - entrada) * 100) / 100);
+  L.push(`🏦 Financiamento pela Caixa: ${brl(financ)}${f.pronto ? '' : ' (começa quando o imóvel ficar pronto)'}`);
+  L.push(`💵 A parcela do financiamento a Caixa calcula pela renda e fica em até 30% dela${renda ? `: com renda de ${brl(renda)}, até ${brl(renda * 0.3)} por mês` : ''}.`);
+  if (alt) L.push('', alt);
+  L.push('', 'É uma simulação inicial pelo valor de tabela. O valor certinho (avaliação do banco, subsídio e FGTS) eu fecho com você aqui no escritório, sem compromisso.');
+  return { texto: L.join('\n'), resumo: `${f.nome}, ${brl(f.preco)}, sinal ${brl(sinal)}, parcela ${brl(parcela)}, financiamento ${brl(financ)}${linhaRef ? ', com reforço' : ''}` };
+}
+
 // ---------- oferta do imóvel: qual é o vídeo e a foto da fachada de cada pasta ----------
 function pastaDoCaminho(c) {   // caminho local "pasta/arquivo" ou link do Loft ".../fotos/963/..." -> pasta do imóvel
   c = String(c || '');
@@ -231,6 +293,12 @@ function clientePediuFotos(jid) { return /\b(fotos?|imagens?)\b/i.test(textoRece
 
 async function executar(nome, entrada, ctx) {
   try {
+    if (nome === 'simular_fluxo') {
+      const r = simularFluxo(entrada);
+      if (r.erro) return r.erro;
+      ctx.notas.push('[simulação montada: ' + r.resumo + ']');
+      return 'Mande este texto ao cliente por TEXTO, do jeito que está (pode tirar ou trocar uma palavra, nunca os números), e depois pergunte se cabe no bolso dele ou se prefere ajustar, e convide para fechar no escritório (agenda):\n\n' + r.texto;
+    }
     if (nome === 'ler_ficha') {
       const p = acharPasta(entrada.busca || '');
       if (!p) return 'Imóvel não encontrado no catálogo. Confira a ref no CATALOGO.md.';
@@ -784,6 +852,19 @@ function separarAgenda(t) {   // -> [texto antes, agenda, texto depois], só os 
   const bloco = agendaFixa() || linhas.slice(ini, iLink + 1).join('\n').trim();
   return [linhas.slice(0, ini).join('\n').trim(), bloco, linhas.slice(iLink + 1).join('\n').trim()].filter(Boolean);
 }
+// Convite para o escritório: depois da agenda vão SEMPRE a foto do escritório e o endereço com a localização (regra do Djhonata, 10/11/2026)
+const FOTO_ESCRITORIO = 'escritorio/fachada.jpg';
+const ENDERECO_ESCRITORIO = ENV.ENDERECO_ESCRITORIO || 'O endereço é Rua Dona Francisca, 1222 - Saguaçu, Joinville. Aqui a localização: https://share.google/rJ6TI7xChk5JvpKEN';
+const ehEnderecoEscritorio = (t) => /dona francisca/i.test(t || '') && /(share\.google|maps|localiza)/i.test(t || '');
+function mandouHaPouco(jid, teste, ms) { const lim = Date.now() - ms; return lerEsp(jid).some(m => (m.ts || 0) >= lim && m.autor !== 'cliente' && teste(m)); }
+async function pacoteEscritorio(jid, autor, extra) {   // não repete se já foi nas últimas 2 horas
+  const feitos = [];
+  if (!mandouHaPouco(jid, m => m.arquivo === 'c/' + FOTO_ESCRITORIO, 2 * 3600e3) && fs.existsSync(path.join(CATALOGO, FOTO_ESCRITORIO))) {
+    if (await enviarArquivo(jid, FOTO_ESCRITORIO, '', autor, extra) === 'Enviado.') feitos.push('[foto do escritório]');
+  }
+  if (!mandouHaPouco(jid, m => ehEnderecoEscritorio(m.texto), 2 * 3600e3) && await enviarTexto(jid, ENDERECO_ESCRITORIO, autor, extra)) feitos.push(ENDERECO_ESCRITORIO);
+  return feitos;
+}
 async function enviarSaida(jid, texto, autor = 'ia', extra) {   // devolve o que saiu (para a memória da conversa)
   const feitos = [];
   for (const p of partesResposta(String(texto || ''))) {
@@ -792,7 +873,11 @@ async function enviarSaida(jid, texto, autor = 'ia', extra) {   // devolve o que
       if (ok === true) { feitos.push('[áudio] ' + p.t); continue; }
       if (ok === 'barrado') continue;
     }
-    for (const parte of p.t.split(/\n\s*---\s*\n/)) for (const sub of separarAgenda(parte)) { const s = sub.replace(/^\s*---\s*$/gm, '').trim(); if (s && await enviarTexto(jid, s, autor, extra)) feitos.push(s); }
+    for (const parte of p.t.split(/\n\s*---\s*\n/)) for (const sub of separarAgenda(parte)) {
+      const s = sub.replace(/^\s*---\s*$/gm, '').trim(); if (!s) continue;
+      if (autor === 'ia' && ehEnderecoEscritorio(s) && mandouHaPouco(jid, m => ehEnderecoEscritorio(m.texto), 10 * 60e3)) continue;   // o endereço já foi junto com a agenda
+      if (await enviarTexto(jid, s, autor, extra)) { feitos.push(s); if (autor === 'ia' && RE_LINK_AGENDA.test(s)) feitos.push(...await pacoteEscritorio(jid, autor, extra)); }
+    }
   }
   return feitos;
 }
@@ -892,6 +977,7 @@ async function aoReceber(m, tipoUpsert) {
   const atrasada = tipoUpsert === 'append';
   const recente = Date.now() - ts < (atrasada ? JANELA_ATRASADA : 180e3);
   const telefone = telefoneDe(m);
+  if (!m.key.fromMe && !cifrada && tipoUpsert !== 'historico') marcarOrigem(jid, x, texto, ts);
 
   // espelho: grava tudo (menos o que a própria ponte já gravou ao enviar)
   if (!(m.key.fromMe && enviados.has(m.key.id))) {
@@ -964,6 +1050,28 @@ async function aoReceber(m, tipoUpsert) {
   f.timer = setTimeout(() => processar(jid).catch(e => log('erro processar', e.message)), ESPERA_MS);
 }
 
+// ---------- de onde veio o lead: anúncio de WhatsApp da Meta (clique no anúncio) ----------
+// O WhatsApp manda junto da 1ª mensagem os dados do anúncio (externalAdReply / conversionSource). Se não vier, a mensagem
+// pronta do anúncio ("Olá! Posso ter mais informações sobre isso?") também indica o anúncio.
+const RE_MSG_ANUNCIO = /^\s*ol[áa]!?\s*(posso ter mais informa[çc][õo]es|tenho interesse e queria mais informa[çc][õo]es|quero mais informa[çc][õo]es|gostaria de (saber )?mais informa[çc][õo]es)/i;
+function dadosAnuncio(x) {
+  for (const k of Object.keys(x || {})) {
+    const ci = x[k] && typeof x[k] === 'object' ? x[k].contextInfo : null; if (!ci) continue;
+    const ad = ci.externalAdReply || null, fonte = String(ci.conversionSource || ci.entryPointConversionSource || '');
+    if ((ad && (ad.sourceType === 'ad' || ad.ctwaClid || ad.sourceId)) || /ad|ctwa/i.test(fonte)) return { titulo: String((ad && (ad.title || ad.body)) || '').slice(0, 120), link: String((ad && ad.sourceUrl) || ''), anuncioId: String((ad && ad.sourceId) || ''), app: String(ci.entryPointConversionApp || '') };
+  }
+  return null;
+}
+function marcarOrigem(jid, x, texto, ts) {
+  const c = chats[jid] || (chats[jid] = {}); let mudou = false;
+  if (!c.primeira || ts < c.primeira) { c.primeira = ts; mudou = true; }
+  if (!c.anuncio) {
+    const ad = dadosAnuncio(x);
+    if (ad) { c.anuncio = Object.assign({ em: ts }, ad); mudou = true; log('lead do anúncio', c.telefone || jid, ad.titulo || ''); }
+    else if (RE_MSG_ANUNCIO.test(String(texto || '')) && Math.abs(ts - c.primeira) < 6 * 3600e3) { c.anuncio = { em: ts, titulo: '', pelaMensagem: true }; mudou = true; }
+  }
+  if (mudou) salvarChats();
+}
 const ocupado = new Set();
 async function processar(jid) {
   const f = filas.get(jid);
@@ -987,7 +1095,7 @@ async function processar(jid) {
   ocupado.add(jid);
   if (f.liberar24h) liberado24h.add(jid);   // "responder agora" pedido pelo Djhonata
   emitir('digitando', { jid, on: true });
-  try { await responder(f); quitarResposta(jid, f.ultTs); }
+  try { await responder(f); if (!f.refazer) quitarResposta(jid, f.ultTs); }
   catch (e) { falhouResposta(jid, f, e); throw e; }
   finally { if (f.liberar24h) liberado24h.delete(jid); ocupado.delete(jid); emitir('digitando', { jid, on: false }); }
 }
@@ -1052,14 +1160,19 @@ function reenfileirar(jid, motivo, orientacao) {   // orientacao = o que o Djhon
   if (c.telefone && lerBloqueados().has(normal(c.telefone))) return { erro: 'número bloqueado para a assistente' };
   const l = lerEsp(jid), pend = [];
   for (let i = l.length - 1; i >= 0; i--) { const m = l[i]; if (m.autor === 'aviso') continue; if (m.autor !== 'cliente') break; pend.unshift(m); }
-  if (!pend.length) return { erro: 'a última mensagem não é do cliente: não há o que responder' };
-  const ult = pend[pend.length - 1];
+  // sem mensagem nova do cliente: só vale como ordem do Djhonata (com orientação), e dentro de 24h da última mensagem dele
+  const ultCliMsg = pend.length ? pend[pend.length - 1] : [...l].reverse().find(m => m.autor === 'cliente');
+  if (!pend.length && !orientacao) return { erro: 'a última mensagem não é do cliente: não há o que responder' };
+  if (!ultCliMsg) return { erro: 'o cliente ainda não mandou mensagem nessa conversa' };
+  if (!pend.length && Date.now() - ultCliMsg.ts > 24 * 3600e3) return { erro: 'o cliente não fala há mais de 24h: a assistente não puxa conversa' };
+  const ult = ultCliMsg;
   if (Date.now() - ult.ts > 7 * 864e5) return { erro: 'a última mensagem do cliente tem mais de 7 dias' };
   const conv = lerConv(jid), ja = new Set(conv.map(e => e.mid).filter(Boolean));
   const ultUser = conv.reduce((t, e) => e.role === 'user' ? Math.max(t, e.ts || 0) : t, 0);
   const ultAssist = conv.reduce((t, e) => e.role === 'assistant' ? Math.max(t, e.ts || 0) : t, 0);
   // a IA não tem o começo desta conversa (foi atendida antes pelo celular/OpenClaw): leva as últimas mensagens do WhatsApp
-  const antes = l.filter(m => m.ts < pend[0].ts && m.autor !== 'aviso' && (String(m.texto || '').trim() || m.tipo !== 'text')).slice(-12);
+  const corte = pend.length ? pend[0].ts : Infinity;
+  const antes = l.filter(m => m.ts < corte && m.autor !== 'aviso' && (String(m.texto || '').trim() || m.tipo !== 'text')).slice(-12);
   const ultEuro = antes.filter(m => m.autor !== 'cliente').pop();
   if (ultEuro && ultAssist < ultEuro.ts - 60e3) {
     const linhas = antes.map(m => `${quandoFoi(m.ts)} ${m.autor === 'cliente' ? 'Cliente' : 'Euro'}: ${resumoMsg(m).replace(/\s+/g, ' ').slice(0, 500)}`);
@@ -1072,8 +1185,8 @@ function reenfileirar(jid, motivo, orientacao) {   // orientacao = o que o Djhon
     if (!avisou && Date.now() - m.ts > 20 * 60e3) { e = avisoDemora(m.ts) + e; avisou = true; }
     anotar(jid, 'user', e, m.id); novas++;
   }
-  if (!avisou && Date.now() - ult.ts > 20 * 60e3) anotar(jid, 'user', avisoDemora(ult.ts).trim());
-  if (orientacao) anotar(jid, 'user', `[orientação do Djhonata para esta resposta (o cliente não vê isto): ${String(orientacao).slice(0, 1500)}]`);
+  if (pend.length && !avisou && Date.now() - ult.ts > 20 * 60e3) anotar(jid, 'user', avisoDemora(ult.ts).trim());
+  if (orientacao) anotar(jid, 'user', pend.length ? `[orientação do Djhonata para esta resposta (o cliente não vê isto): ${String(orientacao).slice(0, 1500)}]` : `[ORDEM DO DJHONATA — não é mensagem do cliente, ele não mandou nada novo. Mande agora o que o Djhonata pediu, continuando a conversa de forma natural (o cliente não vê isto): ${String(orientacao).slice(0, 1500)}]`);
   // pedido do Djhonata vale como ordem dele: passa pela regra das 24h (a assistente não puxa conversa sozinha)
   const f = { jid, telefone: c.telefone, nome: c.nome, dono: false, imagens: [], timer: null, ultTs: ult.ts, audio: pend.some(m => m.tipo === 'audio'), liberar24h: true };
   filas.set(jid, f); deverResposta(jid, ult.ts, { liberar24h: true });
@@ -1235,6 +1348,14 @@ async function responder(f) {
   try {
   for (let volta = 0; volta < 9; volta++) {
     const resp = await claude(system, messages, ferramentas);
+    // o cliente mandou mais mensagem enquanto a IA pensava e nada saiu ainda: descarta e refaz com tudo (ex.: mandou o nome logo depois do "boa tarde")
+    if (!saida.length && !usouFerramenta && !f.rotina) {
+      const nova = filas.get(f.jid);
+      if (nova && nova !== f) {
+        nova.imagens = [...(f.imagens || []), ...(nova.imagens || [])]; if (f.audio) nova.audio = true; if (f.liberar24h) nova.liberar24h = true;
+        f.refazer = true; log('cliente mandou mais mensagem enquanto a IA pensava: refaz com tudo', f.telefone || f.jid); return;
+      }
+    }
     paradas.push(resp.stop_reason + ':' + (resp.content || []).map(b => b.type + (b.type === 'text' ? '(' + String(b.text || '').trim().length + ')' : '')).join('+'));
     // resposta vazia (sem texto e sem ferramenta): guarda para conferir depois
     if (!(resp.content || []).some(b => (b.type === 'text' && String(b.text || '').trim()) || b.type === 'tool_use')) { try { gravarJson(path.join(DADOS, 'ia-vazia.json'), { ts: new Date().toISOString(), jid: f.jid, stop_reason: resp.stop_reason, content: resp.content, usage: resp.usage }); } catch (e) { } }
@@ -1919,6 +2040,7 @@ http.createServer(async (req, res) => {
         const txt = (await corpo(req, 1e6)).toString();
         if (/x-www-form-urlencoded/.test(String(req.headers['content-type'] || ''))) { b = Object.fromEntries(new URLSearchParams(txt)); if ('on' in b) b.on = b.on === 'sim' || b.on === 'true' || b.on === '1'; }
         else b = JSON.parse(txt || '{}');
+        if (b && typeof b.on === 'string') b.on = b.on === 'sim' || b.on === 'true' || b.on === '1';   // "nao" em JSON também é desligar
       }
       if (u.pathname === '/api/ponte') {   // uma única porta para o CRM (via Make): ver, enviar, ligar/pausar, desconectar...
         const ac = String(b.acao || 'ver'); let jid = acharJid(b.jid);
@@ -1961,6 +2083,23 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           if (!jidValido(jid)) return json(res, { erro: 'conversa inválida' }, 400);
           const ok = esquecerConversa(jid); filas.delete(jid); quitarResposta(jid); log('memória da conversa apagada', jid, ok ? '' : '(estava vazia)');
           return json(res, { ok: true, apagou: ok });
+        } else if (ac === 'funil') {   // leads por dia: conversas novas de clientes e quantas vieram do anúncio (para o funil do CRM)
+          const de = Date.parse(String(b.texto || '').slice(0, 10)) || (Date.now() - 400 * 864e5);
+          const dia = (t) => new Date(t).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+          const dias = {}, tels = {};
+          for (const j of Object.keys(chats)) {
+            if (!jidValido(j) || j.endsWith('@g.us') || ehDono(pnDe(j) || j)) continue;
+            const c = chats[j], cl = (estado.classes || {})[j], cat = cl ? cl.cat : '';
+            if (/corretor|construtor|pessoal/.test(cat)) continue;
+            let p = c.primeira;
+            if (!p) { const l = lerEsp(j); const ini = l.find(m => m.autor === 'cliente'); p = ini ? ini.ts : 0; if (!c.anuncio && ini && RE_MSG_ANUNCIO.test(ini.texto || '')) c.anuncio = { em: ini.ts, titulo: '', pelaMensagem: true }; if (p) c.primeira = p; }
+            if (!p || p < de) continue;
+            const d = dia(p), v = dias[d] || (dias[d] = { leads: 0, anuncio: 0 });
+            v.leads++; if (c.anuncio) v.anuncio++;
+            const t8 = String(c.telefone || '').replace(/\D/g, '').slice(-8); if (t8) tels[t8] = { dia: d, anuncio: !!c.anuncio };
+          }
+          salvarChats();
+          return json(res, { dias, tels });
         } else if (ac === 'voz_info') {
           return json(res, { cfg: vozCfg(), padrao: VOZ_PADRAO, vozNova: estado.vozNova || null, teste: estado.vozTeste || null, clonagem: estado.vozClonagem || null, testando: testandoVoz, voz });
         } else if (ac === 'voz_teste') {   // manda as versões no WhatsApp do Djhonata (em segundo plano); texto = frase do teste ou JSON {fala, versoes}
