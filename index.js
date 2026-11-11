@@ -48,7 +48,8 @@ const PORTA = Number(ENV.PORTA || 8080);
 const DONO = ENV.DONO || '554799043294';          // WhatsApp pessoal do Djhonata (sem o 9 extra)
 const PAUSA_HORAS = Number(ENV.PAUSA_HORAS || 0);  // 0 = quando o Djhonata escreve, a assistente continua junto (lendo o que ele mandou)
 const SENHA = ENV.SENHA || '';                     // senha do painel (além do TOKEN)
-const ESPERA_MS = Number(ENV.ESPERA_MS || 9000);  // espera o cliente terminar de digitar
+const ESPERA_MS = Number(ENV.ESPERA_MS || 18000);  // espera o cliente terminar de digitar (ele costuma mandar várias mensagens seguidas)
+const ESPERA_CURTA_MS = 26000;                      // mensagem curta e sem pergunta ("tranquilo", "mas", "então"): quase sempre vem outra logo depois
 // mensagem que chegou atrasada (WhatsApp caiu e voltou, servidor reiniciou) ainda é respondida até este tempo
 const JANELA_ATRASADA = Number(ENV.JANELA_ATRASADA_HORAS || 12) * 3600e3;
 const HORA_INI = ENV.HORA_INI || '08:00';
@@ -221,7 +222,7 @@ Esta conversa pode ter mensagens antigas de quando ele testou a assistente fingi
 const FERRAMENTAS = [
   { name: 'ler_ficha', description: 'Lê a ficha de um imóvel do catálogo (descrição pronta do CRM, dados e lista de fotos e vídeo). Use a ref (ex.: "913") ou parte do nome da rua/residencial.', input_schema: { type: 'object', properties: { busca: { type: 'string' } }, required: ['busca'] } },
   { name: 'enviar_arquivo', description: 'Envia ao cliente uma foto, vídeo ou arquivo do catálogo (caminho relativo à pasta do catálogo) ou uma imagem por link https. A legenda vai junto com a mídia.', input_schema: { type: 'object', properties: { caminho: { type: 'string' }, legenda: { type: 'string' } }, required: ['caminho'] } },
-  { name: 'simular_fluxo', description: 'Monta a simulação do pagamento de um imóvel com os números do cliente e devolve o texto pronto para mandar ao cliente, por texto, do jeito que veio. O financiamento já sai calculado do jeito mais atrativo para o cliente (avaliação do banco ou preço, o que for maior; não fale da avaliação ao cliente). Sem os números dele, usa o padrão (sinal de R$ 10 mil e R$ 1.500 por mês). imovel = ref (ex.: "832") ou parte do nome da rua/residencial. sinal = quanto ele dá na assinatura. parcela = quanto fica bom por mês até a entrega. fgts = saldo de FGTS que ele tem hoje (0 se não tem; não mande se ainda não sabe). carteira = true se ele (ou a família) trabalha de carteira assinada: aí o FGTS cresce todo mês até a entrega e diminui a entrada. renda = renda bruta mensal da família. reforcos = em quantos reforços dividir o que faltar (o último é na entrega das chaves); mande um número maior quando ele achar o reforço pesado.', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, sinal: { type: 'number' }, parcela: { type: 'number' }, fgts: { type: 'number' }, carteira: { type: 'boolean' }, renda: { type: 'number' }, reforcos: { type: 'number' } }, required: ['imovel'] } },
+  { name: 'simular_fluxo', description: 'Monta a simulação do pagamento de um imóvel com os números do cliente e devolve o texto pronto para mandar ao cliente, por texto, do jeito que veio. O financiamento já sai calculado do jeito mais atrativo para o cliente (avaliação do banco ou preço, o que for maior; não fale da avaliação ao cliente). Sem os números dele, usa o padrão (sinal de R$ 10 mil e R$ 1.500 por mês). imovel = ref (ex.: "832") ou parte do nome da rua/residencial. sinal = quanto ele dá na assinatura. parcela = quanto fica bom por mês até a entrega. fgts = saldo de FGTS que ele tem hoje (0 se não tem; não mande se ainda não sabe). carteira = true se ele (ou a família) trabalha de carteira assinada: aí o FGTS cresce todo mês até a entrega e diminui a entrada. renda = renda bruta mensal da família. reforcos = em quantos reforços dividir o que faltar (o último é na entrega das chaves); mande um número maior quando ele achar o reforço pesado. pos_chaves = em quantas parcelas mensais DEPOIS da entrega dividir o que faltar da entrada (use quando a entrada não cabe no bolso dele mesmo ajustando sinal e parcelas, ou em imóvel pronto ou com entrega muito perto; comece com 12 e vá até 24 se ele precisar): o texto já sai avisando que depende de a construtora aceitar e que se formaliza na proposta, no escritório.', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, sinal: { type: 'number' }, parcela: { type: 'number' }, fgts: { type: 'number' }, carteira: { type: 'boolean' }, renda: { type: 'number' }, reforcos: { type: 'number' }, pos_chaves: { type: 'number' } }, required: ['imovel'] } },
   { name: 'avisar_djhonata', description: 'Manda um aviso no WhatsApp pessoal do Djhonata.', input_schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
   { name: 'registrar_crm', description: 'Registra no CRM um evento do cliente atual e move o card dele: novoStatus = atendimento, visita_marcada, negociacao, remarcar, sem_interesse ou pausado. Em visita_marcada mande data (AAAA-MM-DD) e hora (HH:MM): o sistema usa para os lembretes da visita. Se o cliente cancelar ou pedir para remarcar, use remarcar (os lembretes param). Mande nomeReal quando o cliente disser o nome e imovel quando souber qual imóvel interessa. resultado = frase curta do que aconteceu.', input_schema: { type: 'object', properties: { novoStatus: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nomeReal: { type: 'string' }, imovel: { type: 'string' }, resumo: { type: 'string' }, resultado: { type: 'string' } } } }
 ];
@@ -324,7 +325,8 @@ function simularFluxo(e) {
   const obra = !f.pronto && meses >= 2;   // pronto (ou entrega muito perto): não dá para parcelar a entrada durante a obra
   const L = [`📋 *Simulação inicial – ${f.nome}*`, `💰 Valor: ${brl(f.preco)}`, ''];
   L.push(`✅ Sinal: ${brl(sinal)}${informado(e.sinal) ? '' : ' (é o padrão; se ficar apertado, me fala que eu coloco o sinal que você consegue dar na assinatura)'}`);
-  let resto = Math.max(0, cent(entrada - sinal)), q = 0, alt = '', parcelaUsada = 0;
+  let resto = Math.max(0, cent(entrada - sinal)), q = 0, alt = '', parcelaUsada = 0, posTxt = '';
+  const nPos = Math.min(36, Math.max(0, Math.round(num(e.pos_chaves, 0))));
   const fgtsMes = obra && carteira && renda > 0 ? renda / 12 : 0;
   const fgtsTotal = cent(fgtsHoje + fgtsMes * (obra ? meses : 0)), fgtsUsado = Math.min(fgtsTotal, resto);
   if (fgtsUsado > 0) {
@@ -333,13 +335,15 @@ function simularFluxo(e) {
     resto = cent(resto - fgtsUsado);
   }
   if (!obra) {
-    if (resto > 0) L.push(`✅ Complemento da entrada: ${brl(resto)} (a gente combina como fica: com subsídio, FGTS ou outra forma)`);
+    if (resto > 0 && nPos) { L.push(`✅ Pós-chaves: ${nPos}x de ${brl(acima(resto / nPos))} por mês depois da entrega = ${brl(resto)}`); posTxt = `, pós-chaves ${nPos}x`; resto = 0; }
+    else if (resto > 0) L.push(`✅ Complemento da entrada: ${brl(resto)} (a gente combina como fica: com subsídio, FGTS, um carro ou moto no negócio, ou parcelado depois das chaves)`);
   } else if (resto > 0) {
     const n = meses;
     parcelaUsada = Math.min(parcela, acima(resto / n));   // não pede por mês mais do que precisa
     const parcelado = Math.min(resto, cent(parcelaUsada * n));
     L.push(`✅ Entrada parcelada: ${n}x de ${brl(parcelaUsada)} até a entrega (${quando}) = ${brl(parcelado)}`);
     resto = cent(resto - parcelado);
+    if (resto >= 1 && nPos) { L.push(`✅ Pós-chaves: ${nPos}x de ${brl(acima(resto / nPos))} por mês depois da entrega = ${brl(resto)}`); posTxt = `, pós-chaves ${nPos}x`; resto = 0; }
     if (resto >= 1) {
       const pedidos = num(e.reforcos, 0), padrao = mesesDosReforcos(n, 0);
       const ms = pedidos ? mesesDosReforcos(n, pedidos) : padrao.slice(-Math.max(1, Math.floor(resto / REFORCO_MIN))); q = ms.length;
@@ -352,10 +356,11 @@ function simularFluxo(e) {
   L.push(`🏦 Financiamento pela Caixa: ${brl(financ)}${obra ? ' (começa quando o imóvel ficar pronto)' : ''}`);
   L.push(`💵 A parcela do financiamento a Caixa calcula pela renda e fica em até 30% dela${renda ? `: com renda de ${brl(renda)}, até ${brl(renda * 0.3)} por mês` : ''}.`);
   if (alt) L.push('', alt);
+  if (posTxt) L.push('', 'O pós-chaves depende de a construtora aceitar: a gente formaliza isso na proposta, pessoalmente no escritório.');
   L.push('', 'É uma simulação inicial, sujeita à aprovação do banco. Dá pra ajustar do jeito que ficar melhor pra você.');
   return {
     texto: L.join('\n'),
-    resumo: `${f.nome}, ${brl(f.preco)}, sinal ${brl(sinal)}${parcelaUsada ? ', parcela ' + brl(parcelaUsada) : ''}${fgtsUsado ? ', FGTS ' + brl(fgtsUsado) : ''}${q ? `, ${q} reforço(s)` : ''}, financiamento ${brl(financ)} (avaliação ${brl(av)}${f.aval ? ' da ficha' : ''})`,
+    resumo: `${f.nome}, ${brl(f.preco)}, sinal ${brl(sinal)}${parcelaUsada ? ', parcela ' + brl(parcelaUsada) : ''}${fgtsUsado ? ', FGTS ' + brl(fgtsUsado) : ''}${q ? `, ${q} reforço(s)` : ''}${posTxt}, financiamento ${brl(financ)} (avaliação ${brl(av)}${f.aval ? ' da ficha' : ''})`,
     acimaDoPreco: av > f.preco, semFgts: !informado(e.fgts) && !carteira, perguntarCarteira: obra && fgtsHoje > 0 && e.carteira === undefined, perguntarRenda: obra && carteira && !renda, temReforco: q > 0
   };
 }
@@ -1177,7 +1182,10 @@ async function aoReceber(m, tipoUpsert) {
   f.ultTs = Math.max(f.ultTs || 0, ts);
   deverResposta(jid, ts);
   clearTimeout(f.timer);
-  f.timer = setTimeout(() => processar(jid).catch(e => log('erro processar', e.message)), ESPERA_MS);
+  // cada mensagem nova zera a espera; assim a assistente lê tudo que ele mandou antes de responder uma vez só
+  const txtAgora = String(x.conversation || (x.extendedTextMessage && x.extendedTextMessage.text) || '').trim();
+  const curta = !dono && txtAgora && txtAgora.length <= 22 && !/[?]/.test(txtAgora);
+  f.timer = setTimeout(() => processar(jid).catch(e => log('erro processar', e.message)), dono ? Math.min(ESPERA_MS, 9000) : (curta ? ESPERA_CURTA_MS : ESPERA_MS));
 }
 
 // ---------- de onde veio o lead: anúncio de WhatsApp da Meta (clique no anúncio) ----------
@@ -2468,6 +2476,21 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const r = reenfileirar(jid, 'pedido do CRM', String(b.texto || '').trim());
           if (r.erro) return json(res, { erro: r.erro }, 409);
           b._resultado = r;
+        } else if (ac === 'conversas') {   // exporta as conversas de clientes em texto compacto, para análise (texto = {desde, limite, msgs})
+          let o = {}; try { o = JSON.parse(b.texto || '{}'); } catch (e) { }
+          const desde = Number(o.desde) || Date.parse(o.desde || '') || Date.now() - 3 * 864e5, lim = Math.min(120, Number(o.limite) || 60), nMsgs = Math.min(80, Number(o.msgs) || 40);
+          const bloq = lerBloqueados(), hm = (t) => new Date(t - 3 * 3600e3).toISOString().slice(5, 16).replace('T', ' ');
+          const lista = Object.keys(chats).filter(j => jidValido(j) && (chats[j].ultCliente || 0) >= desde).map(j => ({ j, p: chatPublico(j) }))
+            .filter(x => x.p.telefone && !bloq.has(normal(x.p.telefone)) && normal(x.p.telefone) !== normal(DONO)).sort((a, b) => (b.p.ult || 0) - (a.p.ult || 0)).slice(0, lim);
+          const partes = [];
+          for (const x of lista) {
+            const t8 = String(x.p.telefone).replace(/\D/g, '').slice(-8), c = chats[x.j] || {};
+            const ms = lerEsp(x.j).slice(-nMsgs);
+            partes.push('===== ' + (x.p.nome || 'sem nome') + ' | ' + x.p.telefone + ' | CRM: ' + ((estado.crmStatus || {})[t8] || 'sem card') + (c.anuncio ? ' | anúncio: ' + (c.anuncio.titulo || 'sim') : '') + (x.p.iaOff ? ' | IA desligada neste chat' : '') + '\n'
+              + ms.map(m => hm(m.ts) + ' [' + m.autor + (m.rotina ? ':' + m.rotina : '') + (m.followup ? ':followup' : '') + (m.tipo && m.tipo !== 'text' ? ':' + m.tipo : '') + '] ' + String(m.texto || '').replace(/\s*\n+\s*/g, ' / ').slice(0, 420)).join('\n'));
+            await new Promise(r => setTimeout(r, 2));
+          }
+          return json(res, { ok: true, conversas: lista.length, texto: partes.join('\n\n') });
         } else if (ac === 'crm_faltantes') {   // cria o card de quem a assistente atendeu nos últimos N dias e não está no CRM (texto = dias)
           const dias = Math.min(30, Math.max(1, Number(b.texto) || 2)), desde = Date.now() - dias * 864e5, feitos = [];
           for (const j of Object.keys(chats)) {
