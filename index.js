@@ -635,8 +635,11 @@ function pausarPorSeguranca(motivo) {
   estado.ativo = false; estado.pausadaEm = Date.now(); salvarEstado(); log('ASSISTENTE PAUSADA POR SEGURANÇA:', motivo); emitir('estado', estadoPublico());
   setTimeout(() => { if (sock && conectado) sock.sendMessage(DONO + '@s.whatsapp.net', { text: `⚠️ Assistente pausada por segurança: ${motivo}. O WhatsApp continua conectado. Reative pelo CRM quando quiser.` }).then(lembrarEnvio).catch(() => { }); }, 3000);
 }
+// O Djhonata não manda joinha para cliente: se a IA escrever 👍, sai 🙏🏼 (o emoji de agradecer que ele usa).
+function semJoinha(t) { return String(t || '').replace(/👍(?:\u{1F3FB}|\u{1F3FC}|\u{1F3FD}|\u{1F3FE}|\u{1F3FF})?/gu, '🙏🏼'); }
 async function enviarTexto(jid, texto, autor = 'ia', extra) {
   if (!sock || !conectado || !String(texto || '').trim()) return null;
+  if (autor === 'ia') texto = semJoinha(texto);
   try { await guardaEnvio(jid, autor, texto, 'text'); } catch (e) { log('envio barrado', jid, e.message); return null; }
   const r = await sock.sendMessage(jid, { text: String(texto).trim() });
   const id = lembrarEnvio(r);
@@ -1773,7 +1776,7 @@ O QUE FAZER
  a) um imóvel do catálogo atual (CATALOGO.md) que encaixa no que ele procurava (bairro, valor, tipo, quartos, pronto ou na planta), citando o nome ou a rua e o bairro, só com dados do catálogo; ou
  b) se a dificuldade foi a entrada ou o valor: que agora dá para montar com entrada menor (sinal flexível, entrada parcelada até a entrega, FGTS, financiamento pela avaliação do banco), sem números que não estejam no catálogo e sem prometer aprovação; ou
  c) se ele já tinha gostado de um imóvel e só faltou marcar: um convite para passar no escritório tirar as dúvidas.
- Termine com uma pergunta simples que convide a responder. Não diga que ele sumiu, que parou de responder ou que é um follow-up. Não mande link nem agenda nesta mensagem (se ele responder, a conversa continua). Só use ✅ ou 👍 como emoji, sem negrito e sem lista. Chame pelo primeiro nome só se for nome de pessoa (do CRM ou dito na conversa). Se nunca conversaram neste WhatsApp, apresente-se rapidinho ("aqui é o Djhonata, da Euro Consultoria"). Se a última mensagem da conversa já é do Djhonata e ficou sem resposta (ex.: "Estou com imóveis novos em Joinville. Qual bairro você busca?"), não repita a mesma ideia: traga algo concreto e novo.
+ Termine com uma pergunta simples que convide a responder. Não diga que ele sumiu, que parou de responder ou que é um follow-up. Não mande link nem agenda nesta mensagem (se ele responder, a conversa continua). Só use 🙏🏼 (agradecer) ou ✅ (confirmar) como emoji, nunca 👍, sem negrito e sem lista. Chame pelo primeiro nome só se for nome de pessoa (do CRM ou dito na conversa). Se nunca conversaram neste WhatsApp, apresente-se rapidinho ("aqui é o Djhonata, da Euro Consultoria"). Se a última mensagem da conversa já é do Djhonata e ficou sem resposta (ex.: "Estou com imóveis novos em Joinville. Qual bairro você busca?"), não repita a mesma ideia: traga algo concreto e novo.
 3) Prioridade de 1 a 5: 5 = muito quente (marcou visita, pediu simulação, perguntou de entrada ou financiamento com os dados dele, gostou de um imóvel); 3 = pediu informações e conversou; 1 = só a primeira mensagem do anúncio, sem conversa.
 Responda SOMENTE com um JSON válido, sem texto antes ou depois:
 {"decisao": "enviar|desistiu|nao_cliente", "motivo": "frase curta", "analise": "1 ou 2 frases: o que ele procurava, onde parou e qual gancho você usou", "prioridade": 1, "imovel": "imóvel citado ou vazio", "mensagem": "texto da mensagem ou vazio"}`;
