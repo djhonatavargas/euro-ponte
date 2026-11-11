@@ -1724,6 +1724,7 @@ const FU_F = path.join(DADOS, 'followups.json');
 const FU_DIA = Number(ENV.FOLLOWUP_DIA || 30), FU_INI = '09:00', FU_FIM = '19:00';
 const fu = lerJson(FU_F, {});
 for (const v of Object.values(fu)) if (v.status === 'gerando') v.status = 'fila';   // o servidor reiniciou no meio
+for (const v of Object.values(fu)) if (v.status === 'erro' && /JSON|mensagem/.test(v.erro || '') && !v.refeito) { v.status = 'fila'; v.tent = 0; v.refeito = 1; }   // erro de resposta cortada: tenta de novo uma vez
 const fuRun = { gerando: 0, proximoIntervalo: 0 };
 let fuSalvarTimer = null;
 function salvarFu() { clearTimeout(fuSalvarTimer); fuSalvarTimer = setTimeout(() => gravarJson(FU_F, fu), 800); }
@@ -1803,7 +1804,7 @@ async function fuGerarUm(x) {
     const jid = acharJid(fuNumero(x.tel) + '@s.whatsapp.net'), temChat = !!chats[jid];
     const system = sistema({ jid: temChat ? jid : '', telefone: x.tel, nome: x.nome, dono: false, notas: [] });
     const txt = await claudeTexto(system, fuTarefa(x, temChat ? fuConversa(jid) : ''), 1500);
-    const i = txt.indexOf('{'), j = txt.lastIndexOf('}'); if (i < 0 || j < i) throw new Error('a IA não devolveu o JSON');
+    const i = txt.indexOf('{'), j = txt.lastIndexOf('}'); if (i < 0 || j < i) { log('follow-up: resposta sem JSON', x.tel, JSON.stringify(String(txt).slice(0, 160))); throw new Error('a IA não devolveu o JSON'); }
     const r = JSON.parse(txt.slice(i, j + 1));
     if (x.status !== 'gerando') return;   // cancelado enquanto a IA pensava (ex.: o cliente voltou a escrever)
     const dec = ['enviar', 'desistiu', 'nao_cliente'].includes(r.decisao) ? r.decisao : 'enviar';
@@ -2052,9 +2053,11 @@ async function arquivarChat(jid, arquivar) {
   await sock.chatModify({ archive: !!arquivar, lastMessages }, jid);
   c.arquivado = !!arquivar; salvarChats();
 }
+// O modelo pode gastar parte do limite raciocinando antes de escrever; com limite baixo a resposta saía cortada
+// (foi o que dava "a IA não devolveu o JSON" no follow-up). Por isso o piso de 5.000 tokens: só se paga o que for usado.
 async function claudeTexto(system, texto, maxTokens = 3000, temperatura) {
   for (let t = 0; t < 3; t++) {
-    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: JSON.stringify(Object.assign({ model: MODELO, max_tokens: maxTokens, system, messages: [{ role: 'user', content: texto }] }, temperatura === undefined ? {} : { temperature: temperatura })) });
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: JSON.stringify(Object.assign({ model: MODELO, max_tokens: Math.max(maxTokens, 5000), system, messages: [{ role: 'user', content: texto }] }, temperatura === undefined ? {} : { temperature: temperatura })) });
     if (r.ok) { const j = await r.json(); if (j.usage) registrarUso(j.usage); return (j.content || []).map(x => x.text || '').join(''); }
     if (![429, 500, 502, 503, 529].includes(r.status)) throw new Error('API ' + r.status + ' ' + (await r.text()).slice(0, 200));
     await new Promise(res => setTimeout(res, 5000 * (t + 1)));
