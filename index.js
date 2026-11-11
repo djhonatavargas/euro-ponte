@@ -114,6 +114,17 @@ function anotar(id, role, texto, mid) {   // mid = id da mensagem do WhatsApp (e
   h.push(e);
   gravarJson(arqConv(id), h.slice(-200));
 }
+// Resposta da IA: se o cliente mandou algo ENQUANTO ela respondia, a resposta fica antes dessas mensagens no histórico
+// e elas ganham um aviso, para a próxima rodada responder o que ficou sem resposta (em vez de achar que já respondeu).
+const AVISO_MEIO = '[o cliente mandou isto enquanto você escrevia a resposta acima; ela NÃO considerou esta mensagem. Responda agora o que ele perguntou ou comentou aqui, sem repetir o que já disse]\n';
+function anotarResposta(id, texto, tIni) {
+  const h = lerConv(id);
+  const e = { role: 'assistant', texto: String(texto).slice(0, 6000), ts: Date.now() };
+  let i = h.length; while (i > 0 && h[i - 1].role === 'user' && (h[i - 1].ts || 0) >= tIni) i--;
+  const meio = h.slice(i).map((x, k) => (k === 0 && !String(x.texto || '').startsWith(AVISO_MEIO) ? Object.assign({}, x, { texto: (AVISO_MEIO + x.texto).slice(0, 6000) }) : x));
+  if (meio.length) { e.ts = Math.max(tIni, (h[i].ts || tIni) - 1); log('cliente escreveu no meio da resposta', id, meio.length, 'mensagem(ns)'); }
+  gravarJson(arqConv(id), [...h.slice(0, i), e, ...meio].slice(-200));
+}
 function esquecerConversa(jid) {   // guarda uma cópia e a IA começa do zero nessa conversa (ex.: depois de um teste)
   const f = arqConv(jid); if (!fs.existsSync(f)) return false;
   try { fs.renameSync(f, f.replace(/\.json$/, `.esquecida-${Date.now()}.bak`)); return true; } catch (e) { return false; }
@@ -1473,6 +1484,7 @@ setTimeout(() => verificarSaldos().catch(e => log('saldos', e.message)), 5 * 60e
 async function responder(f) {
   const ctx = { jid: f.jid, telefone: f.telefone, nome: f.nome, dono: f.dono, notas: [], audioAgora: !!f.audio, rotina: (f.extra && f.extra.rotina) || '' };
   const system = sistema(ctx);
+  const tIniResp = Date.now();   // o que o cliente mandar depois disto chegou no meio da resposta
   const messages = montarMensagens(f.jid, f.imagens, f.rotina);
   const ferramentas = f.dono && !(estado.teste && estado.teste.ativo) ? [...FERRAMENTAS, FERRAMENTA_DONO] : FERRAMENTAS;
   if (!f.rotina) { try { await sock.sendPresenceUpdate('composing', f.jid); } catch (e) { } }
@@ -1526,7 +1538,7 @@ async function responder(f) {
     log('erro no meio da resposta (já tinha mandado ' + saida.length + '):', e.message);
   }
   try { if (sock) await sock.sendPresenceUpdate('paused', f.jid); } catch (e) { }
-  if (saida.length) anotar(f.jid, 'assistant', saida.join('\n'));
+  if (saida.length) anotarResposta(f.jid, saida.join('\n'), tIniResp);
   else {
     log('IA não mandou nada:', paradas.join(' | '), JSON.stringify(textosIA).slice(0, 300));
     // tinha resposta, mas o WhatsApp caiu antes de sair: vira "pendente" e sai quando ele voltar
