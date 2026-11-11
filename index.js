@@ -1114,6 +1114,7 @@ async function aoReceber(m, tipoUpsert) {
 
   const dono = telefone && normal(telefone) === normal(DONO);
   if (!dono && telefone && lerBloqueados().has(normal(telefone))) { log('bloqueado, ignorado', telefone); return; }
+  if (!dono) { try { fuClienteFalou(jid, telefone, ts); } catch (e) { } }
 
   let entrada = texto;
   let imagem = null;
@@ -1654,6 +1655,168 @@ async function rodarRotina(it) {
   finally { liberado24h.delete(jid); ocupado.delete(jid); emitir('digitando', { jid, on: false }); }
 }
 setInterval(() => verificarRotinas().catch(e => log('rotinas', e.message)), 2 * 60e3);
+
+// ---------- Follow-up dos perdidos (pedido do Djhonata, 11/11/2026) ----------
+// O CRM manda os clientes que estão em Perdido. A IA lê a conversa de cada um e escreve a análise e UMA mensagem de retomada.
+// Nada sai sem o Djhonata aprovar no CRM. Os aprovados saem até 30 por dia, de segunda a sábado, das 9h às 19h, dos mais
+// quentes para os mais frios, com uns 15 a 25 minutos entre um e outro. Quem disse que não quer, comprou com outro ou adiou
+// não recebe nada e vai para "Desistiu" no CRM. Se o cliente responder, o card vai para "Em atendimento" e a assistente continua.
+const FU_F = path.join(DADOS, 'followups.json');
+const FU_DIA = Number(ENV.FOLLOWUP_DIA || 30), FU_INI = '09:00', FU_FIM = '19:00';
+const fu = lerJson(FU_F, {});
+for (const v of Object.values(fu)) if (v.status === 'gerando') v.status = 'fila';   // o servidor reiniciou no meio
+const fuRun = { gerando: 0, proximoIntervalo: 0 };
+let fuSalvarTimer = null;
+function salvarFu() { clearTimeout(fuSalvarTimer); fuSalvarTimer = setTimeout(() => gravarJson(FU_F, fu), 800); }
+const fuT8 = (t) => String(t || '').replace(/\D/g, '').slice(-8);
+function fuNumero(t) { let d = String(t || '').replace(/\D/g, ''); if (!d.startsWith('55') && (d.length === 10 || d.length === 11)) d = '55' + d; return normal(d); }
+const spDe = (ms) => new Date(ms - 3 * 3600e3);   // Joinville é UTC-3 (sem horário de verão): campos UTC = hora local
+const fuDia = (ms) => spDe(ms).toISOString().slice(0, 10);
+function fuUltimoEnvio() { let t = 0; for (const v of Object.values(fu)) if ((v.enviadoEm || 0) > t) t = v.enviadoEm; return t; }
+function fuEnviadosHoje() { const h = fuDia(Date.now()); return Object.values(fu).filter(v => v.enviadoEm && fuDia(v.enviadoEm) === h).length; }
+function fuFilaAprovada() { return Object.values(fu).filter(v => v.status === 'aprovado').sort((a, b) => (b.prioridade || 0) - (a.prioridade || 0) || (a.aprovadoEm || 0) - (b.aprovadoEm || 0)); }
+function fuNaJanela(ms) { const d = spDe(ms), m = d.getUTCHours() * 60 + d.getUTCMinutes(); return d.getUTCDay() !== 0 && m >= minutos(FU_INI) && m <= minutos(FU_FIM); }
+function fuProximaAbertura(ms) {   // próximo 9h (segunda a sábado) depois de ms
+  const d = spDe(ms); let t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 9 + 3, 0);
+  if (t <= ms) t += 864e5;
+  while (spDe(t).getUTCDay() === 0) t += 864e5;
+  return t;
+}
+function fuPrevisoes() {   // quando cada aprovado deve sair (estimativa: uns 20 minutos entre um e outro)
+  const out = {}; let t = Math.max(Date.now(), fuUltimoEnvio() + 20 * 60e3), dia = fuDia(t), noDia = dia === fuDia(Date.now()) ? fuEnviadosHoje() : 0;
+  for (const x of fuFilaAprovada()) {
+    for (let g = 0; g < 500; g++) {
+      if (fuDia(t) !== dia) { dia = fuDia(t); noDia = 0; }
+      if (fuNaJanela(t) && noDia < FU_DIA) break;
+      const d = spDe(t), m = d.getUTCHours() * 60 + d.getUTCMinutes();
+      t = (d.getUTCDay() !== 0 && m < minutos(FU_INI) && noDia < FU_DIA) ? t + (minutos(FU_INI) - m) * 60e3 : fuProximaAbertura(t);
+    }
+    out[x.tel8] = t; noDia++; t += 20 * 60e3;
+  }
+  return out;
+}
+function fuResumo() {
+  const contagem = {}; for (const v of Object.values(fu)) contagem[v.status] = (contagem[v.status] || 0) + 1;
+  const prev = fuPrevisoes(), prox = Math.min(...Object.values(prev), Infinity);
+  return { contagem, hoje: fuEnviadosHoje(), limiteDia: FU_DIA, gerando: (contagem.fila || 0) + (contagem.gerando || 0), proximo: isFinite(prox) ? prox : 0 };
+}
+function fuPublico(x, prev) {
+  return { tel8: x.tel8, tel: x.tel, id: x.id, nome: x.nome, status: x.status, decisao: x.decisao || '', motivo: x.motivo || '', analise: x.analise || '', mensagem: x.mensagem || '', prioridade: x.prioridade || 0, imovel: x.imovel || '', criadoEm: x.criadoEm, geradoEm: x.geradoEm || 0, aprovadoEm: x.aprovadoEm || 0, enviadoEm: x.enviadoEm || 0, respondeuEm: x.respondeuEm || 0, erro: x.erro || '', jid: x.jid || '', previsao: (prev && prev[x.tel8]) || 0 };
+}
+function fuEvento(x, novoStatus, resultado) {   // vai para o CRM pelo mesmo caminho dos eventos da assistente
+  try { fs.appendFileSync(path.join(DADOS, 'eventos-crm.jsonl'), JSON.stringify({ rid: 'fu' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), telefone: formatoBR(fuNumero(x.tel)), nome: x.nome || '', novoStatus, resultado }) + '\n'); } catch (e) { }
+}
+function fuConversa(jid) {
+  const quem = { cliente: 'Cliente', ia: 'Djhonata (assistente)', voce: 'Djhonata', celular: 'Djhonata (celular)' };
+  const l = lerEsp(jid).filter(m => m.autor !== 'aviso' && (String(m.texto || '').trim() || m.tipo !== 'text')).slice(-40);
+  const t = l.map(m => `${quandoFoi(m.ts)} — ${quem[m.autor] || m.autor}: ${m.tipo && m.tipo !== 'text' && !m.transc ? '[' + m.tipo + '] ' : ''}${String(m.texto || '').replace(/\s+/g, ' ').slice(0, 400)}`).join('\n');
+  return t.length > 9000 ? t.slice(-9000) : t;
+}
+function fuTarefa(x, conversa) {
+  const c = x.crm || {};
+  const dados = [c.nome && `Nome no CRM: ${c.nome}${c.nomeProvisorio ? ' (veio do perfil do WhatsApp: pode não ser o nome real)' : ''}`, c.bairro && `Bairro de interesse: ${c.bairro}`, c.imovel && `Imóvel de interesse: ${c.imovel}`, c.proximo && `Próximo passo anotado: ${c.proximo}`, c.resumo && `Resumo da conversa (CRM): ${c.resumo}`, c.historico && `Histórico do WhatsApp (CRM): ${c.historico}`, c.obs && `Observações (CRM): ${c.obs}`].filter(Boolean).join('\n');
+  return `[TAREFA INTERNA DO SISTEMA — não é mensagem do cliente e nada disto vai para ele]
+FOLLOW-UP DE CLIENTE PERDIDO. O Djhonata quer retomar o contato com este cliente, que parou de responder há mais de 7 dias (está em "Perdido" no CRM). A mensagem só sai depois que o Djhonata aprovar.
+
+DADOS DO CRM
+${dados || '(nada anotado)'}
+
+CONVERSA NO WHATSAPP (a mais recente por último)
+${conversa || '(não há conversa deste cliente neste WhatsApp: use só os dados do CRM)'}
+
+O QUE FAZER
+1) Decida:
+- "desistiu": o cliente disse claramente que não quer mais, que já comprou (com outro corretor, imobiliária ou construtora), pediu para não receber mais mensagens, ou adiou ("agora não", "vou deixar para frente", "sem condições no momento"). Não escreva mensagem.
+- "nao_cliente": é corretor, construtor, fornecedor, contato pessoal, ou a conversa não é sobre comprar imóvel. Não escreva mensagem.
+- "enviar": nos outros casos.
+2) Se for "enviar", escreva UMA mensagem de WhatsApp curta (no máximo 3 frases), na voz do Djhonata, em primeira pessoa, retomando de onde parou, com o gancho que mais pode converter este cliente:
+ a) um imóvel do catálogo atual (CATALOGO.md) que encaixa no que ele procurava (bairro, valor, tipo, quartos, pronto ou na planta), citando o nome ou a rua e o bairro, só com dados do catálogo; ou
+ b) se a dificuldade foi a entrada ou o valor: que agora dá para montar com entrada menor (sinal flexível, entrada parcelada até a entrega, FGTS, financiamento pela avaliação do banco), sem números que não estejam no catálogo e sem prometer aprovação; ou
+ c) se ele já tinha gostado de um imóvel e só faltou marcar: um convite para passar no escritório tirar as dúvidas.
+ Termine com uma pergunta simples que convide a responder. Não diga que ele sumiu, que parou de responder ou que é um follow-up. Não mande link nem agenda nesta mensagem (se ele responder, a conversa continua). Só use ✅ ou 👍 como emoji, sem negrito e sem lista. Chame pelo primeiro nome só se for nome de pessoa (do CRM ou dito na conversa). Se nunca conversaram neste WhatsApp, apresente-se rapidinho ("aqui é o Djhonata, da Euro Consultoria"). Se a última mensagem da conversa já é do Djhonata e ficou sem resposta (ex.: "Estou com imóveis novos em Joinville. Qual bairro você busca?"), não repita a mesma ideia: traga algo concreto e novo.
+3) Prioridade de 1 a 5: 5 = muito quente (marcou visita, pediu simulação, perguntou de entrada ou financiamento com os dados dele, gostou de um imóvel); 3 = pediu informações e conversou; 1 = só a primeira mensagem do anúncio, sem conversa.
+Responda SOMENTE com um JSON válido, sem texto antes ou depois:
+{"decisao": "enviar|desistiu|nao_cliente", "motivo": "frase curta", "analise": "1 ou 2 frases: o que ele procurava, onde parou e qual gancho você usou", "prioridade": 1, "imovel": "imóvel citado ou vazio", "mensagem": "texto da mensagem ou vazio"}`;
+}
+async function fuGerarUm(x) {
+  x.status = 'gerando'; x.tent = (x.tent || 0) + 1;
+  try {
+    const jid = acharJid(fuNumero(x.tel) + '@s.whatsapp.net'), temChat = !!chats[jid];
+    const system = sistema({ jid: temChat ? jid : '', telefone: x.tel, nome: x.nome, dono: false, notas: [] });
+    const txt = await claudeTexto(system, fuTarefa(x, temChat ? fuConversa(jid) : ''), 1500);
+    const i = txt.indexOf('{'), j = txt.lastIndexOf('}'); if (i < 0 || j < i) throw new Error('a IA não devolveu o JSON');
+    const r = JSON.parse(txt.slice(i, j + 1));
+    if (x.status !== 'gerando') return;   // cancelado enquanto a IA pensava (ex.: o cliente voltou a escrever)
+    const dec = ['enviar', 'desistiu', 'nao_cliente'].includes(r.decisao) ? r.decisao : 'enviar';
+    Object.assign(x, { decisao: dec, motivo: String(r.motivo || '').slice(0, 300), analise: String(r.analise || '').slice(0, 700), prioridade: Math.max(1, Math.min(5, Math.round(Number(r.prioridade) || 1))), imovel: String(r.imovel || '').slice(0, 120), geradoEm: Date.now(), erro: '', jid: temChat ? jid : '' });
+    if (dec === 'enviar') {
+      const msg = String(r.mensagem || '').trim(); if (!msg) throw new Error('a IA não escreveu a mensagem');
+      x.mensagem = msg.slice(0, 1200); x.status = 'pronto';
+    } else {
+      x.mensagem = ''; x.status = dec;
+      if (dec === 'desistiu') fuEvento(x, 'sem_interesse', 'Follow-up dos perdidos: ' + (x.motivo || 'disse que não quer mais'));
+    }
+  } catch (e) {
+    x.erro = String(e.message || e).slice(0, 200);
+    if (x.status === 'gerando') x.status = x.tent >= 3 ? 'erro' : 'fila';
+    log('follow-up: erro ao preparar', x.tel, x.erro);
+  }
+  salvarFu();
+}
+function fuTrabalhar() {   // prepara 2 por vez
+  if (!API_KEY) return;
+  while (fuRun.gerando < 2) {
+    const x = Object.values(fu).find(v => v.status === 'fila'); if (!x) return;
+    fuRun.gerando++;
+    fuGerarUm(x).catch(() => { }).finally(() => { fuRun.gerando--; setTimeout(fuTrabalhar, 300); });
+  }
+}
+setInterval(fuTrabalhar, 30e3);
+setTimeout(fuTrabalhar, 20e3);
+async function fuEnviar(x) {   // devolve 'enviado', 'cancelado' ou 'erro'
+  const fim = (status, erro) => { Object.assign(x, { status, erro }); salvarFu(); return status; };
+  const num = fuNumero(x.tel); if (num.length < 12) return fim('erro', 'telefone inválido');
+  let jid = acharJid(num + '@s.whatsapp.net');
+  if (chats[jid] && ultCli(jid) > (x.geradoEm || x.criadoEm || 0)) return fim('cancelado', 'o cliente voltou a escrever antes do envio');
+  const st = (estado.crmStatus || {})[x.tel8]; if (st && st !== 'perdido') return fim('cancelado', 'saiu de Perdido no CRM');
+  if (lerBloqueados().has(num) || (estado.equipe || []).includes(x.tel8) || ehDono(num)) return fim('cancelado', 'número bloqueado para a assistente');
+  const texto = String(x.mensagem || '').trim(); if (!texto) return fim('erro', 'mensagem vazia');
+  if (!chats[jid]) {   // nunca conversou neste WhatsApp: confere se o número tem WhatsApp
+    try { const [r] = await sock.onWhatsApp(num); if (!r || !r.exists) return fim('erro', 'esse número não tem WhatsApp'); if (r.jid) jid = acharJid(r.jid); } catch (e) { return 'erro'; }
+  }
+  try { await sock.sendPresenceUpdate('composing', jid); } catch (e) { }
+  await dorme(Math.min(9000, 1200 + texto.length * acaso(25, 45)));
+  const r = await sock.sendMessage(jid, { text: texto });
+  const id = lembrarEnvio(r); ultimoEnvio = Date.now();
+  registrarEspelho(jid, { id, autor: 'voce', tipo: 'text', texto, ts: Date.now(), followup: true });
+  anotar(acharJid(jid), 'assistant', '(Djhonata escreveu) ' + texto);
+  Object.assign(x, { status: 'enviado', enviadoEm: Date.now(), jid: acharJid(jid), erro: '' }); salvarFu();
+  log('follow-up enviado', x.tel, x.nome || '');
+  return 'enviado';
+}
+async function fuEnviarProximo() {
+  if (!sock || !conectado || !estado.ativo || (estado.teste && estado.teste.ativo) || !fuNaJanela(Date.now())) return;
+  if (fuEnviadosHoje() >= FU_DIA) return;
+  if (!fuRun.proximoIntervalo) fuRun.proximoIntervalo = acaso(14, 26) * 60e3;
+  if (Date.now() - fuUltimoEnvio() < fuRun.proximoIntervalo) return;
+  for (const x of fuFilaAprovada()) {
+    let r = 'erro'; try { r = await fuEnviar(x); } catch (e) { log('follow-up: erro ao enviar', x.tel, e.message); }
+    if (r === 'enviado') { fuRun.proximoIntervalo = acaso(14, 26) * 60e3; return; }
+    if (r === 'erro' && x.status === 'aprovado') return;   // erro passageiro (ex.: WhatsApp oscilou): tenta na próxima volta
+  }
+}
+setInterval(() => fuEnviarProximo().catch(e => log('follow-up', e.message)), 60e3);
+function fuClienteFalou(jid, telefone, ts) {   // o cliente escreveu: respondeu o follow-up ou voltou sozinho
+  const x = fu[fuT8(telefone || (chats[jid] || {}).telefone || '')]; if (!x) return;
+  ts = (ts || 0) + 999;   // o WhatsApp manda a hora em segundos
+  if (x.status === 'enviado' && ts > (x.enviadoEm || 0)) {
+    Object.assign(x, { status: 'respondeu', respondeuEm: ts }); salvarFu();
+    fuEvento(x, 'atendimento', 'Respondeu o follow-up dos perdidos');
+    log('respondeu o follow-up', x.tel, x.nome || '');
+  } else if (['fila', 'gerando', 'pronto', 'aprovado'].includes(x.status) && ts > (x.criadoEm || 0)) {
+    Object.assign(x, { status: 'cancelado', erro: 'o cliente voltou a escrever sozinho' }); salvarFu();
+  }
+}
 
 function estadoPublico() {
   const uso = lerJson(path.join(DADOS, 'uso.json'), {});
@@ -2276,6 +2439,50 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           json(res, { ok: true, reiniciando: true });
           return setTimeout(() => process.exit(0), 800);
         }
+        else if (ac === 'followup_gerar') {   // o CRM manda os clientes em Perdido (lote); a IA prepara a mensagem de cada um
+          let p = {}; try { p = JSON.parse(b.texto || '{}'); } catch (e) { }
+          let novos = 0, ignorados = 0;
+          for (const c of (Array.isArray(p.clientes) ? p.clientes : []).slice(0, 200)) {
+            const num = fuNumero(c.telefone), t8 = num.slice(-8);
+            if (num.length < 12 || t8.length !== 8 || ehDono(num)) { ignorados++; continue; }
+            const v = fu[t8];
+            if (v && (['enviado', 'respondeu', 'aprovado', 'gerando'].includes(v.status) || (!p.refazer && v.status !== 'erro'))) { ignorados++; continue; }   // já tem (ou já foi): não refaz
+            fu[t8] = { tel8: t8, tel: num, id: String(c.id || ''), nome: String(c.nome || '').slice(0, 80), status: 'fila', criadoEm: Date.now(), tent: 0,
+              crm: { nome: String(c.nome || '').slice(0, 80), nomeProvisorio: !!c.nomeProvisorio, bairro: String(c.bairro || '').slice(0, 80), imovel: String(c.imovel || '').slice(0, 160), proximo: String(c.proximo || '').slice(0, 300), resumo: String(c.resumo || '').slice(0, 1500), historico: String(c.historico || '').slice(0, 1800), obs: String(c.obs || '').slice(-900) } };
+            novos++;
+          }
+          salvarFu(); setTimeout(fuTrabalhar, 200);
+          return json(res, Object.assign({ ok: true, novos, ignorados }, fuResumo()));
+        }
+        else if (ac === 'followup_lista') {   // {tel} = um cliente; {status:[...], limite, pular} = lista; {mapa:true} = status de todos (para o CRM marcar os cards)
+          let p = {}; try { p = JSON.parse(b.texto || '{}'); } catch (e) { }
+          const prev = fuPrevisoes(), out = fuResumo();
+          if (p.tel) { const x = fu[fuT8(p.tel)]; out.item = x ? fuPublico(x, prev) : null; }
+          if (p.mapa) { out.mapa = {}; for (const v of Object.values(fu)) out.mapa[v.tel8] = v.status; }
+          if (Array.isArray(p.status) && p.status.length) {
+            const ord = { aprovado: (a, z) => (prev[a.tel8] || 0) - (prev[z.tel8] || 0), enviado: (a, z) => (z.enviadoEm || 0) - (a.enviadoEm || 0), respondeu: (a, z) => (z.respondeuEm || 0) - (a.respondeuEm || 0) };
+            const sel = Object.values(fu).filter(v => p.status.includes(v.status)).sort(ord[p.status[0]] || ((a, z) => (z.prioridade || 0) - (a.prioridade || 0) || (z.geradoEm || 0) - (a.geradoEm || 0)));
+            const pular = Math.max(0, Number(p.pular) || 0), lim = Math.min(100, Math.max(1, Number(p.limite) || 40));
+            out.total = sel.length; out.itens = sel.slice(pular, pular + lim).map(x => fuPublico(x, prev));
+          }
+          return json(res, out);
+        }
+        else if (ac === 'followup_salvar') {   // {tel8 | tels:[...], acao: aprovar|cancelar|desaprovar, mensagem}
+          let p = {}; try { p = JSON.parse(b.texto || '{}'); } catch (e) { }
+          const tels = [...new Set((Array.isArray(p.tels) ? p.tels : [p.tel8]).map(fuT8))].filter(t => fu[t]);
+          let n = 0;
+          for (const t of tels) {
+            const x = fu[t];
+            if (typeof p.mensagem === 'string' && tels.length === 1 && ['pronto', 'aprovado', 'cancelado', 'erro'].includes(x.status) && p.mensagem.trim()) x.mensagem = p.mensagem.trim().slice(0, 1200);
+            if (p.acao === 'aprovar' && ['pronto', 'cancelado', 'erro'].includes(x.status) && x.mensagem) { Object.assign(x, { status: 'aprovado', aprovadoEm: Date.now(), erro: '' }); n++; }
+            else if (p.acao === 'cancelar' && ['fila', 'pronto', 'aprovado', 'erro'].includes(x.status)) { Object.assign(x, { status: 'cancelado', erro: 'cancelado por você' }); n++; }
+            else if (p.acao === 'desaprovar' && x.status === 'aprovado') { x.status = 'pronto'; n++; }
+            else if (!p.acao) n++;
+          }
+          salvarFu();
+          const prev = fuPrevisoes();
+          return json(res, Object.assign({ ok: true, alterados: n, itens: tels.map(t => fuPublico(fu[t], prev)) }, fuResumo()));
+        }
         else if (ac === 'eventos') {
           let linhas = []; try { linhas = fs.readFileSync(path.join(DADOS, 'eventos-crm.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean); } catch (e) { }
           const ok = new Set(estado.eventosOk || []);
@@ -2360,7 +2567,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
         const out = { estado: estadoPublico(), classif, etiquetando, etiquetas: Object.entries(etq.labels).filter(([, l]) => !l.apagada).map(([id, l]) => ({ id, nome: l.nome, cor: l.cor })), totais: { ativos: todos.filter(c => !c.arquivado).length, arquivados: todos.filter(c => c.arquivado).length },
           chats: todos.filter(c => verArq ? c.arquivado : !c.arquivado).sort((a, b) => b.ult - a.ult).slice(0, 400) };
         if (b._resultado) out.resultado = b._resultado;
-        if (jidValido(jid)) { out.chat = chatPublico(jid); out.msgs = lerEsp(jid).slice(-60).map(m => ({ id: m.id, autor: m.autor, tipo: m.tipo, texto: m.texto, ts: m.ts, rotina: m.rotina || undefined, transc: m.transc || undefined, voz: m.voz || undefined, ordem: m.ordem || undefined })); }
+        if (jidValido(jid)) { out.chat = chatPublico(jid); out.msgs = lerEsp(jid).slice(-60).map(m => ({ id: m.id, autor: m.autor, tipo: m.tipo, texto: m.texto, ts: m.ts, rotina: m.rotina || undefined, transc: m.transc || undefined, voz: m.voz || undefined, ordem: m.ordem || undefined, followup: m.followup || undefined })); }
         if (ultimoQR && !conectado) { try { out.qr = await QRCode.toString(ultimoQR, { type: 'svg', margin: 1, width: 240 }); } catch (e) { } }
         return json(res, out);
       }
