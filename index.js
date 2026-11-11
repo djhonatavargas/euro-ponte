@@ -222,9 +222,9 @@ Esta conversa pode ter mensagens antigas de quando ele testou a assistente fingi
 const FERRAMENTAS = [
   { name: 'ler_ficha', description: 'Lê a ficha de um imóvel do catálogo (descrição pronta do CRM, dados e lista de fotos e vídeo). Use a ref (ex.: "913") ou parte do nome da rua/residencial.', input_schema: { type: 'object', properties: { busca: { type: 'string' } }, required: ['busca'] } },
   { name: 'enviar_arquivo', description: 'Envia ao cliente uma foto, vídeo ou arquivo do catálogo (caminho relativo à pasta do catálogo) ou uma imagem por link https. A legenda vai junto com a mídia.', input_schema: { type: 'object', properties: { caminho: { type: 'string' }, legenda: { type: 'string' } }, required: ['caminho'] } },
-  { name: 'simular_fluxo', description: 'Monta a simulação do pagamento de um imóvel com os números do cliente e devolve o texto pronto para mandar ao cliente, por texto, do jeito que veio. O financiamento já sai calculado do jeito mais atrativo para o cliente (avaliação do banco ou preço, o que for maior; não fale da avaliação ao cliente). Sem os números dele, usa o padrão (sinal de R$ 10 mil e R$ 1.500 por mês). imovel = ref (ex.: "832") ou parte do nome da rua/residencial. sinal = quanto ele dá na assinatura. parcela = quanto fica bom por mês até a entrega. fgts = saldo de FGTS que ele tem hoje (0 se não tem; não mande se ainda não sabe). carteira = true se ele (ou a família) trabalha de carteira assinada: aí o FGTS cresce todo mês até a entrega e diminui a entrada. renda = renda bruta mensal da família. reforcos = em quantos reforços dividir o que faltar (o último é na entrega das chaves); mande um número maior quando ele achar o reforço pesado. pos_chaves = em quantas parcelas mensais DEPOIS da entrega dividir o que faltar da entrada (use quando a entrada não cabe no bolso dele mesmo ajustando sinal e parcelas, ou em imóvel pronto ou com entrega muito perto; comece com 12 e vá até 24 se ele precisar): o texto já sai avisando que depende de a construtora aceitar e que se formaliza na proposta, no escritório.', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, sinal: { type: 'number' }, parcela: { type: 'number' }, fgts: { type: 'number' }, carteira: { type: 'boolean' }, renda: { type: 'number' }, reforcos: { type: 'number' }, pos_chaves: { type: 'number' } }, required: ['imovel'] } },
+  { name: 'simular_fluxo', description: 'Monta a simulação do pagamento de um imóvel com os números do cliente e devolve o texto pronto para mandar ao cliente, por texto, do jeito que veio. O financiamento já sai calculado do jeito mais atrativo para o cliente (avaliação do banco ou preço, o que for maior; não fale da avaliação ao cliente). Sem os números dele, usa o padrão (sinal de R$ 10 mil e R$ 1.500 por mês). imovel = ref (ex.: "832") ou parte do nome da rua/residencial. sinal = quanto ele dá na assinatura. parcela = quanto fica bom por mês até a entrega. fgts = saldo de FGTS que ele tem hoje (0 se não tem; não mande se ainda não sabe). carteira = true se ele (ou a família) trabalha de carteira assinada: aí o FGTS cresce todo mês até a entrega e diminui a entrada. renda = renda bruta mensal da família. reforcos = em quantos reforços dividir o que faltar (o último é na entrega das chaves); mande um número maior quando ele achar o reforço pesado. pos_chaves = em quantas parcelas mensais DEPOIS da entrega dividir o que faltar da entrada (use quando a entrada não cabe no bolso dele mesmo ajustando sinal e parcelas, ou em imóvel pronto ou com entrega muito perto; comece com 12 e vá até 24 se ele precisar; se o cliente disse quanto pode pagar por mês, mande esse valor em parcela junto: cada parcela pós-chaves fica nesse valor, até 36 vezes, e o que não couber já sai no texto como reforço ou complemento a combinar): o texto já sai avisando que depende de a construtora aceitar e que se formaliza na proposta, no escritório.', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, sinal: { type: 'number' }, parcela: { type: 'number' }, fgts: { type: 'number' }, carteira: { type: 'boolean' }, renda: { type: 'number' }, reforcos: { type: 'number' }, pos_chaves: { type: 'number' } }, required: ['imovel'] } },
   { name: 'avisar_djhonata', description: 'Manda um aviso no WhatsApp pessoal do Djhonata.', input_schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
-  { name: 'registrar_crm', description: 'Registra no CRM um evento do cliente atual e move o card dele: novoStatus = atendimento, visita_marcada, negociacao, remarcar, sem_interesse ou pausado. Em visita_marcada mande data (AAAA-MM-DD) e hora (HH:MM): o sistema usa para os lembretes da visita. Se o cliente cancelar ou pedir para remarcar, use remarcar (os lembretes param). Mande nomeReal quando o cliente disser o nome e imovel quando souber qual imóvel interessa. resultado = frase curta do que aconteceu.', input_schema: { type: 'object', properties: { novoStatus: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nomeReal: { type: 'string' }, imovel: { type: 'string' }, resumo: { type: 'string' }, resultado: { type: 'string' } } } }
+  { name: 'registrar_crm', description: 'Registra no CRM um evento do cliente atual e move o card dele: novoStatus = atendimento, visita_marcada, remarcar, sem_interesse ou pausado ("em negociação" NÃO é com você: só o Djhonata move para lá, depois que o cliente vem ao escritório; cliente negociando valores pelo WhatsApp continua em atendimento). Em visita_marcada mande data (AAAA-MM-DD) e hora (HH:MM): o sistema usa para os lembretes da visita. Se o cliente cancelar ou pedir para remarcar, use remarcar (os lembretes param). Mande nomeReal quando o cliente disser o nome e imovel quando souber qual imóvel interessa. resultado = frase curta do que aconteceu.', input_schema: { type: 'object', properties: { novoStatus: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nomeReal: { type: 'string' }, imovel: { type: 'string' }, resumo: { type: 'string' }, resultado: { type: 'string' } } } }
 ];
 // Só quando quem escreve é o Djhonata (WhatsApp pessoal, modo teste desligado): seção 13 do AGENTS.md
 const FERRAMENTA_DONO = { name: 'mandar_ao_cliente', description: 'Manda uma mensagem a um cliente a pedido do Djhonata, falando como o Djhonata. cliente = nome ou telefone do cliente, como o Djhonata citou (ou o do último aviso). texto = a mensagem para o cliente (pode ter [[tts:...]] para áudio e linhas com --- para separar mensagens). combinado = resumo curto da orientação do Djhonata sobre esse cliente, para seguir nas próximas conversas com ele.', input_schema: { type: 'object', properties: { cliente: { type: 'string' }, texto: { type: 'string' }, combinado: { type: 'string' } }, required: ['cliente', 'texto'] } };
@@ -327,6 +327,13 @@ function simularFluxo(e) {
   L.push(`✅ Sinal: ${brl(sinal)} na assinatura`);
   let resto = Math.max(0, cent(entrada - sinal)), q = 0, alt = '', parcelaUsada = 0, posTxt = '';
   const nPos = Math.min(36, Math.max(0, Math.round(num(e.pos_chaves, 0))));
+  // Pós-chaves: quando o cliente disse quanto pode pagar por mês, a parcela pós-chaves respeita esse valor (ele ainda vai ter a parcela da Caixa).
+  // O que não couber nas parcelas fica como reforço (na planta) ou complemento a combinar (no pronto): nunca some da conta.
+  const posChaves = (valor) => {
+    const p = informado(e.parcela) ? Math.min(parcela, acima(valor / nPos)) : acima(valor / nPos), tot = Math.min(valor, cent(p * nPos));
+    L.push(`✅ Pós-chaves: ${nPos}x de ${brl(p)} por mês depois da entrega = ${brl(tot)}`); posTxt = `, pós-chaves ${nPos}x de ${brl(p)}`;
+    return cent(valor - tot);
+  };
   const fgtsMes = obra && carteira && renda > 0 ? renda / 12 : 0;
   const fgtsTotal = cent(fgtsHoje + fgtsMes * (obra ? meses : 0)), fgtsUsado = Math.min(fgtsTotal, resto);
   if (fgtsUsado > 0) {
@@ -335,7 +342,10 @@ function simularFluxo(e) {
     resto = cent(resto - fgtsUsado);
   }
   if (!obra) {
-    if (resto > 0 && nPos) { L.push(`✅ Pós-chaves: ${nPos}x de ${brl(acima(resto / nPos))} por mês depois da entrega = ${brl(resto)}`); posTxt = `, pós-chaves ${nPos}x`; resto = 0; }
+    if (resto > 0 && nPos) {
+      resto = posChaves(resto);
+      if (resto >= 1) L.push(`✅ Complemento da entrada: ${brl(resto)} (a gente combina como fica: reforços depois das chaves, FGTS, subsídio, ou um carro ou moto no negócio)`);
+    }
     else if (resto > 0) L.push(`✅ Complemento da entrada: ${brl(resto)} (a gente combina como fica: com subsídio, FGTS, um carro ou moto no negócio, ou parcelado depois das chaves)`);
   } else if (resto > 0) {
     const n = meses;
@@ -343,7 +353,7 @@ function simularFluxo(e) {
     const parcelado = Math.min(resto, cent(parcelaUsada * n));
     L.push(`✅ Entrada parcelada: ${n}x de ${brl(parcelaUsada)} até a entrega (${quando}) = ${brl(parcelado)}`);
     resto = cent(resto - parcelado);
-    if (resto >= 1 && nPos) { L.push(`✅ Pós-chaves: ${nPos}x de ${brl(acima(resto / nPos))} por mês depois da entrega = ${brl(resto)}`); posTxt = `, pós-chaves ${nPos}x`; resto = 0; }
+    if (resto >= 1 && nPos) resto = posChaves(resto);
     if (resto >= 1) {
       const pedidos = num(e.reforcos, 0), padrao = mesesDosReforcos(n, 0);
       const ms = pedidos ? mesesDosReforcos(n, pedidos) : padrao.slice(-Math.max(1, Math.floor(resto / REFORCO_MIN))); q = ms.length;
@@ -460,6 +470,8 @@ async function executar(nome, entrada, ctx) {
       return 'Aviso enviado ao Djhonata. Continue atendendo o cliente normalmente.';
     }
     if (nome === 'registrar_crm') {   // visitas: guardadas para os lembretes (também no modo teste, só para o número de teste)
+      // "Em negociação" é só de quem já veio ao escritório: quem move para lá é o Djhonata, no CRM. A assistente fica em atendimento.
+      if (/^negocia/i.test(String(entrada.novoStatus || ''))) { entrada.novoStatus = 'atendimento'; log('registrar_crm: a assistente pediu negociacao, ficou em atendimento'); }
       const st = String(entrada.novoStatus || '').toLowerCase();
       if (st === 'visita_marcada' && entrada.data) guardarVisita(ctx.jid, String(entrada.data), String(entrada.hora || ''), 'assistente');
       if (['remarcar', 'sem_interesse', 'pausado', 'desistiu', 'negociacao'].includes(st)) cancelarVisita(ctx.jid, st);
@@ -537,6 +549,59 @@ function guardarChat(ch) {
 function salvarChats() { clearTimeout(salvarChatsTimer); salvarChatsTimer = setTimeout(() => gravarJson(CHATS_F, chats), 800); }
 function arqEsp(jid) { return path.join(ESPELHO, jid.replace(/[^0-9a-zA-Z@._-]/g, '_') + '.json'); }
 function lerEsp(jid) { return lerJson(arqEsp(jid), []); }
+// ---- Sinais da conversa para a pontuação "Quentes" do CRM: só o que aconteceu de fato na conversa (sem IA) ----
+const RE_S_IMOVEL = /^\s*✨|💰\s*R\$/;
+const RE_S_FLUXO = /financiamento pela caixa|entrada parcelada|complemento da entrada/i;
+const RE_S_AGENDA = /hook\.us2\.make\.com|mc\.ht\/s\/|marque seu hor[aá]rio/i;
+const RE_S_PAG = /entrada|parcel|financ|simul|minha casa|mcmv|fgts|pela caixa|nome limpo|score|forma de pagamento|formas de pagamento|quanto (?:fica|sai|custa|[ée]|d[aá]|tem que|precisa)|subs[ií]dio|aceita[mn]? (?:carro|moto)/i;
+const RE_S_PENSAR = /\b(?:conversar|conversando|falar|falando|ver|verificar|mostrar)\b[^.?!]{0,12}\b(?:com|pr[ao]|para)\s+(?:o |a )?(?:meu|minha|ele|ela)\b|\besperar (?:o |a )?(?:meu|minha|ele|ela)\b|vou pensar|vamos pensar|pensar (?:melhor|com calma|um pouco)|te (?:aviso|retorno|dou (?:um )?retorno)|qualquer coisa (?:eu )?(?:te )?(?:chamo|aviso|falo|entro)|entro em contato/i;
+const RE_S_ESCR = /escrit[oó]rio|visita|agend|marcar (?:um |uma )?(?:hor|visita|dia)|marquei|pessoalmente|pode ser (?:s[aá]bado|segunda|ter[cç]a|quarta|quinta|sexta|amanh[aã]|hoje|dia \d)|passar a[ií]|ir a[ií]/i;
+const RE_S_DIA1 = /pode ser|teria como|d[aá] (?:pra|para)|consigo (?:ir|passar)|vou (?:ir|passar|a[ií])|agendei|marquei|[aà]s ?\d{1,2}/i;
+const RE_S_DIA2 = /s[aá]bado|segunda|ter[cç]a|quarta|quinta|sexta|domingo|amanh[aã]|hoje|dia \d|\d{1,2}\s*(?:h\b|:\d\d|horas)|manh[aã]|tarde|agendei|marquei/i;
+const RE_S_ADIOU = /mais pra frente|mais para frente|n[aã]o no momento|agora n[aã]o|ano que vem|(?:final|fim) do m[eê]s|s[oó] pesquisando|por enquanto (?:n[aã]o|s[oó])|deixa(?:r)? (?:pra|para) depois|outra hora|m[eê]s que vem/i;
+const RE_S_PESADO = /pesad|n[aã]o tenho (?:ess|como|dinheiro|entrada|condi|esse)|n[aã]o d[aá]\b|muito caro|caro (?:demais|n[eé])|salgad|fora do (?:meu )?or[cç]amento|n[aã]o consigo/i;
+const RE_S_NUM = /\b\d{1,3}(?:\.\d{3})+\b|\b\d+\s*mil\b|\b\d{4,6}\b|r\$\s*\d/i;
+const RE_S_DADO = /renda|sal[aá]rio|ganh[oa]|fgts|sinal|entrada|por m[eê]s|carteira/i;
+const RE_S_FIM = /n[aã]o (?:tenho|tem|temos) (?:mais )?interesse|j[aá] compr(?:ei|amos)|comprei (?:com|outro|em outra)|n[aã]o quero mais|eu n[aã]o busco|n[aã]o me (?:mande|chame)|pare de (?:me )?mandar/i;
+function sinaisMsgs(ms) {
+  const s = { n: 0 }; let nossa = false, tImv = 0, tFlx = 0, cliDesdeFlx = false, tPede = 0;
+  for (const m of ms || []) {
+    const tx = String(m.texto || '');
+    if (m.autor === 'cliente') {
+      if (!tx.trim() && (!m.tipo || m.tipo === 'text')) continue;
+      s.n++; s.uc = m.ts; s.ua = 'c';
+      if (nossa) s.r = 1;                                   // respondeu depois da nossa primeira mensagem
+      if (tImv) s.ri = 1;                                   // continuou a conversa depois de receber imóvel
+      if (RE_S_PAG.test(tx)) s.pg = 1;                      // perguntou de entrada, parcelas, financiamento
+      if (tFlx) { s.rf = (s.rf || 0) + 1; s.rfu = 1; cliDesdeFlx = true; }   // falou depois do fluxo de pagamento
+      if (RE_S_NUM.test(tx) && (RE_S_DADO.test(tx) || (tPede && m.ts - tPede < 6 * 3600e3))) s.dd = 1;   // passou renda, FGTS, sinal ou parcela
+      if (nossa && RE_S_PENSAR.test(tx)) s.pe = 1;          // ficou de pensar ou de falar com a família
+      if (nossa && RE_S_ESCR.test(tx) && !s.es) s.es = 1;   // falou em vir ao escritório, visita ou horário
+      if ((s.es || s.lk) && RE_S_DIA1.test(tx) && RE_S_DIA2.test(tx)) s.es = 2;   // combinou dia ou hora para vir
+      s.pd = (/[?❓]/.test(tx) || (m.tipo && m.tipo !== 'text')) ? 1 : (s.pd || 0);   // pergunta, áudio ou foto dele ainda sem resposta nossa
+      if (RE_S_ADIOU.test(tx)) s.ad = 1; else if (s.ad && (RE_S_PAG.test(tx) || RE_S_ESCR.test(tx))) s.ad = 0;   // adiou; deixa de valer se depois ele retomou o assunto
+      if (RE_S_PESADO.test(tx)) { s.ps = 1; s.psu = 1; }   // achou pesado (psu: ainda sem novo fluxo depois disso)
+      if (RE_S_FIM.test(tx)) s.nf = 1;
+    } else {
+      nossa = true; s.un = m.ts; s.ua = 'n'; s.pd = 0;
+      if (RE_S_IMOVEL.test(tx)) { s.im = (s.im || 0) + 1; if (!tImv) tImv = m.ts; }
+      if (RE_S_FLUXO.test(tx) && /sinal/i.test(tx) && /r\$\s*\d/i.test(tx)) {
+        if (tFlx && cliDesdeFlx) s.aj = (s.aj || 0) + 1;     // o cliente falou e recebeu outro fluxo: ajuste
+        s.fx = (s.fx || 0) + 1; tFlx = m.ts; cliDesdeFlx = false; s.rfu = 0; s.psu = 0;
+      }
+      if (RE_S_AGENDA.test(tx)) s.lk = 1;
+      if (/\?/.test(tx) && RE_S_DADO.test(tx)) tPede = m.ts;
+    }
+  }
+  return s;
+}
+const sinaisCache = new Map();
+function sinaisDe(j) {
+  const c = chats[j] || {}, k = (c.ult || 0) + ':' + (c.ultCliente || 0), v = sinaisCache.get(j);
+  if (v && v.k === k) return v.s;
+  const s = sinaisMsgs(lerEsp(j)); sinaisCache.set(j, { k, s });
+  return s;
+}
 const clientesSSE = new Set();
 function emitir(tipo, dados) {
   const linha = `event: ${tipo}\ndata: ${JSON.stringify(dados)}\n\n`;
@@ -2501,6 +2566,18 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
             await new Promise(r => setTimeout(r, 2));
           }
           return json(res, { ok: true, conversas: lista.length, texto: partes.join('\n\n') });
+        } else if (ac === 'sinais') {   // sinais de cada conversa dos últimos N dias (texto = dias), para a pontuação "Quentes" do CRM
+          const dias = Math.min(120, Math.max(1, Number(b.texto) || 45)), desde = Date.now() - dias * 864e5, tels = {};
+          let k = 0;
+          for (const j of Object.keys(chats)) {
+            if (!jidValido(j) || j.endsWith('@g.us') || ehDono(pnDe(j) || j)) continue;
+            const c = chats[j]; if ((c.ultCliente || 0) < desde) continue;
+            const t8 = String(c.telefone || '').replace(/\D/g, '').slice(-8); if (!t8) continue;
+            let s = null; try { s = sinaisDe(j); } catch (e) { }
+            if (s && s.n && (!tels[t8] || (s.uc || 0) > (tels[t8].uc || 0))) tels[t8] = s;
+            if (++k % 40 === 0) await new Promise(r => setTimeout(r, 2));
+          }
+          return json(res, { ok: true, em: Date.now(), dias, tels });
         } else if (ac === 'crm_faltantes') {   // cria o card de quem a assistente atendeu nos últimos N dias e não está no CRM (texto = dias)
           const dias = Math.min(30, Math.max(1, Number(b.texto) || 2)), desde = Date.now() - dias * 864e5, feitos = [];
           for (const j of Object.keys(chats)) {
