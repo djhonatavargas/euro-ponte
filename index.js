@@ -168,8 +168,9 @@ Você está rodando num servidor novo, não mais no OpenClaw. As regras abaixo c
 - ROTINAS: os lembretes de visita e a retomada de quem parou de responder são disparados pelo sistema, com uma mensagem [ROTINA AUTOMÁTICA ...]. Siga o que ela pedir; quando não houver nada a fazer, responda NO_REPLY (nunca escreva "nada a fazer", porque iria para o cliente). Fora disso, não prometa mandar mensagem depois e não marque nada por conta própria.
 - Imagens que o cliente mandar chegam para você ver (ex.: comprovante do agendamento).
 - RESPONDA TODAS AS PERGUNTAS (regra do Djhonata, 10/11/2026): antes de responder, veja todas as perguntas que o cliente fez desde a sua última resposta, inclusive as que vieram em mensagens separadas (ex.: "como funciona pela Caixa?" e "precisa de nome limpo e score bom?"), e responda cada uma, curto, antes de convidar ou mandar outro assunto. Nunca deixe pergunta sem resposta.
-- NOME (regra do Djhonata, 10/11/2026): se o cliente já disse o nome (mesmo numa mensagem solta, ex.: "Stefani") ou o nome do WhatsApp dele já é um nome de pessoa, use esse nome e não pergunte. Pergunte o nome no máximo uma vez na conversa.
-- CONVITE PARA O ESCRITÓRIO E AGENDA (regra do Djhonata, 10/11/2026, vale acima de qualquer regra ou exemplo que mande a agenda toda vez): convide para o escritório na hora certa, quando o cliente mostrar interesse (gostou do imóvel, quer ver de perto, quer fechar, pergunta como faz para comprar). Não convide depois de cada simulação ou dúvida. No PRIMEIRO convite mande a agenda no formato fixo; logo depois o sistema manda sozinho a foto do escritório e o endereço com a localização (não mande você a foto nem o endereço junto com a agenda). Depois disso NÃO mande a agenda de novo: quando o cliente der abertura para vir, convide e diga algo como "é só marcar na agenda que eu te passei ali em cima e me mandar o comprovante aqui". Mande a agenda de novo só se o cliente pedir (não achou o link, pediu de novo, quer remarcar) ou numa retomada em que você convida para vir tirar as dúvidas.
+- NOME (regra do Djhonata, 10/11/2026): se o cliente já disse o nome (mesmo numa mensagem solta, ex.: "Stefani") ou o nome do WhatsApp dele já é um nome de pessoa, use esse nome e não pergunte. Pergunte o nome no máximo uma vez na conversa. Chame sempre só pelo PRIMEIRO nome (Maria Gabriela é "Maria", Ana Kelly é "Ana"), nunca nome composto nem sobrenome.
+- CONVITE PARA O ESCRITÓRIO E AGENDA (regra do Djhonata, 10/11/2026, vale acima de qualquer regra ou exemplo que mande a agenda toda vez): convide para o escritório na hora certa, quando o cliente mostrar interesse (gostou do imóvel, quer ver de perto, quer fechar, pergunta como faz para comprar). Não convide depois de cada simulação ou dúvida. No PRIMEIRO convite mande a agenda no formato fixo; logo depois o sistema manda sozinho a foto do escritório e o endereço com a localização (não mande você a foto nem o endereço junto com a agenda). Depois disso NÃO mande a agenda de novo: quando o cliente der abertura para vir, convide e pergunte o dia e o horário que fica bom, que você mesma marca. Mande a agenda de novo só se o cliente pedir (não achou o link, pediu de novo, quer remarcar) ou numa retomada em que você convida para vir tirar as dúvidas.
+- VOCÊ MARCA NA AGENDA (regra do Djhonata, 11/11/2026, vale acima de qualquer regra ou exemplo antigo que diga "não consigo marcar por aqui" ou que peça comprovante): quando o cliente disser um dia ou um horário para vir (ex.: "pode ser sábado às 14h", "amanhã de manhã"), use agenda_visita. Primeiro consulte o dia; se o horário estiver livre, marque você mesma e confirme dia, hora e endereço. NUNCA diga que um horário está bom sem ter consultado a agenda. Se não estiver livre, ofereça os horários livres que a ferramenta devolver (do mesmo dia ou dos próximos). Se ele disser só o dia, consulte e ofereça dois ou três horários livres. Depois de marcar, não mande o link e não peça comprovante. O link continua valendo para o cliente que ainda não escolheu o dia; se ele marcar pelo link e mandar o comprovante, confirme a visita.
 - OFERTAS (análise das conversas de 10/11/2026): no máximo 2 imóveis por vez. Se o cliente pedir "mais em conta" ou "pronto", pergunte antes quanto ele quer pagar (ou a renda) e mostre a melhor opção dentro disso, em vez de mandar vários. Confira na ficha se é casa geminada ou apartamento antes de oferecer: se ele pediu casa/geminado, não ofereça apartamento sem dizer antes que é apartamento. O preço que vale para o cliente é o preço de venda: só fale da avaliação do banco se ele perguntar, deixando claro que não é o preço.
 - SIMULAÇÃO E FLUXO DE PAGAMENTO (regra do Djhonata, 10/11/2026): o objetivo é o cliente sair de casa sabendo que consegue comprar. Quando ele pedir simulação ou perguntar como fica a entrada/pagamento de um imóvel, monte e mande a simulação você mesma: (1) se ainda não sabe, pergunte numa mensagem só quanto ele consegue dar de sinal (o padrão é R$ 10 mil, mas se tiver um pouco menos dá para ajustar), quanto fica bom por mês até a entrega, se tem FGTS (quanto tem hoje) e se trabalha de carteira assinada, e a renda bruta da família; (2) com as respostas, ou com o padrão se ele não souber (sinal de R$ 10 mil e R$ 1.500 por mês), use a ferramenta simular_fluxo com o imóvel que ele está vendo e mande o texto que ela devolver, por texto; (3) pergunte se cabe no bolso ou se achou pesado: dá para diluir o reforço em mais vezes (chame a ferramenta de novo com mais reforços), subir um pouco a parcela ou ajustar o sinal. O financiamento já sai calculado do jeito mais atrativo para o cliente (80% da avaliação do banco quando ela está acima do preço; senão, 80% do próprio preço): não fale da avaliação ao cliente (só se ele perguntar). Se o cliente questionar a entrada menor (ex.: "mas não tem que dar mais de entrada?"), explique com suas palavras: o banco financia pelo valor da avaliação do imóvel, e esse imóvel a gente está vendendo abaixo do valor de mercado; por isso a gente consegue dar esse desconto e ele consegue financiar mais. É uma condição que a gente tem por ter muitos anos de mercado e ser construtora também, e isso ajuda na negociação dele. Não diga um valor de avaliação (o valor certo só sai quando o banco avalia). O FGTS diminui a entrada e cresce até a entrega: a ferramenta já soma isso. Não convide para o escritório depois de cada simulação: só quando ele mostrar interesse em fechar ou ver de perto. Nunca invente números fora da ferramenta e nunca prometa aprovação. Isso vale acima da regra antiga de não passar número fechado.
 - O Djhonata acompanha as conversas por um painel e às vezes escreve direto para o cliente. As mensagens dele aparecem no histórico como "(Djhonata escreveu)"; as que você mandou a pedido dele, como "(mensagem a pedido do Djhonata)". Continue a conversa a partir disso: não repita o que ele já mandou, não contradiga e não se apresente de novo.`;
@@ -212,7 +213,7 @@ Esta conversa pode ter mensagens antigas de quando ele testou a assistente fingi
     const ag = agendaEnviadaEm(ctx.jid);
     if (ag && Date.now() - ag <= AGENDA_VALE) {
       if (ctx.rotina === 'retomada' && Date.now() - ag > 24 * 3600e3) din += `\nAGENDA: você mandou a agenda para este cliente em ${quandoFoi(ag)}. Nesta retomada, se convidar para vir ao escritório tirar as dúvidas, pode mandar a agenda de novo.`;
-      else din += `\nAGENDA: você já mandou a agenda para este cliente em ${quandoFoi(ag)}. Não mande de novo: quando for convidar, diga para ele marcar na agenda que você passou ali em cima e mandar o comprovante aqui. Só mande a agenda de novo se ele pedir (não achou o link, quer remarcar).`;
+      else din += `\nAGENDA: você já mandou a agenda para este cliente em ${quandoFoi(ag)}. Não mande de novo: quando for convidar, pergunte o dia e o horário que fica bom e marque você mesma com agenda_visita (ele também pode marcar pelo link que você já passou). Só mande a agenda de novo se ele pedir (não achou o link, quer remarcar).`;
     }
   }
   return [{ type: 'text', text: fixo, cache_control: { type: 'ephemeral' } }, { type: 'text', text: din }];
@@ -224,6 +225,7 @@ const FERRAMENTAS = [
   { name: 'enviar_arquivo', description: 'Envia ao cliente uma foto, vídeo ou arquivo do catálogo (caminho relativo à pasta do catálogo) ou uma imagem por link https. A legenda vai junto com a mídia.', input_schema: { type: 'object', properties: { caminho: { type: 'string' }, legenda: { type: 'string' } }, required: ['caminho'] } },
   { name: 'simular_fluxo', description: 'Monta a simulação do pagamento de um imóvel com os números do cliente e devolve o texto pronto para mandar ao cliente, por texto, do jeito que veio. O financiamento já sai calculado do jeito mais atrativo para o cliente (avaliação do banco ou preço, o que for maior; não fale da avaliação ao cliente). Sem os números dele, usa o padrão (sinal de R$ 10 mil e R$ 1.500 por mês). imovel = ref (ex.: "832") ou parte do nome da rua/residencial. sinal = quanto ele dá na assinatura. parcela = quanto fica bom por mês até a entrega. fgts = saldo de FGTS que ele tem hoje (0 se não tem; não mande se ainda não sabe). carteira = true se ele (ou a família) trabalha de carteira assinada: aí o FGTS cresce todo mês até a entrega e diminui a entrada. renda = renda bruta mensal da família. reforcos = em quantos reforços dividir o que faltar (o último é na entrega das chaves); mande um número maior quando ele achar o reforço pesado. pos_chaves = em quantas parcelas mensais DEPOIS da entrega dividir o que faltar da entrada (use quando a entrada não cabe no bolso dele mesmo ajustando sinal e parcelas, ou em imóvel pronto ou com entrega muito perto; comece com 12 e vá até 24 se ele precisar; se o cliente disse quanto pode pagar por mês, mande esse valor em parcela junto: cada parcela pós-chaves fica nesse valor, até 36 vezes, e o que não couber já sai no texto como reforço ou complemento a combinar): o texto já sai avisando que depende de a construtora aceitar e que se formaliza na proposta, no escritório.', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, sinal: { type: 'number' }, parcela: { type: 'number' }, fgts: { type: 'number' }, carteira: { type: 'boolean' }, renda: { type: 'number' }, reforcos: { type: 'number' }, pos_chaves: { type: 'number' } }, required: ['imovel'] } },
   { name: 'avisar_djhonata', description: 'Manda um aviso no WhatsApp pessoal do Djhonata.', input_schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
+  { name: 'agenda_visita', description: 'Agenda do escritório. acao = "consultar" devolve os horários livres de um dia (mande data AAAA-MM-DD); acao = "marcar" marca a visita do cliente atual (mande data AAAA-MM-DD, hora HH:00 e, se o cliente disse, o nome dele). A agenda é de hora em hora. Use sempre que o cliente disser um dia ou um horário para vir: consulte antes de confirmar e, estando livre, marque. Se a ferramenta disser que não está livre, ofereça os horários que ela devolver. Ela já registra a visita no CRM e liga os lembretes: não chame registrar_crm para isso.', input_schema: { type: 'object', properties: { acao: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nome: { type: 'string' } }, required: ['acao'] } },
   { name: 'registrar_crm', description: 'Registra no CRM um evento do cliente atual e move o card dele: novoStatus = atendimento, visita_marcada, remarcar, sem_interesse ou pausado ("em negociação" NÃO é com você: só o Djhonata move para lá, depois que o cliente vem ao escritório; cliente negociando valores pelo WhatsApp continua em atendimento). Em visita_marcada mande data (AAAA-MM-DD) e hora (HH:MM): o sistema usa para os lembretes da visita. Se o cliente cancelar ou pedir para remarcar, use remarcar (os lembretes param). Mande nomeReal quando o cliente disser o nome e imovel quando souber qual imóvel interessa. resultado = frase curta do que aconteceu.', input_schema: { type: 'object', properties: { novoStatus: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nomeReal: { type: 'string' }, imovel: { type: 'string' }, resumo: { type: 'string' }, resultado: { type: 'string' } } } }
 ];
 // Só quando quem escreve é o Djhonata (WhatsApp pessoal, modo teste desligado): seção 13 do AGENTS.md
@@ -468,6 +470,34 @@ async function executar(nome, entrada, ctx) {
       }
       await enviarTexto(DONO + '@s.whatsapp.net', '🔔 ' + txt, 'aviso');
       return 'Aviso enviado ao Djhonata. Continue atendendo o cliente normalmente.';
+    }
+    if (nome === 'agenda_visita') {
+      const iso = (x) => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
+      const hh = (h) => String(h).padStart(2, '0') + ':00';
+      const diaTxt = (d) => new Date(d + 'T12:00:00Z').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', timeZone: 'UTC' });
+      const falhou = 'Não consegui abrir a agenda agora. NÃO confirme horário: mande o link da agenda para o cliente marcar e avise o Djhonata com avisar_djhonata (cliente, dia e hora pedidos).';
+      let ocup; try { ocup = await agendaOcupados(); } catch (e) { log('agenda: não abriu', e.message); return falhou; }
+      const proximos = (de, n) => { const out = [], [y, mo, d] = de.split('-').map(Number); for (let i = 0; i < 21 && out.length < n; i++) { const dia = iso(new Date(y, mo - 1, d + i)), l = agendaLivres(ocup, dia); if (l.length) out.push(`${diaTxt(dia)}: ${l.map(hh).join(', ')}`); } return out.join(' | ') || 'nenhum nas próximas três semanas'; };
+      const data = /^\d{4}-\d{2}-\d{2}$/.test(String(entrada.data || '')) ? String(entrada.data) : '';
+      if (!data) return 'Mande a data no formato AAAA-MM-DD. Próximos horários livres: ' + proximos(iso(agoraSP()), 3) + '.';
+      const livres = agendaLivres(ocup, data), marcar = /^marc/i.test(String(entrada.acao || ''));
+      const opcoes = livres.length ? `Livres em ${diaTxt(data)}: ${livres.map(hh).join(', ')}.` : `Sem horário livre em ${diaTxt(data)}. Próximos livres: ${proximos(data, 3)}.`;
+      if (!marcar) return opcoes + ' Quando o cliente escolher, chame agenda_visita com acao "marcar".';
+      const hm = /^(\d{1,2})(?:\s*(?:[:h]|horas?)\s*(\d{2})?)?/i.exec(String(entrada.hora || '').trim()), h = hm ? Number(hm[1]) : NaN;
+      if (!hm || (hm[2] && hm[2] !== '00') || !livres.includes(h)) return `O horário pedido NÃO está livre (a agenda é de hora em hora e precisa de ${AG_ANTECEDENCIA_H} horas de antecedência). ${opcoes} Ofereça esses ao cliente e não confirme o que ele pediu.`;
+      if (estado.teste && estado.teste.ativo) return `Modo teste: ${diaTxt(data)} às ${hh(h)} está livre (nada foi gravado na agenda). Confirme ao cliente normalmente.`;
+      const nomeCli = String(entrada.nome || ctx.nome || 'Cliente').trim().slice(0, 60), tel = String(ctx.telefone || '').replace(/\D/g, '');
+      let resp = '';
+      try { const r = await fetch(`${AGENDA_HOOK}?acao=marcar&data=${data}&hora=${encodeURIComponent(hh(h))}&nome=${encodeURIComponent(nomeCli)}&whatsapp=${encodeURIComponent(tel || '0')}`, { signal: AbortSignal.timeout(20000) }); resp = (await r.text()).trim(); }
+      catch (e) { log('agenda: não marcou', e.message); return falhou; }
+      if (!/^ok/i.test(resp)) return `Esse horário acabou de ser ocupado. ${livres.filter(x => x !== h).length ? `Ainda livres em ${diaTxt(data)}: ${livres.filter(x => x !== h).map(hh).join(', ')}.` : `Próximos livres: ${proximos(data, 3)}.`} Ofereça esses ao cliente.`;
+      guardarVisita(ctx.jid, data, hh(h), 'assistente');
+      try { fs.appendFileSync(path.join(DADOS, 'eventos-crm.jsonl'), JSON.stringify(Object.assign({ rid: 'ag' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), telefone: ctx.telefone ? formatoBR(ctx.telefone) : '', nome: ctx.nome || '', novoStatus: 'visita_marcada', data, hora: hh(h), resultado: `Visita marcada pela assistente na agenda: ${diaTxt(data)} às ${hh(h)}` }, entrada.nome ? { nomeReal: nomeCli } : {})) + '\n'); } catch (e) { }
+      if (ctx.jid) aplicarEtiquetaStatus(ctx.jid, 'visita_marcada').catch(() => { });
+      if (ctx.notas) ctx.notas.push(`[visita marcada na agenda: ${data} ${hh(h)}]`);
+      log('agenda: visita marcada', ctx.telefone || ctx.jid, data, hh(h));
+      enviarTexto(DONO + '@s.whatsapp.net', `🔔 Visita marcada pela assistente: ${nomeCli}${ctx.telefone ? ' (' + formatoBR(ctx.telefone) + ')' : ''}, ${diaTxt(data)} às ${hh(h)}.`, 'aviso').catch(() => { });
+      return `Marcado na agenda: ${diaTxt(data)} às ${hh(h)}, em nome de ${nomeCli}. Confirme ao cliente o dia, a hora e o endereço (Rua Dona Francisca, 1222 - Saguaçu). Não mande o link nem peça comprovante: já está marcado.`;
     }
     if (nome === 'registrar_crm') {   // visitas: guardadas para os lembretes (também no modo teste, só para o número de teste)
       // "Em negociação" é só de quem já veio ao escritório: quem move para lá é o Djhonata, no CRM. A assistente fica em atendimento.
@@ -1045,7 +1075,7 @@ const ENDERECO_ESCRITORIO = ENV.ENDERECO_ESCRITORIO || 'O endereço é Rua Dona 
 const ehEnderecoEscritorio = (t) => /dona francisca/i.test(t || '') && /(share\.google|maps|localiza)/i.test(t || '');
 const AGENDA_VALE = 7 * 864e5;
 const RE_PEDE_AGENDA = /\b(agenda|link|hor[aá]rios?|remarc\w*|desmarc\w*|cancel\w*)\b|outr[oa]s? (dia|data|hor[aá]rio)|n[aã]o (vou|vai|vamos) (poder|conseguir|dar)|n[aã]o (consigo|posso|consegui) ir|n[aã]o (achei|acho|encontr\w*|abr\w*)\b/i;
-const LEMBRA_AGENDA = 'É só marcar na agenda que eu te passei ali em cima e me mandar o comprovante aqui ✅';
+const LEMBRA_AGENDA = 'Me fala o dia e o horário que fica bom pra você que eu já marco aqui ✅';
 function mandouHaPouco(jid, teste, ms) { const lim = Date.now() - ms; return lerEsp(jid).some(m => (m.ts || 0) >= lim && m.autor !== 'cliente' && teste(m)); }
 function agendaEnviadaEm(jid) {   // última vez que a agenda saiu nesta conversa (desde o começo da memória da IA, para o teste "do zero" valer)
   const ini = (lerConv(jid)[0] || {}).ts || 0; let ult = 0;
@@ -1669,6 +1699,20 @@ function descreverQuando(q) {
   const rel = d === ymd(hoje) ? 'hoje' : d === ymd(am) ? 'amanhã' : '';
   return (rel ? `${rel} (${sem})` : sem) + (h ? ' às ' + h : ' (horário não informado)');
 }
+// ---------- Agenda do escritório: a assistente consulta e marca (pedido do Djhonata, 11/11/2026). Mesmas regras do link do cliente. ----------
+const AGENDA_HOOK = ENV.AGENDA_HOOK || 'https://hook.us2.make.com/ifgf6ai79h57nseenakwqw18kvjj9u41';
+const AG_SEMANA = [8, 9, 10, 13, 14, 15, 16, 17, 18], AG_SABADO = [8, 9, 10, 11, 12, 13, 14, 15], AG_ANTECEDENCIA_H = 4;
+async function agendaOcupados() {   // chaves ocupadas ou fechadas: "AAAA-MM-DD" (dia inteiro) ou "AAAA-MM-DDTHH:00"
+  const r = await fetch(AGENDA_HOOK + '?acao=horarios&t=' + Date.now(), { signal: AbortSignal.timeout(20000) });
+  if (!r.ok) throw new Error('agenda respondeu ' + r.status);
+  return new Set((await r.text()).split(',').map(s => s.trim()).filter(Boolean));
+}
+function agendaLivres(ocup, data) {   // horas livres (números) de um dia AAAA-MM-DD
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(data || ''); if (!m) return [];
+  const w = new Date(+m[1], +m[2] - 1, +m[3]).getDay(); if (w === 0 || ocup.has(data)) return [];
+  const lim = agoraSP().getTime() + AG_ANTECEDENCIA_H * 3600e3;
+  return (w === 6 ? AG_SABADO : AG_SEMANA).filter(h => new Date(+m[1], +m[2] - 1, +m[3], h, 0).getTime() >= lim && !ocup.has(`${data}T${String(h).padStart(2, '0')}:00`));
+}
 function guardarVisita(jid, data, hora, origem) {
   if (!jid || !/^\d{4}-\d{2}-\d{2}$/.test(data || '')) return;
   const h = /^(\d{1,2}):(\d{2})/.exec(hora || ''); const q = data + (h ? 'T' + h[1].padStart(2, '0') + ':' + h[2] : '');
@@ -1776,11 +1820,16 @@ async function rodarRotina(it) {
   let instr, extra;
   if (it.tipo === 'retomada') {
     const h = Math.max(2, Math.round((Date.now() - it.p.ultIa) / 3600e3));
-    instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Retomada: o cliente não responde desde a sua última mensagem (há umas ${h} horas). Releia a conversa. Se fizer sentido, mande UMA mensagem curta e natural retomando de onde parou (uma pergunta simples que convide a responder), sem repetir o que já mandou e sem pressionar.${it.p.agenda ? ' Você já mandou a agenda: se ele combinou dia ou horário e ainda não mandou o comprovante, lembre com leveza de marcar pelo link e mandar o comprovante aqui.' : ''} Responda só NO_REPLY se: ele disse que não quer agora ou desistiu; a conversa terminou naturalmente (agradeceu e se despediu); ele disse que ia ver e retornar em outro dia; ou não há o que retomar. É a única retomada: não prometa mandar outras mensagens.`;
+    instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Retomada: o cliente não responde desde a sua última mensagem (há umas ${h} horas). Releia a conversa. Se fizer sentido, mande UMA mensagem curta e natural retomando de onde parou (uma pergunta simples que convide a responder), sem repetir o que já mandou e sem pressionar.${it.p.agenda ? ' Você já mandou a agenda: se ele combinou dia ou horário e ainda não mandou o comprovante, consulte a agenda com agenda_visita e, se o horário estiver livre, marque e confirme; se não estiver, ofereça os livres.' : ''} Responda só NO_REPLY se: ele disse que não quer agora ou desistiu; a conversa terminou naturalmente (agradeceu e se despediu); ele disse que ia ver e retornar em outro dia; ou não há o que retomar. É a única retomada: não prometa mandar outras mensagens.`;
     extra = { rotina: 'retomada' };
     estado.retomadas = estado.retomadas || {}; estado.retomadas[jid] = { base: it.p.ultCli, em: Date.now() };
     for (const [k, r] of Object.entries(estado.retomadas)) if (Date.now() - (r.em || 0) > 7 * 864e5) delete estado.retomadas[k];
     salvarEstado();
+  } else if (it.tipo === 'ordem') {
+    instr = `[PEDIDO DO DJHONATA — não é mensagem do cliente] Retome esta conversa agora. Releia a conversa inteira antes. ${it.instr} Escreva como continuação natural da conversa (sem dizer que o Djhonata pediu), siga todas as regras do atendimento e termine com UMA pergunta simples. É uma retomada só: não prometa mandar outras mensagens.`;
+    extra = { rotina: 'retomada' };
+    estado.retomadas = estado.retomadas || {}; estado.retomadas[jid] = { base: c.ultCliente || 0, em: Date.now() }; salvarEstado();
+    liberado24h.add(jid);
   } else {
     instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Lembrete de visita (${it.tipo === 'l24' ? '1 de 2, cerca de 24 horas antes' : '2 de 2, no dia, algumas horas antes'}). A visita está marcada para ${descreverQuando(it.v.q)}, no escritório da Euro (Rua Dona Francisca, 1222 - Saguaçu). Releia a conversa. Se o cliente cancelou, desmarcou, disse que não vai ou pediu para remarcar, NÃO mande lembrete: use registrar_crm com novoStatus remarcar e responda NO_REPLY. Se não, mande um lembrete curto e simpático com o dia, o horário e o endereço, sem valores, sem material novo e sem a agenda. Pode pedir para ele confirmar.`;
     extra = { rotina: 'lembrete' };
@@ -1790,7 +1839,7 @@ async function rodarRotina(it) {
   ocupado.add(jid); emitir('digitando', { jid, on: true });
   try {
     await responder({ jid, telefone: c.telefone || '', nome: c.nome || '', dono: false, imagens: [], rotina: instr, extra });
-    if (it.tipo === 'retomada') rotinas.retomadas++; else rotinas.lembretes++;
+    if (it.tipo === 'retomada' || it.tipo === 'ordem') rotinas.retomadas++; else rotinas.lembretes++;
     rotinas.ultima = new Date().toISOString();
     log('rotina', it.tipo, c.telefone || jid);
   } catch (e) { log('rotina com erro', it.tipo, e.message); }
@@ -2578,6 +2627,17 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
             if (++k % 40 === 0) await new Promise(r => setTimeout(r, 2));
           }
           return json(res, { ok: true, em: Date.now(), dias, tels });
+        } else if (ac === 'retomar') {   // retomada pedida pelo Djhonata: jid = conversa ou telefone; texto = o que a assistente deve fazer nessa retomada
+          if (!sock || !conectado) return json(res, { erro: 'WhatsApp desconectado' }, 409);
+          if (!estado.ativo || (estado.teste && estado.teste.ativo)) return json(res, { erro: 'a assistente está pausada ou em teste' }, 409);
+          const alvo = jidValido(jid) && chats[jid] ? jid : jidPorTel8(String(b.jid || '').replace(/\D/g, '').slice(-8));
+          const instr = String(b.texto || '').trim().slice(0, 1500);
+          if (!alvo || !chats[alvo]) return json(res, { erro: 'conversa não encontrada' }, 404);
+          if (!instr) return json(res, { erro: 'diga o que retomar' }, 400);
+          if (filas.has(alvo) || ocupado.has(alvo)) return json(res, { erro: 'a assistente já está respondendo essa conversa' }, 409);
+          if (!rotinaPermitida(alvo, 'ordem')) return json(res, { erro: 'essa conversa está travada para a assistente (bloqueado, fechado, corretor ou pausado)' }, 409);
+          rodarRotina({ jid: alvo, tipo: 'ordem', instr }).catch(e => log('retomar', e.message));
+          return json(res, { ok: true, jid: alvo, nome: chats[alvo].nome || '', telefone: chats[alvo].telefone || '' });
         } else if (ac === 'crm_faltantes') {   // cria o card de quem a assistente atendeu nos últimos N dias e não está no CRM (texto = dias)
           const dias = Math.min(30, Math.max(1, Number(b.texto) || 2)), desde = Date.now() - dias * 864e5, feitos = [];
           for (const j of Object.keys(chats)) {
