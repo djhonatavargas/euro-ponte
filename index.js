@@ -621,7 +621,7 @@ const liberado24h = new Set();   // conversas liberadas da regra das 24h durante
 const quedas = [];
 function pausarPorSeguranca(motivo) {
   if (!estado.ativo) return;
-  estado.ativo = false; salvarEstado(); log('ASSISTENTE PAUSADA POR SEGURANÇA:', motivo); emitir('estado', estadoPublico());
+  estado.ativo = false; estado.pausadaEm = Date.now(); salvarEstado(); log('ASSISTENTE PAUSADA POR SEGURANÇA:', motivo); emitir('estado', estadoPublico());
   setTimeout(() => { if (sock && conectado) sock.sendMessage(DONO + '@s.whatsapp.net', { text: `⚠️ Assistente pausada por segurança: ${motivo}. O WhatsApp continua conectado. Reative pelo CRM quando quiser.` }).then(lembrarEnvio).catch(() => { }); }, 3000);
 }
 async function enviarTexto(jid, texto, autor = 'ia', extra) {
@@ -1300,6 +1300,34 @@ function reenfileirar(jid, motivo, orientacao) {   // orientacao = o que o Djhon
   return { ok: true, mensagens: pend.length, novas, orientacao: !!orientacao, agora: dentroDoHorario() };
 }
 
+// Quem escreveu enquanto a assistente estava pausada: ao religar, entra na fila (um a cada ~25 s, com o aviso de demora).
+function responderPausados(desde, motivo) {
+  desde = Math.max(Number(desde) || 0, Date.now() - 24 * 3600e3);
+  const feitos = [], pulados = [];
+  for (const jid of Object.keys(chats)) {
+    if (!jidValido(jid)) continue;
+    const c = chats[jid]; if (!c || c.arquivado || (c.ultCliente || 0) < desde) continue;
+    const l = lerEsp(jid); let ult = null;
+    for (let i = l.length - 1; i >= 0; i--) { if (l[i].autor === 'aviso') continue; ult = l[i]; break; }
+    if (!ult || ult.autor !== 'cliente' || ult.ts < desde) continue;
+    const p = chatPublico(jid), r = reenfileirar(jid, motivo);
+    if (r.erro) { pulados.push((p.telefone || jid) + ': ' + r.erro); continue; }
+    const f = filas.get(jid);
+    if (f && f.timer) { clearTimeout(f.timer); f.timer = setTimeout(() => processar(jid).catch(e => log('erro processar', e.message)), 1500 + feitos.length * 25e3); }
+    feitos.push(p.telefone || jid);
+  }
+  if (feitos.length || pulados.length) log('respondendo quem escreveu na pausa:', feitos.length, 'na fila;', pulados.length, 'pulados');
+  return { feitos, pulados };
+}
+function ligarOuPausar(on, quem) {
+  const antes = !!estado.ativo; estado.ativo = !!on;
+  if (!estado.ativo && antes) estado.pausadaEm = Date.now();
+  let r = null;
+  if (estado.ativo && !antes) { const d = estado.pausadaEm || 0; delete estado.pausadaEm; if (d && sock && conectado) { try { r = responderPausados(d, 'assistente religada'); } catch (e) { log('pausados', e.message); } } }
+  salvarEstado(); log('assistente', estado.ativo ? 'LIGADA' : 'PAUSADA', '(' + quem + ')'); emitir('estado', estadoPublico());
+  return r;
+}
+
 function montarMensagens(jid, imagens, rotina) {
   const h = lerConv(jid).slice(-40);
   const msgs = [];
@@ -1864,8 +1892,11 @@ async function iniciarWhatsApp() {
         emitir('estado', estadoPublico());
         falhasSeguidas++;
         if (BAILEYS_VERSAO.startsWith('baileys 7') && !abriuComV7 && falhasSeguidas >= 4 && temSessao()) voltarParaAntigo('a versão 7 não conseguiu conectar (' + code + ')');
-        if (conectadoDesde && Date.now() - conectadoDesde > 30e3) { quedas.push(Date.now()); while (quedas.length && Date.now() - quedas[0] > 3600e3) quedas.shift(); if (quedas.length >= 4) pausarPorSeguranca('a conexão caiu ' + quedas.length + ' vezes na última hora'); }
+        // quedas comuns (408, 428, 503) voltam sozinhas em segundos: não pausam. Só pausa quando o WhatsApp recusa, desloga ou outro aparelho toma a sessão.
+        if (conectadoDesde && Date.now() - conectadoDesde > 30e3) { quedas.push(Date.now()); while (quedas.length && Date.now() - quedas[0] > 3600e3) quedas.shift(); if (quedas.length >= 4) log('conexão instável:', quedas.length, 'quedas na última hora (a assistente segue atendendo)'); }
         if (code === 403) pausarPorSeguranca('o WhatsApp recusou a conexão (403)');
+        else if (code === 401) pausarPorSeguranca('o WhatsApp deslogou este aparelho (401)');
+        else if (code === 440) pausarPorSeguranca('outro aparelho ou programa assumiu esta sessão do WhatsApp (440)');
         conectadoDesde = 0;
         const espera = Math.min(60e3, 4e3 * Math.pow(1.6, Math.max(0, falhasSeguidas - 1)));
         if (falhasSeguidas >= 6 && code === 428 && !temSessao()) { log('sem QR após várias tentativas; recomeçando a sessão'); }
@@ -2403,12 +2434,18 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const r = reenfileirar(jid, 'pedido do CRM', String(b.texto || '').trim());
           if (r.erro) return json(res, { erro: r.erro }, 409);
           b._resultado = r;
+        } else if (ac === 'responder_pausados') {   // texto = desde quando (ms ou data ISO)
+          if (!sock || !conectado) return json(res, { erro: 'WhatsApp desconectado' }, 409);
+          if (!estado.ativo || (estado.teste && estado.teste.ativo)) return json(res, { erro: 'a assistente está pausada ou em teste' }, 409);
+          const tx = String(b.texto || '').trim(), d = /^\d+$/.test(tx) ? Number(tx) : Date.parse(tx);
+          if (!d) return json(res, { erro: 'diga desde quando' }, 400);
+          return json(res, Object.assign({ ok: true }, responderPausados(d, 'pedido do Djhonata')));
         } else if (ac === 'ia_conversa') {
           if (!jidValido(jid)) return json(res, { erro: 'conversa inválida' }, 400);
           if (b.on) delete estado.pausas[jid]; else { estado.pausas[jid] = Date.now() + 3650 * 864e5; filas.delete(jid); }
           salvarEstado(); emitir('chat', chatPublico(jid));
         } else if (ac === 'assistente') {
-          estado.ativo = !!b.on; salvarEstado(); log('assistente', estado.ativo ? 'LIGADA' : 'PAUSADA', '(CRM)'); emitir('estado', estadoPublico());
+          const rp = ligarOuPausar(b.on, 'CRM'); if (rp) b._resultado = rp;
         } else if (ac === 'desconectar') { await desconectarWhatsApp(); }
         else if (ac === 'conectar') { await conectarWhatsApp(); await new Promise(r => setTimeout(r, 2500)); }
         else if (ac === 'lido') { if (chats[jid]) { chats[jid].naoLidas = 0; salvarChats(); } }
@@ -2598,8 +2635,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
         return json(res, { ok: true });
       }
       if (u.pathname === '/api/assistente') {
-        estado.ativo = !!b.on; salvarEstado(); log('assistente', estado.ativo ? 'LIGADA' : 'PAUSADA', '(painel)');
-        emitir('estado', estadoPublico()); return json(res, estadoPublico());
+        ligarOuPausar(b.on, 'painel'); return json(res, estadoPublico());
       }
       if (u.pathname === '/api/desconectar') { await desconectarWhatsApp(); return json(res, estadoPublico()); }
       if (u.pathname === '/api/conectar') { await conectarWhatsApp(); return json(res, estadoPublico()); }
