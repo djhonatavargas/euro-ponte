@@ -324,7 +324,7 @@ function simularFluxo(e) {
   const mesRot = (k) => { const d = new Date(hoje.getFullYear(), hoje.getMonth() + k, 1); return `${MESES_CURTOS[d.getMonth()]}/${d.getFullYear()}`; };
   const obra = !f.pronto && meses >= 2;   // pronto (ou entrega muito perto): não dá para parcelar a entrada durante a obra
   const L = [`📋 *Simulação inicial – ${f.nome}*`, `💰 Valor: ${brl(f.preco)}`, ''];
-  L.push(`✅ Sinal: ${brl(sinal)}${informado(e.sinal) ? '' : ' (é o padrão; se ficar apertado, me fala que eu coloco o sinal que você consegue dar na assinatura)'}`);
+  L.push(`✅ Sinal: ${brl(sinal)} na assinatura`);
   let resto = Math.max(0, cent(entrada - sinal)), q = 0, alt = '', parcelaUsada = 0, posTxt = '';
   const nPos = Math.min(36, Math.max(0, Math.round(num(e.pos_chaves, 0))));
   const fgtsMes = obra && carteira && renda > 0 ? renda / 12 : 0;
@@ -350,18 +350,18 @@ function simularFluxo(e) {
       const datas = ms.map(k => mesRot(k) + (k === n ? ' na entrega das chaves' : ''));
       const lista = datas.length > 1 ? datas.slice(0, -1).join(', ') + ' e ' + datas[datas.length - 1] : datas[0];
       L.push(`✅ Reforço: ${q > 1 ? q + 'x de ' : ''}${brl(acima(resto / q))} (${lista})`);
-      alt = `Se preferir sem reforço, a parcela mensal até a entrega fica em ${brl(acima((entrada - sinal - fgtsUsado) / n))}.`;
+      alt = `Sem reforço, a parcela mensal até a entrega fica em ${brl(acima((entrada - sinal - fgtsUsado) / n))}.`;
     }
   }
   L.push(`🏦 Financiamento pela Caixa: ${brl(financ)}${obra ? ' (começa quando o imóvel ficar pronto)' : ''}`);
   L.push(`💵 A parcela do financiamento a Caixa calcula pela renda e fica em até 30% dela${renda ? `: com renda de ${brl(renda)}, até ${brl(renda * 0.3)} por mês` : ''}.`);
   if (alt) L.push('', alt);
-  if (posTxt) L.push('', 'O pós-chaves depende de a construtora aceitar: a gente formaliza isso na proposta, pessoalmente no escritório.');
-  L.push('', 'É uma simulação inicial, sujeita à aprovação do banco. Dá pra ajustar do jeito que ficar melhor pra você.');
+  if (posTxt) L.push('', 'O pós-chaves depende de a construtora aceitar e é formalizado na proposta.');
+  L.push('', 'Simulação inicial, sujeita à aprovação do banco.');
   return {
     texto: L.join('\n'),
     resumo: `${f.nome}, ${brl(f.preco)}, sinal ${brl(sinal)}${parcelaUsada ? ', parcela ' + brl(parcelaUsada) : ''}${fgtsUsado ? ', FGTS ' + brl(fgtsUsado) : ''}${q ? `, ${q} reforço(s)` : ''}${posTxt}, financiamento ${brl(financ)} (avaliação ${brl(av)}${f.aval ? ' da ficha' : ''})`,
-    acimaDoPreco: av > f.preco, semFgts: !informado(e.fgts) && !carteira, perguntarCarteira: obra && fgtsHoje > 0 && e.carteira === undefined, perguntarRenda: obra && carteira && !renda, temReforco: q > 0
+    sinalPadrao: !informado(e.sinal), acimaDoPreco: av > f.preco, semFgts: !informado(e.fgts) && !carteira, perguntarCarteira: obra && fgtsHoje > 0 && e.carteira === undefined, perguntarRenda: obra && carteira && !renda, temReforco: q > 0
   };
 }
 
@@ -399,12 +399,13 @@ async function executar(nome, entrada, ctx) {
       ctx.notas.push('[simulação montada: ' + r.resumo + ']');
       log('simulação', ctx.telefone || ctx.jid, r.resumo);
       const depois = ['pergunte se cabe no bolso'];
+      if (r.sinalPadrao) depois.push('diga que o sinal de R$ 10 mil é o padrão e que, se ficar apertado, você coloca o sinal que ele consegue dar na assinatura');
       if (r.temReforco) depois.push('se achou pesado o reforço (dá para diluir em mais reforços: chame simular_fluxo de novo com reforcos maior; ou subir um pouco a parcela)');
       if (r.semFgts) depois.push('se ele tem FGTS (quanto tem hoje) e se trabalha de carteira assinada, porque o FGTS diminui a entrada e vai crescendo até a entrega');
       else if (r.perguntarCarteira) depois.push('se ele trabalha de carteira assinada (aí o FGTS cresce até a entrega e a entrada diminui)');
       else if (r.perguntarRenda) depois.push('a renda bruta, para somar o FGTS que entra até a entrega');
       const porque = r.acimaDoPreco ? ' Aqui a entrada ficou menor porque o banco financia pela avaliação, que está acima do preço: se ele questionar (ex.: "não tem que dar mais de entrada?"), explique que o banco usa o valor da avaliação do imóvel e que esse imóvel a gente está vendendo abaixo do valor de mercado, por isso consegue o desconto e ele financia mais (condição que a gente tem por ter muitos anos de mercado e ser construtora). Não diga valor de avaliação.' : '';
-      return `Mande este texto ao cliente por TEXTO, do jeito que está (pode tirar ou trocar uma palavra, nunca os números). Depois, numa mensagem curta, ${depois.join('; ')}. Não fale da avaliação do banco por conta própria e não convide para o escritório por causa da simulação: só se ele mostrar interesse em fechar ou ver de perto.${porque}\n\n${r.texto}`;
+      return `Mande o bloco abaixo ao cliente por TEXTO, do jeito que está, SOZINHO numa mensagem: não escreva nada antes nem depois dentro dele, porque o cliente encaminha esse bloco para a esposa, o marido ou a família junto com o vídeo do imóvel (o sistema separa o bloco numa mensagem própria). Depois, em OUTRA mensagem, curta, ${depois.join('; ')}. Não fale da avaliação do banco por conta própria e não convide para o escritório por causa da simulação: só se ele mostrar interesse em fechar ou ver de perto.${porque}\n\n${r.texto}`;
     }
     if (nome === 'ler_ficha') {
       const p = acharPasta(entrada.busca || '');
@@ -955,6 +956,15 @@ function agendaFixa() {   // o "Bloco fixo da agenda" do AGENTS.md, do jeito que
   const linhas = t.slice(i).split('\n'), iLink = linhas.findIndex(l => RE_LINK_AGENDA.test(l)); if (iLink < 0) return '';
   return linhas.slice(inicioAgenda(linhas, iLink), iLink + 1).join('\n').trim();
 }
+// Fluxo de pagamento: vai sozinho numa mensagem (o cliente encaminha para a família); perguntas e comentários vão em outra.
+function separarFluxo(t) {   // -> [texto antes, bloco da simulação, texto depois], só os que existem
+  const linhas = String(t).split('\n'), ini = linhas.findIndex(l => /^\s*📋/.test(l));
+  if (ini < 0) return [t];
+  const doBloco = (l) => /^\s*(📋|💰|✅|🏦|💵)/.test(l) || /^\s*(Sem reforço, a parcela|Se preferir sem reforço|O pós-chaves depende|Simulação inicial, sujeita|É uma simulação inicial)/i.test(l);
+  let fim = ini;
+  for (let i = ini + 1; i < linhas.length; i++) { if (doBloco(linhas[i])) fim = i; else if (linhas[i].trim() && !doBloco(linhas[i])) break; }
+  return [linhas.slice(0, ini).join('\n').trim(), linhas.slice(ini, fim + 1).join('\n').trim(), linhas.slice(fim + 1).join('\n').trim()].filter(Boolean);
+}
 function separarAgenda(t) {   // -> [texto antes, agenda, texto depois], só os que existem
   const linhas = String(t).split('\n'), iLink = linhas.findIndex(l => RE_LINK_AGENDA.test(l));
   if (iLink < 0) return [t];
@@ -1001,7 +1011,7 @@ async function enviarSaida(jid, texto, autor = 'ia', extra) {   // devolve o que
       if (ok === true) { feitos.push('[áudio] ' + p.t); continue; }
       if (ok === 'barrado') continue;
     }
-    for (const parte of p.t.split(/\n\s*---\s*\n/)) for (const sub of separarAgenda(parte)) {
+    for (const parte of p.t.split(/\n\s*---\s*\n/)) for (const sub0 of separarFluxo(parte)) for (const sub of separarAgenda(sub0)) {
       let s = sub.replace(/^\s*---\s*$/gm, '').trim(); if (!s) continue;
       if (autor === 'ia' && ehEnderecoEscritorio(s) && mandouHaPouco(jid, m => ehEnderecoEscritorio(m.texto), 10 * 60e3)) continue;   // o endereço já foi junto com a agenda
       if (autor === 'ia' && RE_LINK_AGENDA.test(s) && !podeMandarAgenda(jid, extra)) {
