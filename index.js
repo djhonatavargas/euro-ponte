@@ -114,6 +114,21 @@ function anotar(id, role, texto, mid) {   // mid = id da mensagem do WhatsApp (e
   h.push(e);
   gravarJson(arqConv(id), h.slice(-200));
 }
+// Todo cliente que a assistente atende ganha um card no CRM (Em atendimento), mesmo que ela não registre nada:
+// antes, quem só trocava duas mensagens (ou indicava outra pessoa) não aparecia em Pessoas.
+function cardAutomatico(jid, forcar) {
+  const c = chats[jid]; if (!c || c.crmAuto) return false;
+  if (estado.teste && estado.teste.ativo) return false;
+  const tel = String(c.telefone || (pnDe(jid) || '').split('@')[0] || '').replace(/\D/g, ''), t8 = tel.slice(-8);
+  if (t8.length !== 8 || normal(tel) === normal(DONO) || lerBloqueados().has(normal(tel))) return false;
+  const mapa = estado.crmStatus || {}; if (!Object.keys(mapa).length) return false;   // o CRM ainda não mandou a lista: não arrisca
+  if (t8 in mapa) { c.crmAuto = -1; return false; }   // já tem card
+  c.crmAuto = Date.now(); salvarChats();
+  const ad = c.anuncio ? 'Lead do anúncio' + (c.anuncio.titulo ? ' "' + c.anuncio.titulo + '"' : '') : 'Chamou no WhatsApp';
+  fs.appendFileSync(path.join(DADOS, 'eventos-crm.jsonl'), JSON.stringify({ rid: 'au' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), telefone: formatoBR(tel), nome: c.nome || '', novoStatus: 'atendimento', soCriar: true, resultado: ad + ': a assistente começou o atendimento.' }) + '\n');
+  log('card criado no CRM para', tel);
+  return true;
+}
 // Resposta da IA: se o cliente mandou algo ENQUANTO ela respondia, a resposta fica antes dessas mensagens no histórico
 // e elas ganham um aviso, para a próxima rodada responder o que ficou sem resposta (em vez de achar que já respondeu).
 const AVISO_MEIO = '[o cliente mandou isto enquanto você escrevia a resposta acima; ela NÃO considerou esta mensagem. Responda agora o que ele perguntou ou comentou aqui, sem repetir o que já disse]\n';
@@ -1548,6 +1563,7 @@ async function responder(f) {
     if ((!sock || !conectado) && textosIA.some(t => !/^NO_REPLY\b/.test(t) && !/^nada a fazer\W*$/i.test(t))) throw new Error('WhatsApp caiu antes de a resposta sair');
   }
   log('respondido', f.telefone || f.jid, saida.length, 'mensagens');
+  if (saida.length && !f.dono) { try { cardAutomatico(f.jid); } catch (e) { } }
 }
 
 // ---------- rotinas do OpenClaw: lembretes de visita e retomada ----------
@@ -2449,6 +2465,15 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const r = reenfileirar(jid, 'pedido do CRM', String(b.texto || '').trim());
           if (r.erro) return json(res, { erro: r.erro }, 409);
           b._resultado = r;
+        } else if (ac === 'crm_faltantes') {   // cria o card de quem a assistente atendeu nos últimos N dias e não está no CRM (texto = dias)
+          const dias = Math.min(30, Math.max(1, Number(b.texto) || 2)), desde = Date.now() - dias * 864e5, feitos = [];
+          for (const j of Object.keys(chats)) {
+            if (!jidValido(j)) continue; const c = chats[j]; if ((c.ultCliente || 0) < desde) continue;
+            if (!lerEsp(j).some(m => m.autor === 'ia' && m.ts >= desde)) continue;   // só quem a assistente atendeu
+            try { if (cardAutomatico(j)) feitos.push((c.nome || '') + ' ' + (c.telefone || '')); } catch (e) { }
+            await new Promise(r => setTimeout(r, 5));
+          }
+          return json(res, { ok: true, criados: feitos.length, quem: feitos });
         } else if (ac === 'responder_pausados') {   // texto = desde quando (ms ou data ISO)
           if (!sock || !conectado) return json(res, { erro: 'WhatsApp desconectado' }, 409);
           if (!estado.ativo || (estado.teste && estado.teste.ativo)) return json(res, { erro: 'a assistente está pausada ou em teste' }, 409);
