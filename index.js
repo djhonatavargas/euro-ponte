@@ -54,6 +54,7 @@ const ESPERA_CURTA_MS = 26000;                      // mensagem curta e sem perg
 const JANELA_ATRASADA = Number(ENV.JANELA_ATRASADA_HORAS || 12) * 3600e3;
 const HORA_INI = ENV.HORA_INI || '08:00';
 const HORA_FIM = ENV.HORA_FIM || '23:30';
+const ATENDE_24H = !/^(nao|não|0|false)$/i.test(String(ENV.ATENDE_24H || 'sim'));   // decisão do Djhonata, 12/11/2026: a assistente responde a qualquer hora (lembretes e retomadas seguem a janela das rotinas)
 // Voz e ouvido (como no OpenClaw): ElevenLabs fala com a voz do Djhonata e transcreve os áudios recebidos.
 const ELEVEN_KEY = ENV.ELEVENLABS_API_KEY || '';
 const ELEVEN_VOZ = ENV.ELEVEN_VOZ || 'ESI8AvlyEl6TuR4ajagH';       // voz do Djhonata (a mesma do OpenClaw)
@@ -104,7 +105,7 @@ function formatoBR(n) { n = digitos(n); if (n.length === 12) return `+${n.slice(
 // ---------- horário ----------
 function agoraSP() { return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })); }
 function minutos(hhmm) { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; }
-function dentroDoHorario() { const d = agoraSP(); const x = d.getHours() * 60 + d.getMinutes(); return x >= minutos(HORA_INI) && x <= minutos(HORA_FIM); }
+function dentroDoHorario() { if (ATENDE_24H) return true; const d = agoraSP(); const x = d.getHours() * 60 + d.getMinutes(); return x >= minutos(HORA_INI) && x <= minutos(HORA_FIM); }
 
 // ---------- conversas (memória) ----------
 function arqConv(id) { return path.join(CONV, id.replace(/[^0-9a-zA-Z@._-]/g, '_') + '.json'); }
@@ -132,7 +133,7 @@ function cardAutomatico(jid, forcar) {
 }
 // Resposta da IA: se o cliente mandou algo ENQUANTO ela respondia, a resposta fica antes dessas mensagens no histórico
 // e elas ganham um aviso, para a próxima rodada responder o que ficou sem resposta (em vez de achar que já respondeu).
-const AVISO_MEIO = '[o cliente mandou isto enquanto você escrevia a resposta acima; ela NÃO considerou esta mensagem. Responda agora o que ele perguntou ou comentou aqui, sem repetir o que já disse]\n';
+const AVISO_MEIO = '[o cliente mandou isto enquanto você escrevia a resposta acima; ela NÃO considerou esta mensagem. Responda agora SÓ o que esta mensagem acrescenta, em 1 ou 2 linhas. NÃO repita nada da resposta acima: nem a pergunta que você fez (se ela continua sem resposta, não faça de novo: espere o cliente), nem convite, horário, link, endereço ou explicação. Se esta mensagem não pede nada novo (um ok, um emoji, o nome, uma foto), responda com uma confirmação curta, sem pergunta]\n';
 function anotarResposta(id, texto, tIni) {
   const h = lerConv(id);
   const e = { role: 'assistant', texto: String(texto).slice(0, 6000), ts: Date.now() };
@@ -173,10 +174,31 @@ Você está rodando num servidor novo, não mais no OpenClaw. As regras abaixo c
 - CONVITE PARA O ESCRITÓRIO E AGENDA (regra do Djhonata, 10/11/2026, vale acima de qualquer regra ou exemplo que mande a agenda toda vez): convide para o escritório na hora certa, quando o cliente mostrar interesse (gostou do imóvel, quer ver de perto, quer fechar, pergunta como faz para comprar). Não convide depois de cada simulação ou dúvida. No PRIMEIRO convite mande a agenda no formato fixo; logo depois o sistema manda sozinho a foto do escritório e o endereço com a localização (não mande você a foto nem o endereço junto com a agenda). Depois disso NÃO mande a agenda de novo: quando o cliente der abertura para vir, convide e pergunte o dia e o horário que fica bom, que você mesma marca. Mande a agenda de novo só se o cliente pedir (não achou o link, pediu de novo, quer remarcar) ou numa retomada em que você convida para vir tirar as dúvidas.
 - VOCÊ MARCA NA AGENDA (regra do Djhonata, 11/11/2026, vale acima de qualquer regra ou exemplo antigo que diga "não consigo marcar por aqui" ou que peça comprovante): quando o cliente disser um dia ou um horário para vir (ex.: "pode ser sábado às 14h", "amanhã de manhã"), use agenda_visita. Primeiro consulte o dia; se o horário estiver livre, marque você mesma e confirme dia, hora e endereço. NUNCA diga que um horário está bom sem ter consultado a agenda. Se não estiver livre, ofereça os horários livres que a ferramenta devolver (do mesmo dia ou dos próximos). Se ele disser só o dia, consulte e ofereça dois ou três horários livres. Depois de marcar, não mande o link e não peça comprovante. O link continua valendo para o cliente que ainda não escolheu o dia; se ele marcar pelo link e mandar o comprovante, confirme a visita.
 - OFERTAS (análise das conversas de 10/11/2026): no máximo 2 imóveis por vez. Se o cliente pedir "mais em conta" ou "pronto", pergunte antes quanto ele quer pagar (ou a renda) e mostre a melhor opção dentro disso, em vez de mandar vários. Confira na ficha se é casa geminada ou apartamento antes de oferecer: se ele pediu casa/geminado, não ofereça apartamento sem dizer antes que é apartamento. O preço que vale para o cliente é o preço de venda: só fale da avaliação do banco se ele perguntar, deixando claro que não é o preço.
-- SIMULAÇÃO E FLUXO DE PAGAMENTO (regra do Djhonata, 10/11/2026): o objetivo é o cliente sair de casa sabendo que consegue comprar. Quando ele pedir simulação ou perguntar como fica a entrada/pagamento de um imóvel, monte e mande a simulação você mesma: (1) se ainda não sabe, pergunte numa mensagem só quanto ele consegue dar de sinal (o padrão é R$ 10 mil, mas se tiver um pouco menos dá para ajustar), quanto fica bom por mês até a entrega, se tem FGTS (quanto tem hoje) e se trabalha de carteira assinada, e a renda bruta da família; (2) com as respostas, ou com o padrão se ele não souber (sinal de R$ 10 mil e R$ 1.500 por mês), use a ferramenta simular_fluxo com o imóvel que ele está vendo e mande o texto que ela devolver, por texto; (3) pergunte se cabe no bolso ou se achou pesado: dá para diluir o reforço em mais vezes (chame a ferramenta de novo com mais reforços), subir um pouco a parcela ou ajustar o sinal. O financiamento já sai calculado do jeito mais atrativo para o cliente (80% da avaliação do banco quando ela está acima do preço; senão, 80% do próprio preço): não fale da avaliação ao cliente (só se ele perguntar). Se o cliente questionar a entrada menor (ex.: "mas não tem que dar mais de entrada?"), explique com suas palavras: o banco financia pelo valor da avaliação do imóvel, e esse imóvel a gente está vendendo abaixo do valor de mercado; por isso a gente consegue dar esse desconto e ele consegue financiar mais. É uma condição que a gente tem por ter muitos anos de mercado e ser construtora também, e isso ajuda na negociação dele. Não diga um valor de avaliação (o valor certo só sai quando o banco avalia). O FGTS diminui a entrada e cresce até a entrega: a ferramenta já soma isso. Não convide para o escritório depois de cada simulação: só quando ele mostrar interesse em fechar ou ver de perto. Nunca invente números fora da ferramenta e nunca prometa aprovação. Isso vale acima da regra antiga de não passar número fechado.
+- SIMULAÇÃO E FLUXO DE PAGAMENTO (regra do Djhonata, 10/11/2026): o objetivo é o cliente sair de casa sabendo que consegue comprar. Quando ele pedir simulação ou perguntar como fica a entrada/pagamento de um imóvel, monte e mande a simulação você mesma: (1) não faça lista de perguntas antes: use logo a ferramenta simular_fluxo com o imóvel que ele está vendo e com o que você já sabe dele (sem nada, ela usa o padrão: sinal de R$ 10 mil e R$ 1.500 por mês) e mande o texto que ela devolver, por texto; (2) depois do bloco faça SÓ a pergunta que a ferramenta indicar, uma por vez (primeiro a renda bruta da família, depois o sinal, depois FGTS e carteira assinada, uma única vez na conversa); (3) quando ele responder ou pedir um ajuste, chame a ferramenta de novo: da segunda vez em diante ela devolve só os valores, e você responde em 1 a 3 linhas o que mudou, sem mandar o bloco outra vez (só se ele pedir a conta completa). Se achou pesado: dá para diluir o reforço em mais vezes (mais reforços), subir um pouco a parcela ou ajustar o sinal. O financiamento já sai calculado do jeito mais atrativo para o cliente (80% da avaliação do banco quando ela está acima do preço; senão, 80% do próprio preço): não fale da avaliação ao cliente (só se ele perguntar). Se o cliente questionar a entrada menor (ex.: "mas não tem que dar mais de entrada?"), explique com suas palavras: o banco financia pelo valor da avaliação do imóvel, e esse imóvel a gente está vendendo abaixo do valor de mercado; por isso a gente consegue dar esse desconto e ele consegue financiar mais. É uma condição que a gente tem por ter muitos anos de mercado e ser construtora também, e isso ajuda na negociação dele. Não diga um valor de avaliação (o valor certo só sai quando o banco avalia). O FGTS diminui a entrada e cresce até a entrega: a ferramenta já soma isso. Não convide para o escritório depois de cada simulação: só quando ele mostrar interesse em fechar ou ver de perto. Nunca invente números fora da ferramenta e nunca prometa aprovação. Isso vale acima da regra antiga de não passar número fechado.
 - GEOGRAFIA DE JOINVILLE (regra do Djhonata, 12/11/2026, vale acima de qualquer outra): informação errada de localização faz o cliente perder a viagem e a confiança. Você só pode dizer que um imóvel ou bairro fica "perto", "pertinho", "ao lado", "colado" ou "na região" de outro bairro ou lugar em dois casos: (a) os dois bairros aparecem juntos na tabela BAIRROS PERTO, no fim destas instruções; ou (b) a ferramenta distancia devolveu até 10 minutos de carro. Fora disso, nunca use essas palavras: diga o tempo real que a ferramenta devolveu ("fica a uns 25 minutos de carro do Aventureiro"). Antes de afirmar qualquer coisa sobre distância entre um imóvel e um lugar, chame a ferramenta distancia. Quando o cliente disser onde trabalha, estuda ou mora (ex.: "trabalho no Hospital Regional", "na Tupy", "moro no Jardim Paraíso"), chame imoveis_perto com esse lugar, ofereça os mais próximos que caibam no que ele pediu e diga o tempo de carro. Sobre o que tem perto de um imóvel (escola, mercado, posto de saúde, ônibus), use só o que vier em "PERTO DESTE IMÓVEL" na ficha; se não vier nada, diga que vai confirmar. Nunca invente distância, tempo de trajeto ou ponto de referência, nem em áudio.
 - O Djhonata acompanha as conversas por um painel e às vezes escreve direto para o cliente. As mensagens dele aparecem no histórico como "(Djhonata escreveu)"; as que você mandou a pedido dele, como "(mensagem a pedido do Djhonata)". Continue a conversa a partir disso: não repita o que ele já mandou, não contradiga e não se apresente de novo.`;
 
+// Pacote de 12/11/2026: a assistente passa a saber quem é o cliente antes de responder.
+// jaFalouCom: este WhatsApp já mandou mensagem para o cliente (assistente, follow-up, celular ou painel)? -> não é primeiro contato.
+function jaFalouCom(jid) {
+  try { const l = lerEsp(jid).filter(e => e.autor !== 'cliente' && (String(e.texto || '').trim() || e.tipo !== 'text')); return l.length ? { n: l.length, ts: l[l.length - 1].ts || 0, texto: String(l[l.length - 1].texto || '').replace(/\s+/g, ' ').slice(0, 220), followup: !!l[l.length - 1].followup } : null; } catch (e) { return null; }
+}
+const primeiroNome = (s) => (semAcento(s).replace(/[^a-z ]/g, ' ').trim().split(/\s+/)[0] || '');
+function nomeDoCrm(jid) { const t8 = tel8Chat(jid), n = t8 ? String((estado.crmNomes || {})[t8] || '').trim() : ''; return n && primeiroNome(n).length >= 2 && !/^(sem nome|cliente|lead|contato|whatsapp)\b/i.test(semAcento(n)) ? n : ''; }
+const CRM_ETAPA = {
+  negociacao: 'CRM: o card deste cliente está em "Em negociação": ele já esteve no escritório com o Djhonata ou já recebeu proposta. Não é lead novo: não recomece o atendimento do zero.',
+  novo: 'CRM: o card deste cliente está em "Remarcar visita": ele já teve visita marcada e não veio, ou pediu para remarcar. Não é lead novo: o assunto com ele é remarcar a visita.',
+  perdido: 'CRM: o card deste cliente estava em "Perdido" (tinha parado de responder). Se ele voltou a falar, retome de onde a conversa parou, sem recomeçar do zero.'
+};
+function crmContexto(ctx, jaFalou) {
+  let s = '';
+  const nome = nomeDoCrm(ctx.jid);
+  if (nome && primeiroNome(nome) !== primeiroNome(ctx.nome)) s += `\nNOME: no card do CRM este cliente se chama ${nome}. Chame por esse nome${ctx.nome ? ` (o nome que aparece no WhatsApp, "${String(ctx.nome).slice(0, 40)}", pode ser apelido, empresa ou outra pessoa)` : ''} e não pergunte o nome.`;
+  const st = (estado.crmStatus || {})[tel8Chat(ctx.jid)] || '';
+  if (CRM_ETAPA[st]) s += '\n' + CRM_ETAPA[st];
+  if (jaFalou) s += `\nJÁ SE APRESENTOU: este cliente já recebeu ${jaFalou.n} mensagem(ns) deste WhatsApp; a última foi em ${quandoFoi(jaFalou.ts)}${jaFalou.texto ? `: "${jaFalou.texto}"` : ''}. NÃO se apresente de novo ("Aqui é o Djhonata...") e não pergunte o nome nem o bairro como se fosse o primeiro contato: ele está respondendo a essa conversa, continue a partir dela${jaFalou.followup ? ' (a última mensagem foi um follow-up seu: é sobre ela que ele está falando)' : ''}.`;
+  return s;
+}
 function sistema(ctx) {
   const partes = [ADAPTADOR];
   for (const f of ARQS_REGRAS) {
@@ -211,7 +233,11 @@ Esta conversa pode ter mensagens antigas de quando ele testou a assistente fingi
   } else {
     const comb = (estado.combinados || {})[ctx.jid];
     if (comb && comb.length) din += `\nCombinados com este cliente (orientações do Djhonata, siga):\n` + comb.map(c => '- ' + c.texto).join('\n');
-    din += adsContexto(ctx.jid);
+    const jaFalou = jaFalouCom(ctx.jid);
+    din += adsContexto(ctx.jid, !!jaFalou);
+    din += crmContexto(ctx, jaFalou);
+    const rt = (estado.retornos || {})[ctx.jid];
+    if (rt && quandoMs(rt.q) > Date.now()) din += `\nRETORNO COMBINADO: você marcou de chamar este cliente ${descreverQuando(rt.q)}${rt.assunto ? ` (${rt.assunto})` : ''}. Se ele escrever antes, atenda normalmente.`;
     const v = (estado.visitas || {})[ctx.jid];
     if (v && quandoMs(v.q) > Date.now() - 3600e3) din += `\nVisita marcada deste cliente: ${descreverQuando(v.q)}, no escritório.`;
     const ag = agendaEnviadaEm(ctx.jid);
@@ -227,10 +253,11 @@ Esta conversa pode ter mensagens antigas de quando ele testou a assistente fingi
 const FERRAMENTAS = [
   { name: 'ler_ficha', description: 'Lê a ficha de um imóvel do catálogo (descrição pronta do CRM, dados e lista de fotos e vídeo). Use a ref (ex.: "913") ou parte do nome da rua/residencial.', input_schema: { type: 'object', properties: { busca: { type: 'string' } }, required: ['busca'] } },
   { name: 'enviar_arquivo', description: 'Envia ao cliente uma foto, vídeo ou arquivo do catálogo (caminho relativo à pasta do catálogo) ou uma imagem por link https. A legenda vai junto com a mídia.', input_schema: { type: 'object', properties: { caminho: { type: 'string' }, legenda: { type: 'string' } }, required: ['caminho'] } },
-  { name: 'simular_fluxo', description: 'Monta a simulação do pagamento de um imóvel com os números do cliente e devolve o texto pronto para mandar ao cliente, por texto, do jeito que veio. O financiamento já sai calculado do jeito mais atrativo para o cliente (avaliação do banco ou preço, o que for maior; não fale da avaliação ao cliente). Sem os números dele, usa o padrão (sinal de R$ 10 mil e R$ 1.500 por mês). imovel = ref (ex.: "832") ou parte do nome da rua/residencial. sinal = quanto ele dá na assinatura. parcela = quanto fica bom por mês até a entrega. fgts = saldo de FGTS que ele tem hoje (0 se não tem; não mande se ainda não sabe). carteira = true se ele (ou a família) trabalha de carteira assinada: aí o FGTS cresce todo mês até a entrega e diminui a entrada. renda = renda bruta mensal da família. reforcos = em quantos reforços dividir o que faltar (o último é na entrega das chaves); mande um número maior quando ele achar o reforço pesado. pos_chaves = em quantas parcelas mensais DEPOIS da entrega dividir o que faltar da entrada (use quando a entrada não cabe no bolso dele mesmo ajustando sinal e parcelas, ou em imóvel pronto ou com entrega muito perto; comece com 12 e vá até 24 se ele precisar; se o cliente disse quanto pode pagar por mês, mande esse valor em parcela junto: cada parcela pós-chaves fica nesse valor, até 36 vezes, e o que não couber já sai no texto como reforço ou complemento a combinar): o texto já sai avisando que depende de a construtora aceitar e que se formaliza na proposta, no escritório.', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, sinal: { type: 'number' }, parcela: { type: 'number' }, fgts: { type: 'number' }, carteira: { type: 'boolean' }, renda: { type: 'number' }, reforcos: { type: 'number' }, pos_chaves: { type: 'number' } }, required: ['imovel'] } },
+  { name: 'simular_fluxo', description: 'Monta a simulação do pagamento de um imóvel com os números do cliente e devolve o texto pronto para mandar ao cliente, por texto, do jeito que veio. O financiamento já sai calculado do jeito mais atrativo para o cliente (avaliação do banco ou preço, o que for maior; não fale da avaliação ao cliente). Sem os números dele, usa o padrão (sinal de R$ 10 mil e R$ 1.500 por mês). imovel = ref (ex.: "832") ou parte do nome da rua/residencial. sinal = quanto ele dá na assinatura. parcela = quanto fica bom por mês até a entrega. fgts = saldo de FGTS que ele tem hoje (0 se não tem; não mande se ainda não sabe). carteira = true se ele (ou a família) trabalha de carteira assinada: aí o FGTS cresce todo mês até a entrega e diminui a entrada. renda = renda bruta mensal da família. reforcos = em quantos reforços dividir o que faltar (o último é na entrega das chaves); mande um número maior quando ele achar o reforço pesado. pos_chaves = em quantas parcelas mensais DEPOIS da entrega dividir o que faltar da entrada (use quando a entrada não cabe no bolso dele mesmo ajustando sinal e parcelas, ou em imóvel pronto ou com entrega muito perto; comece com 12 e vá até 24 se ele precisar; se o cliente disse quanto pode pagar por mês, mande esse valor em parcela junto: cada parcela pós-chaves fica nesse valor, até 36 vezes, e o que não couber já sai no texto como reforço ou complemento a combinar): o texto já sai avisando que depende de a construtora aceitar e que se formaliza na proposta, no escritório. completo = true só quando o cliente PEDIR a conta completa de novo (sem isso, da segunda vez em diante a ferramenta devolve só os valores para você dizer o que mudou em 1 a 3 linhas).', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, sinal: { type: 'number' }, parcela: { type: 'number' }, fgts: { type: 'number' }, carteira: { type: 'boolean' }, renda: { type: 'number' }, reforcos: { type: 'number' }, pos_chaves: { type: 'number' }, completo: { type: 'boolean' } }, required: ['imovel'] } },
   { name: 'avisar_djhonata', description: 'Manda um aviso no WhatsApp pessoal do Djhonata.', input_schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
   { name: 'agenda_visita', description: 'Agenda do escritório. acao = "consultar" devolve os horários livres de um dia (mande data AAAA-MM-DD); acao = "marcar" marca a visita do cliente atual (mande data AAAA-MM-DD, hora HH:00 e, se o cliente disse, o nome dele). A agenda é de hora em hora. Use sempre que o cliente disser um dia ou um horário para vir: consulte antes de confirmar e, estando livre, marque. Se a ferramenta disser que não está livre, ofereça os horários que ela devolver. Ela já registra a visita no CRM e liga os lembretes: não chame registrar_crm para isso.', input_schema: { type: 'object', properties: { acao: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nome: { type: 'string' } }, required: ['acao'] } },
   { name: 'registrar_crm', description: 'Registra no CRM um evento do cliente atual e move o card dele: novoStatus = atendimento, visita_marcada, remarcar, sem_interesse ou pausado ("em negociação" NÃO é com você: só o Djhonata move para lá, depois que o cliente vem ao escritório; cliente negociando valores pelo WhatsApp continua em atendimento). Em visita_marcada mande data (AAAA-MM-DD) e hora (HH:MM): o sistema usa para os lembretes da visita. Se o cliente cancelar ou pedir para remarcar, use remarcar (os lembretes param). Mande nomeReal quando o cliente disser o nome e imovel quando souber qual imóvel interessa. resultado = frase curta do que aconteceu.', input_schema: { type: 'object', properties: { novoStatus: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nomeReal: { type: 'string' }, imovel: { type: 'string' }, resumo: { type: 'string' }, resultado: { type: 'string' } } } },
+  { name: 'agendar_retorno', description: 'Marca para VOCÊ chamar o cliente de volta num dia e horário combinados. Use quando o cliente disser que fala depois e der uma hora ou um dia (ex.: "falo contigo depois das 14h30", "me chama amanhã cedo", "só consigo à noite"). quando = AAAA-MM-DD HH:MM no horário de Joinville (se ele disse "depois das 14h30", use 14:40; "amanhã cedo" = 09:00; "à noite" = 19:00). assunto = uma linha com o que ficou combinado e de onde retomar (ex.: "ver opções perto do Jardim Paraíso"). Depois de marcar, responda ao cliente em uma linha que você chama nessa hora (ex.: "Combinado, te chamo às 14h40"). Não use para visita ao escritório (isso é agenda_visita) nem quando ele não der hora nem dia.', input_schema: { type: 'object', properties: { quando: { type: 'string' }, assunto: { type: 'string' } }, required: ['quando'] } },
   { name: 'distancia', description: 'Tempo de carro e distância entre um imóvel do catálogo e um lugar de Joinville que o cliente citou (trabalho, escola, casa atual, outro bairro). Use SEMPRE antes de dizer que um imóvel fica perto ou longe de algum lugar. imovel = ref (ex.: "913") ou parte do nome da rua/residencial. lugar = o nome do lugar ou do bairro, como o cliente falou (ex.: "Hospital Regional", "Tupy", "Aventureiro").', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, lugar: { type: 'string' } }, required: ['imovel', 'lugar'] } },
   { name: 'imoveis_perto', description: 'Lista os imóveis do catálogo mais próximos de um lugar de Joinville, com o tempo de carro de cada um. Use quando o cliente disser onde trabalha, estuda ou mora, para oferecer o que fica mais perto dali. lugar = o nome do lugar ou do bairro, como ele falou.', input_schema: { type: 'object', properties: { lugar: { type: 'string' } }, required: ['lugar'] } },
 ];
@@ -260,6 +287,8 @@ const EXT_IMG = /\.(jpe?g|png|webp)$/i, EXT_VID = /\.(mp4)$/i;
 // preço (sem falar da avaliação ao cliente). Avaliação: a anotada na ficha; se não tiver, a sugestão do CRM (menor área × R$ 6.300
 // o m², a média), no máximo 10% acima do preço. Construtora que "não aceita avaliação superior": vale o preço. O resto da entrada: sinal, parcelas até a entrega, FGTS (o de hoje mais o que
 // entra até a entrega, cerca de 1/12 da renda por mês, para quem é de carteira assinada) e reforços, o último na entrega das chaves.
+const SIM_BLOCO_VALE = 7 * 864e5;                              // por 7 dias o bloco completo de um imóvel não é reenviado na mesma conversa (só se o cliente pedir)
+const FIN_VEZES_RENDA = Number(ENV.FIN_VEZES_RENDA) || 45;     // financiamento que a renda sustenta, em vezes a renda bruta (parcela até 30% da renda)
 const brl = (v) => 'R$ ' + (Math.round((Number(v) || 0) * 100) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const MESES_CURTOS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const M2_AVALIACAO = 6300, AVAL_MAX_ACIMA = 0.10, REFORCO_MIN = 5000;   // reforço do padrão: no mínimo uns R$ 5 mil cada (valor pequeno vai num só, na entrega das chaves)
@@ -379,6 +408,7 @@ function simularFluxo(e) {
   return {
     texto: L.join('\n'),
     resumo: `${f.nome}, ${brl(f.preco)}, sinal ${brl(sinal)}${parcelaUsada ? ', parcela ' + brl(parcelaUsada) : ''}${fgtsUsado ? ', FGTS ' + brl(fgtsUsado) : ''}${q ? `, ${q} reforço(s)` : ''}${posTxt}, financiamento ${brl(financ)} (avaliação ${brl(av)}${f.aval ? ' da ficha' : ''})`,
+    financ, renda: renda || 0, pasta, nome: f.nome,
     sinalPadrao: !informado(e.sinal), acimaDoPreco: av > f.preco, semFgts: !informado(e.fgts) && !carteira, perguntarCarteira: obra && fgtsHoje > 0 && e.carteira === undefined, perguntarRenda: obra && carteira && !renda, temReforco: q > 0
   };
 }
@@ -503,7 +533,12 @@ async function geoLugar(texto) {   // lugar citado pelo cliente -> { nome, lat, 
   if (exato !== undefined) r = centroDe(exato, false);
   else {
     const achar = async (q) => { const x = (await geoNominatim('q=' + encodeURIComponent(q + ', Joinville')))[0]; if (!x) return null; const b = geoBairro(((x.address || {}).suburb || '') + ' ' + ((x.address || {}).neighbourhood || '') + ' ' + ((x.address || {}).city_district || '')); return { nome: String(x.display_name || q).split(',').slice(0, 2).join(',').trim(), lat: Number(x.lat), lon: Number(x.lon), bairro: b >= 0 ? GEOJOI.nomes[b] : '' }; };
-    r = await achar(semCidade);
+    // Pacote de 12/11/2026: endereço escrito pelo cliente é limpo antes da busca (CEP, cidade, "R." -> "Rua"); se o mapa não achar
+    // pelo nome, tenta uma busca que tolera erro de grafia ("Forte Atacadista" -> Fort Atacadista).
+    const ehEndereco = /^\s*(r\.?|rua|av\.?|avenida|rod\.?|rodovia|estr\.?|estrada|travessa|servid[aã]o|alameda)\s+\S/i.test(semCidade) || /\b\d{5}-?\d{3}\b/.test(String(texto)), limpo = ehEndereco ? geoLimparEndereco(texto) : semCidade;
+    r = await achar(limpo);
+    if (!r && ehEndereco && /\s\d+\s*$/.test(limpo)) r = await achar(limpo.replace(/\s+\d+\s*$/, ''));   // sem o número
+    if (!r && !/https?:\/\//i.test(limpo)) r = await geoPhoton(limpo);
     if (!r && ib >= 0) {   // "hospital regional no boa vista": tenta sem o bairro; se nem assim, vale o centro do bairro citado
       const semBairro = semAcento(semCidade).replace(geoChaveBairro(GEOJOI.nomes[ib]), ' ').replace(/\b(no|na|do|da|de|em|perto|proximo|ao|a|o)\s*$/g, ' ').replace(/\s+/g, ' ').trim();
       if (semBairro.length >= 4) r = await achar(semBairro);
@@ -512,6 +547,27 @@ async function geoLugar(texto) {   // lugar citado pelo cliente -> { nome, lat, 
   }
   geo.lugares[k] = Object.assign({ em: Date.now() }, r || {}); geoSalvar();
   return r;
+}
+function geoLimparEndereco(s) {   // "R. Tuiuti, 4157 - Aventureiro, Joinville - SC, 89226-001" -> "Rua Tuiuti 4157"
+  let t = String(s || '').replace(/\b\d{5}-?\d{3}\b/g, ' ').replace(/\b(joinville|santa catarina|brasil)\b/ig, ' ').replace(/[-–,/]\s*sc\b/ig, ' ');
+  t = t.replace(/^\s*r\.?\s+/i, 'Rua ').replace(/^\s*av\.?\s+/i, 'Avenida ').replace(/^\s*rod\.?\s+/i, 'Rodovia ').replace(/^\s*estr\.?\s+/i, 'Estrada ');
+  return t.replace(/\s+[-–]\s+.*$/, ' ').replace(/[,\s]+/g, ' ').trim();
+}
+async function geoPhoton(q) {   // segunda busca, tolerante a erro de grafia; só vale resultado dentro de Joinville
+  try {
+    const j = await geoBuscar('https://photon.komoot.io/api/?q=' + encodeURIComponent(q + ' Joinville') + '&limit=5&bbox=-49.2,-26.5,-48.65,-26.05');
+    for (const f of (j && j.features) || []) {
+      const c = (f.geometry || {}).coordinates || [], pr = f.properties || {}, lat = Number(c[1]), lon = Number(c[0]);
+      if (!(lat < -26.05 && lat > -26.5 && lon > -49.2 && lon < -48.65)) continue;
+      const b = geoBairro([pr.district, pr.suburb, pr.locality, pr.neighbourhood].filter(Boolean).join(' '));
+      return { nome: [pr.name, pr.street].filter(Boolean).slice(0, 2).join(', ') || q, lat, lon, bairro: b >= 0 ? GEOJOI.nomes[b] : '' };
+    }
+  } catch (e) { log('geo (busca tolerante)', e.message); }
+  return null;
+}
+function geoRetaMin(a, b) {   // sem roteador: estima pelo trajeto em linha reta (x1,4) a 25 km/h
+  const R = 6371, p = Math.PI / 180, x = Math.sin((b.lat - a.lat) * p / 2) ** 2 + Math.cos(a.lat * p) * Math.cos(b.lat * p) * Math.sin((b.lon - a.lon) * p / 2) ** 2, km = 2 * R * Math.asin(Math.sqrt(x)) * 1.4;
+  return { min: Math.max(2, Math.round(km / 25 * 60)), km: Math.round(km * 10) / 10, estimado: true };
 }
 async function geoTempos(orig, dests) {   // tempo de carro de um ponto até vários (um pedido só ao roteador)
   const pts = [orig].concat(dests).map(p => Number(p.lon).toFixed(5) + ',' + Number(p.lat).toFixed(5)).join(';');
@@ -547,10 +603,14 @@ async function executar(nome, entrada, ctx) {
       const NAO_SEI = 'Não consegui calcular o trajeto agora. NÃO diga que é perto nem que é longe: diga que vai confirmar o tempo de trajeto e siga o atendimento.';
       let g = null, l = null; try { g = await geoImovel(p); l = await geoLugar(entrada.lugar || ''); } catch (e) { log('geo', e.message); return NAO_SEI; }
       if (!g) return NAO_SEI;
-      if (!l) return `Não achei "${entrada.lugar}" no mapa de Joinville. Pergunte ao cliente em qual bairro ou rua fica e chame de novo com essa informação. Sem isso, não diga que é perto nem longe.`;
+      if (!l) return /https?:\/\//i.test(String(entrada.lugar || '')) ? 'Link de mapa não dá para abrir por aqui. Peça ao cliente o nome do lugar ou a rua e o bairro por escrito e chame de novo. Sem isso, não diga que é perto nem longe.' : `Não achei "${entrada.lugar}" no mapa de Joinville. Pergunte ao cliente em qual bairro ou rua fica e chame de novo com essa informação (pode mandar o endereço completo, do jeito que ele escrever). Sem isso, não diga que é perto nem longe.`;
       let t = null; try { t = (await geoTempos(l, [g]))[0]; } catch (e) { log('geo', e.message); }
       const d = dadosDaFicha(p), ib = geoBairro(g.bairro || ''), il = geoBairro(l.bairro || '');
-      if (!t) { if (ib < 0 || il < 0) return NAO_SEI; t = { min: geoMinBairros(ib, il), km: 0, estimado: true }; }
+      if (!t) {   // roteador fora do ar: entre bairros vale a tabela; ponto exato (rua, mercado) estima pela distância; sem nenhum dos dois, não chuta
+        if (ib >= 0 && il >= 0 && (l.ehBairro || g.aprox || l.aprox)) t = { min: geoMinBairros(ib, il), km: 0, estimado: true };
+        else if (g.lat && l.lat) t = geoRetaMin(g, l);
+        else return NAO_SEI;
+      }
       const divisa = l.ehBairro && ib >= 0 && il >= 0 && (ib === il || GEOJOI.vizinhos[ib].includes(il)), perto = t.min <= GEO_PERTO_MIN || divisa;
       log('distância', d.nome, '->', l.nome, t.min, 'min', perto ? 'perto' : 'não é perto');
       return `${d.nome} (${g.bairro || 'Joinville'}) até ${l.nome}${l.bairro && !l.ehBairro && !l.aprox ? ' (' + l.bairro + ')' : ''}: uns ${t.min} min de carro${t.km ? ', ' + String(t.km).replace('.', ',') + ' km' : ''}, fora do horário de pico${t.estimado || g.aprox || l.aprox ? ' (estimativa pelo bairro, sem o endereço exato)' : ''}. `
@@ -573,14 +633,29 @@ async function executar(nome, entrada, ctx) {
       if (r.erro) return r.erro;
       ctx.notas.push('[simulação montada: ' + r.resumo + ']');
       log('simulação', ctx.telefone || ctx.jid, r.resumo);
-      const depois = ['pergunte se cabe no bolso'];
-      if (r.sinalPadrao) depois.push('diga que o sinal de R$ 10 mil é o padrão e que, se ficar apertado, você coloca o sinal que ele consegue dar na assinatura');
-      if (r.temReforco) depois.push('se achou pesado o reforço (dá para diluir em mais reforços: chame simular_fluxo de novo com reforcos maior; ou subir um pouco a parcela)');
-      if (r.semFgts) depois.push('se ele tem FGTS (quanto tem hoje) e se trabalha de carteira assinada, porque o FGTS diminui a entrada e vai crescendo até a entrega');
-      else if (r.perguntarCarteira) depois.push('se ele trabalha de carteira assinada (aí o FGTS cresce até a entrega e a entrada diminui)');
-      else if (r.perguntarRenda) depois.push('a renda bruta, para somar o FGTS que entra até a entrega');
+      // Memória da simulação nesta conversa (12/11/2026): o bloco completo vai UMA vez por imóvel, e cada pergunta (renda, sinal, FGTS e carteira) uma vez só.
+      estado.sim = estado.sim || {};
+      const ms = estado.sim[ctx.jid] || (estado.sim[ctx.jid] = { blocos: {} }); ms.blocos = ms.blocos || {};
+      const repetida = !entrada.completo && !!ms.blocos[r.pasta] && Date.now() - ms.blocos[r.pasta] < SIM_BLOCO_VALE;
       const porque = r.acimaDoPreco ? ' Aqui a entrada ficou menor porque o banco financia pela avaliação, que está acima do preço: se ele questionar (ex.: "não tem que dar mais de entrada?"), explique que o banco usa o valor da avaliação do imóvel e que esse imóvel a gente está vendendo abaixo do valor de mercado, por isso consegue o desconto e ele financia mais (condição que a gente tem por ter muitos anos de mercado e ser construtora). Não diga valor de avaliação.' : '';
-      return `Mande o bloco abaixo ao cliente por TEXTO, do jeito que está, SOZINHO numa mensagem: não escreva nada antes nem depois dentro dele, porque o cliente encaminha esse bloco para a esposa, o marido ou a família junto com o vídeo do imóvel (o sistema separa o bloco numa mensagem própria). Depois, em OUTRA mensagem, curta, ${depois.join('; ')}. Não fale da avaliação do banco por conta própria e não convide para o escritório por causa da simulação: só se ele mostrar interesse em fechar ou ver de perto.${porque}\n\n${r.texto}`;
+      // a renda sustenta esse financiamento? (parcela até 30% da renda; conta aproximada, só para não afirmar o que não cabe)
+      const teto = Math.round(r.renda * FIN_VEZES_RENDA / 1000) * 1000;
+      const avisoRenda = r.renda > 0 && r.financ > teto ? ` ATENÇÃO À RENDA: com renda de ${brl(r.renda)} a parcela vai até ${brl(r.renda * 0.3)} por mês, o que sustenta um financiamento perto de ${brl(teto)}; esta conta pede ${brl(r.financ)}. NÃO diga que cabe na renda nem que "dá para entrar": diga com jeito que só com essa renda a Caixa não libera tudo e mostre os caminhos (somar a renda de mais uma pessoa, aumentar a entrada ou um imóvel mais em conta), sem dizer que não aprova.` : '';
+      // uma pergunta por vez: renda, depois sinal, depois FGTS e carteira (uma vez só por conversa), depois se cabe no bolso
+      let depois;
+      if (!r.renda && !ms.renda) { depois = 'pergunte SÓ a renda bruta da família (uma pergunta, mais nada: não pergunte de FGTS, carteira nem sinal agora)'; ms.renda = Date.now(); }
+      else if (r.sinalPadrao && !ms.sinal) { depois = 'diga que o sinal de R$ 10 mil é o padrão e pergunte SÓ quanto ele consegue dar na assinatura (se ficar apertado, você ajusta)'; ms.sinal = Date.now(); }
+      else if (!ms.fgts && (r.semFgts || r.perguntarCarteira)) { depois = (r.semFgts ? 'pergunte se ele tem FGTS (quanto tem hoje) e se trabalha de carteira assinada, porque o FGTS diminui a entrada e vai crescendo até a entrega' : 'pergunte se ele trabalha de carteira assinada (aí o FGTS cresce até a entrega e a entrada diminui)') + '; é a ÚNICA vez que essa pergunta entra nesta conversa'; ms.fgts = Date.now(); }
+      else depois = 'pergunte se assim cabe no bolso' + (r.temReforco ? ' ou se o reforço ficou pesado (dá para diluir em mais reforços: chame simular_fluxo de novo com reforcos maior; ou subir um pouco a parcela)' : '') + '. NÃO pergunte de novo de FGTS, carteira assinada nem renda: isso já foi perguntado nesta conversa; se faltar, vocês acertam no escritório';
+      const fecho = ` Não fale da avaliação do banco por conta própria e não convide para o escritório por causa da simulação: só se ele mostrar interesse em fechar ou ver de perto.${avisoRenda}${porque}`;
+      ms.em = Date.now(); for (const k of Object.keys(estado.sim)) if (Date.now() - (estado.sim[k].em || 0) > 30 * 864e5) delete estado.sim[k];
+      salvarEstado();
+      if (repetida) {
+        const consulta = r.texto.split('\n').map(l => l.replace(/^\s*📋\s*\*?/, 'Conta atualizada: ').replace(/\*\s*$/, '').replace(/^\s*(💰|✅|🏦|💵)\s*/, '- ')).join('\n');
+        return `NÃO mande o bloco da simulação de novo: o cliente já recebeu a conta completa deste imóvel nesta conversa. Responda em 1 a 3 linhas, com as suas palavras, SÓ o que mudou em relação à conta que você já mandou (ex.: "com 40 mil de sinal a parcela cai para R$ 800 por mês"), usando os valores abaixo. Só mande a conta completa outra vez se o cliente PEDIR: nesse caso chame simular_fluxo de novo com completo = true. Depois, na mesma resposta, ${depois}.${fecho}\n\nVALORES ATUALIZADOS (só para você consultar; NÃO envie esta lista):\n${consulta}`;
+      }
+      ms.blocos[r.pasta] = Date.now();
+      return `Mande o bloco abaixo ao cliente por TEXTO, do jeito que está, SOZINHO numa mensagem: não escreva nada antes nem depois dentro dele, porque o cliente encaminha esse bloco para a esposa, o marido ou a família junto com o vídeo do imóvel (o sistema separa o bloco numa mensagem própria). Depois, em OUTRA mensagem, curta, ${depois}.${fecho}\n\n${r.texto}`;
     }
     if (nome === 'ler_ficha') {
       const p = acharPasta(entrada.busca || '');
@@ -637,6 +712,17 @@ async function executar(nome, entrada, ctx) {
       await enviarTexto(DONO + '@s.whatsapp.net', '🔔 ' + txt, 'aviso');
       return 'Aviso enviado ao Djhonata. Continue atendendo o cliente normalmente.';
     }
+    if (nome === 'agendar_retorno') {   // pacote de 12/11/2026: o cliente disse "falo depois das 14h30" -> a assistente chama no horário combinado
+      const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{1,2})[:h](\d{2})/.exec(String(entrada.quando || '').trim());
+      if (!m) return 'Mande quando no formato AAAA-MM-DD HH:MM (horário de Joinville).';
+      const q = `${m[1]}T${String(m[2]).padStart(2, '0')}:${m[3]}`, T = quandoMs(q), min = Number(m[2]) * 60 + Number(m[3]);
+      if (!T || T < Date.now() + 5 * 60e3) return 'Esse horário já passou ou é daqui a menos de 5 minutos: não marque retorno, continue a conversa agora.';
+      if (T > Date.now() + 7 * 864e5) return 'Só dá para marcar retorno para os próximos 7 dias. Combine uma data mais perto ou diga que ele pode chamar quando quiser.';
+      if (min < minutos(ROT_INI) || min > minutos(ROT_FIM)) return `Você só chama clientes entre ${ROT_INI} e ${ROT_FIM}. Combine um horário dentro disso (ex.: amanhã às 09:00) e chame agendar_retorno de novo.`;
+      estado.retornos = estado.retornos || {}; estado.retornos[ctx.jid] = { q, assunto: String(entrada.assunto || '').slice(0, 200), criado: Date.now() }; salvarEstado();
+      log('retorno combinado', ctx.telefone || ctx.jid, q);
+      return `Retorno marcado: você chama este cliente ${descreverQuando(q)}. Diga a ele, em uma linha, que você chama nessa hora. Não mande mais nada agora.`;
+    }
     if (nome === 'agenda_visita') {
       const iso = (x) => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
       const hh = (h) => String(h).padStart(2, '0') + ':00';
@@ -648,7 +734,18 @@ async function executar(nome, entrada, ctx) {
       if (!data) return 'Mande a data no formato AAAA-MM-DD. Próximos horários livres: ' + proximos(iso(agoraSP()), 3) + '.';
       const livres = agendaLivres(ocup, data), marcar = /^marc/i.test(String(entrada.acao || ''));
       const opcoes = livres.length ? `Livres em ${diaTxt(data)}: ${livres.map(hh).join(', ')}.` : `Sem horário livre em ${diaTxt(data)}. Próximos livres: ${proximos(data, 3)}.`;
-      if (!marcar) return opcoes + ' Quando o cliente escolher, chame agenda_visita com acao "marcar".';
+      if (!marcar) {
+        // Pacote de 12/11/2026: para não oferecer os mesmos dois horários a todos os clientes, sugere os menos oferecidos nas últimas 24h
+        // (um neste dia e outro no próximo dia com vaga). Quem marcar primeiro leva; os outros já receberam horários diferentes.
+        const of = estado.ofertasAg = estado.ofertasAg || {}; for (const k of Object.keys(of)) if (Date.now() - (of[k].ts || 0) > 24 * 3600e3) delete of[k];
+        const menos = (dia, l) => l.slice().sort((x, y) => (((of[dia + ' ' + x] || {}).n || 0) - ((of[dia + ' ' + y] || {}).n || 0)) || x - y)[0];
+        const sug = [], [y0, mo0, d0] = data.split('-').map(Number);
+        if (livres.length) sug.push([data, menos(data, livres)]);
+        for (let i = 1; i < 14 && sug.length < 2; i++) { const dia = iso(new Date(y0, mo0 - 1, d0 + i)), l = agendaLivres(ocup, dia); if (l.length) sug.push([dia, menos(dia, l)]); }
+        if (sug.length) { sug.forEach(([dia, h]) => { const k = dia + ' ' + h; of[k] = { n: ((of[k] || {}).n || 0) + 1, ts: Date.now() }; }); salvarEstado(); }
+        const dica = sug.length === 2 ? ` Para não oferecer o mesmo horário a todos os clientes, ofereça AGORA estes dois: ${sug.map(([dia, h]) => `${diaTxt(dia)} às ${hh(h)}`).join(' ou ')}. Se o cliente pediu outro dia ou horário e ele está livre, vale o que ele pediu.` : '';
+        return opcoes + dica + ' Quando o cliente escolher, chame agenda_visita com acao "marcar".';
+      }
       const hm = /^(\d{1,2})(?:\s*(?:[:h]|horas?)\s*(\d{2})?)?/i.exec(String(entrada.hora || '').trim()), h = hm ? Number(hm[1]) : NaN;
       if (!hm || (hm[2] && hm[2] !== '00') || !livres.includes(h)) return `O horário pedido NÃO está livre (a agenda é de hora em hora e precisa de ${AG_ANTECEDENCIA_H} horas de antecedência). ${opcoes} Ofereça esses ao cliente e não confirme o que ele pediu.`;
       if (estado.teste && estado.teste.ativo) return `Modo teste: ${diaTxt(data)} às ${hh(h)} está livre (nada foi gravado na agenda). Confirme ao cliente normalmente.`;
@@ -1433,7 +1530,7 @@ async function aoReceber(m, tipoUpsert) {
   }
   if (x.videoMessage) entrada = (entrada ? entrada + '\n' : '') + '[o cliente mandou um vídeo]';
   if (x.documentMessage) entrada = (entrada ? entrada + '\n' : '') + `[o cliente mandou um arquivo: ${x.documentMessage.fileName || ''}]`;
-  if (x.contactMessage || x.contactsArrayMessage) entrada = (entrada ? entrada + '\n' : '') + '[o cliente mandou um contato]';
+  if (x.contactMessage || x.contactsArrayMessage) entrada = (entrada ? entrada + '\n' : '') + textoDoContato(x);
   if (x.locationMessage) entrada = (entrada ? entrada + '\n' : '') + '[o cliente mandou uma localização]';
   if (x.stickerMessage) entrada = (entrada ? entrada + '\n' : '') + '[figurinha]';
   if (!entrada) return;
@@ -1480,10 +1577,16 @@ function adsDoChat(jid) {   // { id, titulo, pasta, generico } do anúncio que t
   const m = a.anuncioId ? adsMapa[a.anuncioId] : null;
   return { id: a.anuncioId || '', titulo: a.titulo || '', em: a.em || 0, pasta: m && m.pasta && pastasImoveis().includes(m.pasta) ? m.pasta : '', generico: !!(m && m.generico) };
 }
-function adsContexto(jid) {   // linha que entra nas instruções da conversa nos 3 primeiros dias depois do clique
+function adsContexto(jid, jaFalou) {   // linha que entra nas instruções da conversa nos 3 primeiros dias depois do clique
+  const c = chats[jid] || {}, novo = c.anuncioAtual && c.anuncioAtual.em > ((c.anuncio || {}).em || 0) && Date.now() - c.anuncioAtual.em < 3 * 864e5 ? c.anuncioAtual : null;
+  if (novo) {   // já estava em atendimento e clicou em outro anúncio
+    const m = novo.anuncioId ? adsMapa[novo.anuncioId] : null, pasta = m && m.pasta && pastasImoveis().includes(m.pasta) ? m.pasta : '';
+    if (pasta) return `\nANÚNCIO NOVO: este cliente já estava em atendimento e clicou agora (${quandoFoi(novo.em)}) no anúncio do imóvel ${dadosDaFicha(pasta).nome} (pasta "${pasta}"). Não se apresente de novo e não pergunte qual imóvel é: se você ainda não mandou esse imóvel nesta conversa, mande ele (ler_ficha, o vídeo ou a foto e a descrição) e pergunte se foi esse que chamou a atenção.`;
+    if (novo.titulo && !(m && m.generico)) return `\nANÚNCIO NOVO: este cliente já estava em atendimento e clicou agora (${quandoFoi(novo.em)}) em outro anúncio, de título "${novo.titulo}". Não se apresente de novo; use o título para saber de qual imóvel ele está falando.`;
+  }
   const a = adsDoChat(jid); if (!a || !a.em || Date.now() - a.em > 3 * 864e5) return '';
-  if (a.pasta) return `\nANÚNCIO: este cliente chegou pelo anúncio do imóvel ${dadosDaFicha(a.pasta).nome} (pasta "${a.pasta}"). Se você ainda não mandou esse imóvel nesta conversa, apresente-se e já mande ele (ler_ficha, o vídeo ou a foto e a descrição), perguntando se foi esse que ele viu no anúncio. Não pergunte o bairro antes. Se ele disser que viu outro, pergunte qual ou o bairro e siga normalmente.`;
-  if (a.generico) return `\nANÚNCIO: este cliente chegou por um anúncio genérico, que não é de um imóvel específico. Faça a abertura normal e pergunte o bairro.`;
+  if (a.pasta) return `\nANÚNCIO: este cliente chegou pelo anúncio do imóvel ${dadosDaFicha(a.pasta).nome} (pasta "${a.pasta}"). Se você ainda não mandou esse imóvel nesta conversa, ${jaFalou ? 'mande ele, sem se apresentar de novo' : 'apresente-se e já mande ele'} (ler_ficha, o vídeo ou a foto e a descrição), perguntando se foi esse que ele viu no anúncio. Não pergunte o bairro antes. Se ele disser que viu outro, pergunte qual ou o bairro e siga normalmente.`;
+  if (a.generico) return jaFalou ? '' : `\nANÚNCIO: este cliente chegou por um anúncio genérico, que não é de um imóvel específico. Faça a abertura normal e pergunte o bairro.`;
   if (a.titulo) return `\nANÚNCIO: este cliente chegou pelo anúncio de título "${a.titulo}", que ainda não está ligado a um imóvel. Se o título disser o bairro ou o imóvel, use isso na abertura; se for um título geral, pergunte o bairro.`;
   return '';
 }
@@ -1522,11 +1625,23 @@ function dadosAnuncio(x) {
   }
   return null;
 }
+// Cartão de contato (ex.: indicação): passa para a assistente o nome e o número que vieram no cartão.
+function textoDoContato(x) {
+  try {
+    const cs = x.contactMessage ? [x.contactMessage] : ((x.contactsArrayMessage && x.contactsArrayMessage.contacts) || []);
+    const lista = cs.slice(0, 5).map(c => { const v = String(c.vcard || ''); const tel = ((v.match(/waid=(\d{8,15})/) || [])[1] ? '+' + v.match(/waid=(\d{8,15})/)[1] : ((v.match(/TEL[^:\n]*:([+\d\s().-]{8,})/) || [])[1] || '').trim()); return `${String(c.displayName || '').trim() || 'sem nome'}${tel ? ', número ' + tel : ''}`; }).filter(Boolean).join('; ');
+    return lista ? `[o cliente mandou um cartão de contato: ${lista}]` : '[o cliente mandou um contato]';
+  } catch (e) { return '[o cliente mandou um contato]'; }
+}
 function marcarOrigem(jid, x, texto, ts) {
   const c = chats[jid] || (chats[jid] = {}); let mudou = false;
   if (!c.primeira || ts < c.primeira) { c.primeira = ts; mudou = true; }
+  const ad = dadosAnuncio(x);
+  if (c.anuncio && ad && ad.anuncioId && ts > (c.anuncio.em || 0) + 60e3) {   // cliente que já estava aqui clicou em outro anúncio: a origem (c.anuncio) fica, o mais recente vai à parte
+    const ult = c.anuncioAtual || c.anuncio;
+    if (ad.anuncioId !== ult.anuncioId || ts > (ult.em || 0) + 6 * 3600e3) { c.anuncioAtual = Object.assign({ em: ts }, ad); mudou = true; log('novo clique em anúncio', c.telefone || jid, ad.titulo || ''); }
+  }
   if (!c.anuncio) {
-    const ad = dadosAnuncio(x);
     if (ad) { c.anuncio = Object.assign({ em: ts }, ad); mudou = true; log('lead do anúncio', c.telefone || jid, ad.titulo || ''); }
     else if (RE_MSG_ANUNCIO.test(String(texto || '')) && Math.abs(ts - c.primeira) < 6 * 3600e3) { c.anuncio = { em: ts, titulo: '', pelaMensagem: true }; mudou = true; }
   }
@@ -2010,11 +2125,19 @@ async function verificarRotinas() {
       if (!v.enviados.l24 && agora >= T - 24 * 3600e3 && agora <= T - 12 * 3600e3 && (v.criado || 0) <= T - 22 * 3600e3) fila.push({ jid, tipo: 'l24', v });
       else if (v.q.includes('T') && !v.enviados.l2 && agora >= T - 3 * 3600e3 && agora <= T - 50 * 60e3) fila.push({ jid, tipo: 'l2', v });
     }
+    for (const [jid, r] of Object.entries(estado.retornos || {})) {   // retorno combinado com o cliente ("falo depois das 14h30")
+      const T = quandoMs(r.q), uc = ultCli(jid);
+      if (!T || agora > T + 6 * 3600e3) { delete estado.retornos[jid]; salvarEstado(); continue; }                                   // passou muito da hora: desiste
+      if (agora >= T - 30 * 60e3 && uc > (r.criado || 0) + 10 * 60e3 && agora - uc < 2 * 3600e3) { delete estado.retornos[jid]; salvarEstado(); continue; }   // ele já voltou a falar por conta própria
+      if (agora < T || !janela || !rotinaPermitida(jid, 'retomada')) continue;
+      fila.push({ jid, tipo: 'retorno', r });
+    }
     if (janela) {
       for (const jid of Object.keys(chats)) {
         const c = chats[jid];
         if (!['ia', 'aviso'].includes(c.ultAutor) || !c.ult || agora - c.ult > 22 * 3600e3 || agora - c.ult < 2 * 3600e3) continue;
         if ((estado.visitas || {})[jid]) continue;            // tem visita marcada: quem cuida são os lembretes
+        if ((estado.retornos || {})[jid]) continue;           // tem retorno combinado: ela chama na hora marcada, não antes
         const p = conversaParada(jid); if (!p || p.jaRetomou) continue;
         if (agora - p.ultCli > 22 * 3600e3) continue;          // fora das 24h do cliente: não puxa conversa
         if (agora - p.ultIa < (p.agenda ? 2 : 3) * 3600e3) continue;
@@ -2042,6 +2165,11 @@ async function rodarRotina(it) {
     estado.retomadas = estado.retomadas || {}; estado.retomadas[jid] = { base: it.p.ultCli, em: Date.now() };
     for (const [k, r] of Object.entries(estado.retomadas)) if (Date.now() - (r.em || 0) > 7 * 864e5) delete estado.retomadas[k];
     salvarEstado();
+  } else if (it.tipo === 'retorno') {
+    instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Retorno combinado: o cliente pediu para você chamar agora${it.r.assunto ? ` (ficou combinado: ${it.r.assunto})` : ''}. Releia a conversa e mande UMA mensagem curta e natural chamando ele de volta, retomando de onde pararam e já trazendo o próximo passo (a opção de imóvel, a conta ou a pergunta que ficou pendente). Não se apresente de novo, não diga que é uma rotina e não peça desculpa pelo horário.`;
+    extra = { rotina: 'retomada' };
+    delete estado.retornos[jid]; estado.retomadas = estado.retomadas || {}; estado.retomadas[jid] = { base: c.ultCliente || 0, em: Date.now() }; salvarEstado();
+    liberado24h.add(jid);
   } else if (it.tipo === 'ordem') {
     instr = `[PEDIDO DO DJHONATA — não é mensagem do cliente] Retome esta conversa agora. Releia a conversa inteira antes. ${it.instr} Escreva como continuação natural da conversa (sem dizer que o Djhonata pediu), siga todas as regras do atendimento e termine com UMA pergunta simples. É uma retomada só: não prometa mandar outras mensagens.`;
     extra = { rotina: 'retomada' };
@@ -2056,7 +2184,7 @@ async function rodarRotina(it) {
   ocupado.add(jid); emitir('digitando', { jid, on: true });
   try {
     await responder({ jid, telefone: c.telefone || '', nome: c.nome || '', dono: false, imagens: [], rotina: instr, extra });
-    if (it.tipo === 'retomada' || it.tipo === 'ordem') rotinas.retomadas++; else rotinas.lembretes++;
+    if (it.tipo === 'retomada' || it.tipo === 'ordem' || it.tipo === 'retorno') rotinas.retomadas++; else rotinas.lembretes++;
     rotinas.ultima = new Date().toISOString();
     log('rotina', it.tipo, c.telefone || jid);
   } catch (e) { log('rotina com erro', it.tipo, e.message); }
@@ -2199,6 +2327,7 @@ async function fuEnviar(x) {   // devolve 'enviado', 'cancelado' ou 'erro'
   const id = lembrarEnvio(r); ultimoEnvio = Date.now();
   registrarEspelho(jid, { id, autor: 'voce', tipo: 'text', texto, ts: Date.now(), followup: true });
   anotar(acharJid(jid), 'assistant', '(Djhonata escreveu) ' + texto);
+  if (x.nome && x.tel8) { estado.crmNomes = estado.crmNomes || {}; if (!estado.crmNomes[x.tel8]) { estado.crmNomes[x.tel8] = String(x.nome).slice(0, 60); salvarEstado(); } }
   Object.assign(x, { status: 'enviado', enviadoEm: Date.now(), jid: acharJid(jid), erro: '' }); salvarFu();
   log('follow-up enviado', x.tel, x.nome || '');
   return 'enviado';
@@ -2233,7 +2362,7 @@ function estadoPublico() {
   const hoje = uso[agoraSP().toISOString().slice(0, 10)] || null;
   return {
     conectado, numero: meuNumero, qr: !!ultimoQR, whatsDesligado: !!estado.whatsDesligado, iniciando,
-    assistente: !!estado.ativo, horario: `${HORA_INI}–${HORA_FIM}`, dentroDoHorario: dentroDoHorario(), versao: VERSAO, noArDesde: NO_AR_DESDE,
+    assistente: !!estado.ativo, horario: ATENDE_24H ? '24 horas' : `${HORA_INI}–${HORA_FIM}`, dentroDoHorario: dentroDoHorario(), versao: VERSAO, noArDesde: NO_AR_DESDE,
     regras: ARQS_REGRAS.map(f => ({ arquivo: f, ok: !!lerTexto(f) })), imoveis: pastasImoveis().length, bloqueados: lerBloqueados().size,
     usoHoje: hoje, modelo: MODELO, teste: estado.teste && estado.teste.ativo ? (estado.teste.numeros || []) : [],
     voz: !!ELEVEN_KEY, transcricao: ELEVEN_KEY ? 'ElevenLabs' : GEMINI_KEY ? 'Gemini' : '',
@@ -3044,6 +3173,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           emitir('estado', estadoPublico());
         }
         else if (ac === 'crm_status') { let m = {}; try { m = JSON.parse(b.texto || '{}'); } catch (e) { } atualizarStatusCrm(m).catch(e => log('crm_status', e.message)); return json(res, { ok: true }); }
+        else if (ac === 'crm_nomes') { let m = {}; try { m = JSON.parse(b.texto || '{}'); } catch (e) { } const nv = {}; for (const [k, v] of Object.entries(m || {})) { const t8 = String(k).replace(/\D/g, '').slice(-8); if (t8.length === 8 && v) nv[t8] = String(v).slice(0, 60); } if (Object.keys(nv).length) { estado.crmNomes = nv; salvarEstado(); } return json(res, { ok: true, nomes: Object.keys(nv).length }); }
         else if (ac === 'crm_visitas') { let m = {}; try { m = JSON.parse(b.texto || '{}'); } catch (e) { } atualizarVisitasCrm(m); return json(res, { ok: true, visitas: Object.keys(estado.visitas || {}).length }); }
         else if (ac === 'rotinas') {   // o que o sistema sabe das visitas e das rotinas (para conferir)
           return json(res, { rotinas, visitas: Object.entries(estado.visitas || {}).map(([j, v]) => ({ nome: chatPublico(j).nome, telefone: chatPublico(j).telefone, quando: descreverQuando(v.q), origem: v.origem, enviados: v.enviados })), retomadas: Object.keys(estado.retomadas || {}).length, voz, ouvido, ffmpeg: temFfmpeg(), iaVazia: lerJson(path.join(DADOS, 'ia-vazia.json'), null) });
