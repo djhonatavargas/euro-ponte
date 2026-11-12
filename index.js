@@ -150,7 +150,8 @@ function avisoDemora(ts) { return `[o cliente mandou esta mensagem em ${quandoFo
 
 // ---------- regras e catálogo (vêm do computador do Djhonata pelo enviar-catalogo.ps1) ----------
 // AGENTS.md = prompt principal que o OpenClaw usava (base das 51 perguntas, bloco da agenda, regras obrigatórias).
-const ARQS_REGRAS = ['AGENTS.md', 'REGRAS-ATENDIMENTO.md', 'JEITO-DO-DJHONATA.md', 'ATENDIMENTO-INTELIGENTE.md', 'BASE-RESPOSTAS.md', 'APRENDIZADOS.md', 'combinados-clientes.md', 'CATALOGO.md'];
+// MELHORIAS-APROVADAS.md: regras que saem da avaliação diária da assistente e que o Djhonata aprova no CRM. Só existe no servidor (o PC não envia esse arquivo, então a sincronização do catálogo não apaga) e vai por último para valer acima das outras.
+const ARQS_REGRAS = ['AGENTS.md', 'REGRAS-ATENDIMENTO.md', 'JEITO-DO-DJHONATA.md', 'ATENDIMENTO-INTELIGENTE.md', 'BASE-RESPOSTAS.md', 'APRENDIZADOS.md', 'combinados-clientes.md', 'CATALOGO.md', 'MELHORIAS-APROVADAS.md'];
 function lerTexto(rel) { try { return fs.readFileSync(path.join(CATALOGO, rel), 'utf8'); } catch (e) { return ''; } }
 
 const ADAPTADOR = `# COMO VOCÊ FUNCIONA AQUI (vale acima das partes técnicas das regras)
@@ -173,6 +174,7 @@ Você está rodando num servidor novo, não mais no OpenClaw. As regras abaixo c
 - VOCÊ MARCA NA AGENDA (regra do Djhonata, 11/11/2026, vale acima de qualquer regra ou exemplo antigo que diga "não consigo marcar por aqui" ou que peça comprovante): quando o cliente disser um dia ou um horário para vir (ex.: "pode ser sábado às 14h", "amanhã de manhã"), use agenda_visita. Primeiro consulte o dia; se o horário estiver livre, marque você mesma e confirme dia, hora e endereço. NUNCA diga que um horário está bom sem ter consultado a agenda. Se não estiver livre, ofereça os horários livres que a ferramenta devolver (do mesmo dia ou dos próximos). Se ele disser só o dia, consulte e ofereça dois ou três horários livres. Depois de marcar, não mande o link e não peça comprovante. O link continua valendo para o cliente que ainda não escolheu o dia; se ele marcar pelo link e mandar o comprovante, confirme a visita.
 - OFERTAS (análise das conversas de 10/11/2026): no máximo 2 imóveis por vez. Se o cliente pedir "mais em conta" ou "pronto", pergunte antes quanto ele quer pagar (ou a renda) e mostre a melhor opção dentro disso, em vez de mandar vários. Confira na ficha se é casa geminada ou apartamento antes de oferecer: se ele pediu casa/geminado, não ofereça apartamento sem dizer antes que é apartamento. O preço que vale para o cliente é o preço de venda: só fale da avaliação do banco se ele perguntar, deixando claro que não é o preço.
 - SIMULAÇÃO E FLUXO DE PAGAMENTO (regra do Djhonata, 10/11/2026): o objetivo é o cliente sair de casa sabendo que consegue comprar. Quando ele pedir simulação ou perguntar como fica a entrada/pagamento de um imóvel, monte e mande a simulação você mesma: (1) se ainda não sabe, pergunte numa mensagem só quanto ele consegue dar de sinal (o padrão é R$ 10 mil, mas se tiver um pouco menos dá para ajustar), quanto fica bom por mês até a entrega, se tem FGTS (quanto tem hoje) e se trabalha de carteira assinada, e a renda bruta da família; (2) com as respostas, ou com o padrão se ele não souber (sinal de R$ 10 mil e R$ 1.500 por mês), use a ferramenta simular_fluxo com o imóvel que ele está vendo e mande o texto que ela devolver, por texto; (3) pergunte se cabe no bolso ou se achou pesado: dá para diluir o reforço em mais vezes (chame a ferramenta de novo com mais reforços), subir um pouco a parcela ou ajustar o sinal. O financiamento já sai calculado do jeito mais atrativo para o cliente (80% da avaliação do banco quando ela está acima do preço; senão, 80% do próprio preço): não fale da avaliação ao cliente (só se ele perguntar). Se o cliente questionar a entrada menor (ex.: "mas não tem que dar mais de entrada?"), explique com suas palavras: o banco financia pelo valor da avaliação do imóvel, e esse imóvel a gente está vendendo abaixo do valor de mercado; por isso a gente consegue dar esse desconto e ele consegue financiar mais. É uma condição que a gente tem por ter muitos anos de mercado e ser construtora também, e isso ajuda na negociação dele. Não diga um valor de avaliação (o valor certo só sai quando o banco avalia). O FGTS diminui a entrada e cresce até a entrega: a ferramenta já soma isso. Não convide para o escritório depois de cada simulação: só quando ele mostrar interesse em fechar ou ver de perto. Nunca invente números fora da ferramenta e nunca prometa aprovação. Isso vale acima da regra antiga de não passar número fechado.
+- GEOGRAFIA DE JOINVILLE (regra do Djhonata, 12/11/2026, vale acima de qualquer outra): informação errada de localização faz o cliente perder a viagem e a confiança. Você só pode dizer que um imóvel ou bairro fica "perto", "pertinho", "ao lado", "colado" ou "na região" de outro bairro ou lugar em dois casos: (a) os dois bairros aparecem juntos na tabela BAIRROS PERTO, no fim destas instruções; ou (b) a ferramenta distancia devolveu até 10 minutos de carro. Fora disso, nunca use essas palavras: diga o tempo real que a ferramenta devolveu ("fica a uns 25 minutos de carro do Aventureiro"). Antes de afirmar qualquer coisa sobre distância entre um imóvel e um lugar, chame a ferramenta distancia. Quando o cliente disser onde trabalha, estuda ou mora (ex.: "trabalho no Hospital Regional", "na Tupy", "moro no Jardim Paraíso"), chame imoveis_perto com esse lugar, ofereça os mais próximos que caibam no que ele pediu e diga o tempo de carro. Sobre o que tem perto de um imóvel (escola, mercado, posto de saúde, ônibus), use só o que vier em "PERTO DESTE IMÓVEL" na ficha; se não vier nada, diga que vai confirmar. Nunca invente distância, tempo de trajeto ou ponto de referência, nem em áudio.
 - O Djhonata acompanha as conversas por um painel e às vezes escreve direto para o cliente. As mensagens dele aparecem no histórico como "(Djhonata escreveu)"; as que você mandou a pedido dele, como "(mensagem a pedido do Djhonata)". Continue a conversa a partir disso: não repita o que ele já mandou, não contradiga e não se apresente de novo.`;
 
 function sistema(ctx) {
@@ -182,6 +184,7 @@ function sistema(ctx) {
     if (f === 'AGENTS.md') t = t.replace(/<!--\s*REGRAS-FIM\s*-->[\s\S]*$/, '');   // a lista de números "não atender" já é bloqueada pelo servidor
     if (t) partes.push(`\n\n===== ${f} =====\n${t}`);
   }
+  partes.push('\n\n===== BAIRROS PERTO (Joinville; só estes pares podem ser chamados de "perto") =====\n' + geoTabelaTexto() + '\nSe dois bairros não aparecem juntos numa linha, NÃO são perto: use a ferramenta distancia e diga o tempo.');
   const fixo = partes.join('');
   const d = agoraSP();
   const dia = d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -226,7 +229,9 @@ const FERRAMENTAS = [
   { name: 'simular_fluxo', description: 'Monta a simulação do pagamento de um imóvel com os números do cliente e devolve o texto pronto para mandar ao cliente, por texto, do jeito que veio. O financiamento já sai calculado do jeito mais atrativo para o cliente (avaliação do banco ou preço, o que for maior; não fale da avaliação ao cliente). Sem os números dele, usa o padrão (sinal de R$ 10 mil e R$ 1.500 por mês). imovel = ref (ex.: "832") ou parte do nome da rua/residencial. sinal = quanto ele dá na assinatura. parcela = quanto fica bom por mês até a entrega. fgts = saldo de FGTS que ele tem hoje (0 se não tem; não mande se ainda não sabe). carteira = true se ele (ou a família) trabalha de carteira assinada: aí o FGTS cresce todo mês até a entrega e diminui a entrada. renda = renda bruta mensal da família. reforcos = em quantos reforços dividir o que faltar (o último é na entrega das chaves); mande um número maior quando ele achar o reforço pesado. pos_chaves = em quantas parcelas mensais DEPOIS da entrega dividir o que faltar da entrada (use quando a entrada não cabe no bolso dele mesmo ajustando sinal e parcelas, ou em imóvel pronto ou com entrega muito perto; comece com 12 e vá até 24 se ele precisar; se o cliente disse quanto pode pagar por mês, mande esse valor em parcela junto: cada parcela pós-chaves fica nesse valor, até 36 vezes, e o que não couber já sai no texto como reforço ou complemento a combinar): o texto já sai avisando que depende de a construtora aceitar e que se formaliza na proposta, no escritório.', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, sinal: { type: 'number' }, parcela: { type: 'number' }, fgts: { type: 'number' }, carteira: { type: 'boolean' }, renda: { type: 'number' }, reforcos: { type: 'number' }, pos_chaves: { type: 'number' } }, required: ['imovel'] } },
   { name: 'avisar_djhonata', description: 'Manda um aviso no WhatsApp pessoal do Djhonata.', input_schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
   { name: 'agenda_visita', description: 'Agenda do escritório. acao = "consultar" devolve os horários livres de um dia (mande data AAAA-MM-DD); acao = "marcar" marca a visita do cliente atual (mande data AAAA-MM-DD, hora HH:00 e, se o cliente disse, o nome dele). A agenda é de hora em hora. Use sempre que o cliente disser um dia ou um horário para vir: consulte antes de confirmar e, estando livre, marque. Se a ferramenta disser que não está livre, ofereça os horários que ela devolver. Ela já registra a visita no CRM e liga os lembretes: não chame registrar_crm para isso.', input_schema: { type: 'object', properties: { acao: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nome: { type: 'string' } }, required: ['acao'] } },
-  { name: 'registrar_crm', description: 'Registra no CRM um evento do cliente atual e move o card dele: novoStatus = atendimento, visita_marcada, remarcar, sem_interesse ou pausado ("em negociação" NÃO é com você: só o Djhonata move para lá, depois que o cliente vem ao escritório; cliente negociando valores pelo WhatsApp continua em atendimento). Em visita_marcada mande data (AAAA-MM-DD) e hora (HH:MM): o sistema usa para os lembretes da visita. Se o cliente cancelar ou pedir para remarcar, use remarcar (os lembretes param). Mande nomeReal quando o cliente disser o nome e imovel quando souber qual imóvel interessa. resultado = frase curta do que aconteceu.', input_schema: { type: 'object', properties: { novoStatus: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nomeReal: { type: 'string' }, imovel: { type: 'string' }, resumo: { type: 'string' }, resultado: { type: 'string' } } } }
+  { name: 'registrar_crm', description: 'Registra no CRM um evento do cliente atual e move o card dele: novoStatus = atendimento, visita_marcada, remarcar, sem_interesse ou pausado ("em negociação" NÃO é com você: só o Djhonata move para lá, depois que o cliente vem ao escritório; cliente negociando valores pelo WhatsApp continua em atendimento). Em visita_marcada mande data (AAAA-MM-DD) e hora (HH:MM): o sistema usa para os lembretes da visita. Se o cliente cancelar ou pedir para remarcar, use remarcar (os lembretes param). Mande nomeReal quando o cliente disser o nome e imovel quando souber qual imóvel interessa. resultado = frase curta do que aconteceu.', input_schema: { type: 'object', properties: { novoStatus: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nomeReal: { type: 'string' }, imovel: { type: 'string' }, resumo: { type: 'string' }, resultado: { type: 'string' } } } },
+  { name: 'distancia', description: 'Tempo de carro e distância entre um imóvel do catálogo e um lugar de Joinville que o cliente citou (trabalho, escola, casa atual, outro bairro). Use SEMPRE antes de dizer que um imóvel fica perto ou longe de algum lugar. imovel = ref (ex.: "913") ou parte do nome da rua/residencial. lugar = o nome do lugar ou do bairro, como o cliente falou (ex.: "Hospital Regional", "Tupy", "Aventureiro").', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, lugar: { type: 'string' } }, required: ['imovel', 'lugar'] } },
+  { name: 'imoveis_perto', description: 'Lista os imóveis do catálogo mais próximos de um lugar de Joinville, com o tempo de carro de cada um. Use quando o cliente disser onde trabalha, estuda ou mora, para oferecer o que fica mais perto dali. lugar = o nome do lugar ou do bairro, como ele falou.', input_schema: { type: 'object', properties: { lugar: { type: 'string' } }, required: ['lugar'] } },
 ];
 // Só quando quem escreve é o Djhonata (WhatsApp pessoal, modo teste desligado): seção 13 do AGENTS.md
 const FERRAMENTA_DONO = { name: 'mandar_ao_cliente', description: 'Manda uma mensagem a um cliente a pedido do Djhonata, falando como o Djhonata. cliente = nome ou telefone do cliente, como o Djhonata citou (ou o do último aviso). texto = a mensagem para o cliente (pode ter [[tts:...]] para áudio e linhas com --- para separar mensagens). combinado = resumo curto da orientação do Djhonata sobre esse cliente, para seguir nas próximas conversas com ele.', input_schema: { type: 'object', properties: { cliente: { type: 'string' }, texto: { type: 'string' }, combinado: { type: 'string' } }, required: ['cliente', 'texto'] } };
@@ -403,8 +408,165 @@ function textoRecenteCliente(jid) {   // o que o cliente mandou desde a última 
 }
 function clientePediuFotos(jid) { return /\b(fotos?|imagens?)\b/i.test(textoRecenteCliente(jid)); }
 
+// ---------- geografia de Joinville (pedido do Djhonata, 12/11/2026): bairros vizinhos, tempo de carro e o que tem perto de cada imóvel ----------
+// Limites dos bairros: OpenStreetMap. Tempo de carro: OSRM, sem trânsito, com 25% de folga. "Perto" = bairros que fazem divisa ou até 10 minutos de carro.
+const GEOJOI = {"fonte":"OpenStreetMap (limites dos bairros) e OSRM (tempo de carro sem trânsito), levantado em 12/11/2026","nomes":["Adhemar Garcia","América","Anita Garibaldi","Atiradores","Aventureiro","Boa Vista","Boehmerwald","Bom Retiro","Bucarein","Centro","Comasa","Costa e Silva","Dona Francisca","Espinheiros","Floresta","Fátima","Glória","Guanabara","Iririú","Itaum","Itinga","Jardim Iririú","Jardim Paraíso","Jardim Sofia","Jarivatuba","João Costa","Marinas","Morro do Meio","Nova Brasília","Paranaguamirim","Parque Guarani","Petrópolis","Pirabeiraba Centro","Profipo","Rio Bonito","Saguaçu","Santa Catarina","Santo Antônio","São Marcos","Ulysses Guimarães","Vale Verde","Vila Cubatão","Vila Nova","Zona Industrial Norte","Zona Industrial Tupy"],"centros":[[-26.32172,-48.80179],[-26.29034,-48.85358],[-26.31735,-48.85837],[-26.31016,-48.86377],[-26.23994,-48.8096],[-26.29799,-48.82243],[-26.363,-48.82895],[-26.26059,-48.84178],[-26.31466,-48.83827],[-26.30162,-48.84624],[-26.27919,-48.80162],[-26.27472,-48.88005],[-26.20107,-48.92245],[-26.28338,-48.78092],[-26.33499,-48.85303],[-26.32382,-48.81549],[-26.29635,-48.87436],[-26.32221,-48.82874],[-26.27548,-48.82372],[-26.33297,-48.82939],[-26.38303,-48.82574],[-26.26323,-48.80711],[-26.21386,-48.82247],[-26.23862,-48.8438],[-26.33287,-48.80516],[-26.34697,-48.80971],[-26.21207,-48.79827],[-26.32491,-48.90846],[-26.33906,-48.87389],[-26.34482,-48.76258],[-26.36144,-48.80592],[-26.34903,-48.83065],[-26.21295,-48.90568],[-26.3689,-48.83927],[-26.16533,-48.90827],[-26.28626,-48.83865],[-26.36711,-48.84874],[-26.26899,-48.85673],[-26.31327,-48.88411],[-26.32684,-48.79209],[-26.21624,-48.86471],[-26.21742,-48.79923],[-26.28445,-48.90571],[-26.24245,-48.86559],[-26.29262,-48.80818]],"vizinhos":[[15,24,39],[3,9,11,16,35,37],[3,8,9,14,28,38],[1,2,9,16,38],[7,18,21,26,41,43],[8,9,10,17,18,35,44],[20,30,31,33,36],[4,18,35,37,43],[2,5,9,14,17,19,35],[1,2,3,5,8,35],[5,18,21,44],[1,16,37,42,43],[32],[],[2,8,19,28,31,36,38],[0,17,19,24],[1,3,11,38,42],[5,8,15,19],[4,5,7,10,21,35],[8,14,15,17,24,25,31],[6,30,33,36],[4,10,18],[26,40,43],[40,43],[0,15,19,25,29,39],[19,24,29,30,31],[4,22,40,41,43],[28],[2,14,27,36,38],[24,25,30,39],[6,20,25,29,31],[6,14,19,25,30,36],[12,34,40,43],[6,20,36],[32,40],[1,5,7,8,9,18,37],[6,14,20,28,31,33],[1,7,11,35,43],[2,3,14,16,28,42],[0,24,29],[22,23,26,32,34,43],[4,26],[11,16,38,43],[4,7,11,22,23,26,32,37,40,42],[5,10]],"seg":[[0,784,687,755,1206,628,660,1049,453,668,818,1106,1594,960,671,256,925,401,965,369,859,947,1361,1263,232,427,1495,1174,961,682,605,552,1410,790,1949,760,861,922,1023,178,1764,1483,1192,1464,697],[808,0,329,252,823,576,777,438,354,201,751,412,972,893,592,673,231,458,435,514,980,677,954,651,736,729,1088,864,650,1206,939,634,793,860,1327,222,834,311,542,942,1147,1076,524,847,646],[685,373,0,140,1085,542,605,705,262,271,732,563,1022,875,282,551,389,351,697,391,808,861,1221,918,614,556,1356,601,388,1034,767,462,902,651,1376,491,609,509,417,819,1298,1344,620,997,612],[754,286,78,0,1008,597,674,565,331,195,787,424,991,930,360,620,250,420,620,460,877,862,1082,779,683,625,1216,612,399,1103,836,532,804,720,1345,414,678,370,335,888,1158,1204,542,858,667],[1458,846,1079,1001,0,857,1427,709,1004,916,683,885,1258,917,1249,1324,964,1109,506,1164,1630,371,344,452,1386,1379,459,1566,1400,1857,1589,1284,1010,1510,1640,679,1491,674,1274,1592,1040,447,1256,889,883],[753,410,501,506,732,0,743,675,264,308,344,731,1283,486,601,596,550,360,492,487,946,473,887,888,710,700,1022,988,775,1178,911,600,1036,826,1646,385,843,547,837,887,1390,1010,843,1089,224],[657,810,649,779,1334,756,0,1075,529,688,946,1064,1436,1088,576,534,894,450,991,397,271,1075,1489,1289,544,480,1624,1074,860,716,258,185,1316,226,1791,786,297,947,879,763,1790,1612,1034,1490,825],[1151,460,692,615,586,851,1119,0,697,585,815,499,935,958,942,1016,577,801,500,857,1322,742,624,321,1079,1071,758,1227,1013,1549,1282,977,688,1202,1318,470,1184,287,888,1285,889,746,870,566,876],[545,331,237,301,899,340,514,596,0,215,529,653,1144,672,337,411,472,196,512,251,717,658,1054,810,473,466,1188,724,510,944,676,371,957,597,1498,307,579,468,572,679,1311,1176,742,1011,409],[651,185,333,256,832,419,619,471,197,0,609,512,1072,751,442,516,330,301,444,357,822,686,987,684,579,571,1121,836,622,1049,782,477,832,702,1426,239,684,344,590,785,1187,1109,623,886,488],[1042,699,790,795,625,325,1032,630,553,597,0,918,1434,251,891,885,839,649,384,777,1235,366,780,843,999,989,914,1277,1064,1467,1200,889,1187,1115,1817,584,1133,698,1126,1176,1411,902,1132,1089,350],[1087,404,481,403,905,856,1056,437,634,481,866,0,789,1008,763,953,334,738,551,793,1259,793,943,637,1016,1008,1077,919,785,1486,1219,914,636,1095,1143,407,1054,240,582,1221,991,1065,470,690,925],[1655,993,985,957,1265,1424,1441,1001,1202,1023,1463,713,0,1605,1128,1521,788,1306,1148,1361,1601,1390,1296,880,1584,1527,1420,1158,1105,2005,1621,1433,262,1416,666,1004,1374,759,902,1789,825,1408,861,1023,1493],[1197,854,946,951,782,480,1187,787,709,753,232,1075,1592,0,1046,1041,995,805,542,932,1390,523,937,1000,1155,1145,1072,1433,1219,1623,1355,1045,1344,1270,1974,741,1288,856,1281,1331,1568,1060,1287,1246,506],[676,661,319,456,1254,690,478,947,405,511,879,775,1147,1022,0,542,605,406,866,382,643,1008,1409,1160,591,527,1543,646,430,1005,658,371,1027,453,1501,661,412,820,572,810,1532,1531,745,1314,759],[202,637,543,607,1059,481,534,902,306,521,670,958,1450,813,537,0,777,254,817,235,733,800,1214,1116,199,313,1348,1029,816,729,552,426,1263,664,1804,612,735,774,878,336,1617,1336,1048,1316,550],[899,249,278,201,989,668,868,529,446,267,858,327,778,1000,560,765,0,550,601,605,1071,843,1045,742,828,820,1179,773,581,1298,1031,726,659,892,1133,388,850,333,348,1033,1122,1167,330,821,737],[462,502,377,472,924,346,452,767,171,386,535,823,1284,678,394,305,642,0,682,197,655,664,1079,980,419,409,1213,864,650,887,620,309,1128,535,1638,477,606,639,713,596,1482,1201,882,1181,415],[1068,491,770,692,485,350,1046,344,579,535,315,633,1149,457,869,911,672,675,0,783,1249,339,640,558,1006,998,774,1263,1049,1476,1209,904,902,1129,1532,299,1111,413,983,1202,1126,762,965,803,376],[372,548,371,501,1066,488,350,813,267,410,678,870,1278,820,302,238,689,188,729,0,553,807,1221,1027,301,303,1356,838,622,779,519,208,1158,433,1632,524,504,685,706,506,1528,1344,876,1228,557],[905,1025,850,929,1549,971,312,1290,744,903,1160,1150,1522,1303,751,777,979,665,1205,611,0,1289,1704,1503,792,728,1838,1159,945,964,506,399,1402,317,1876,1000,385,1162,964,1012,1907,1826,1120,1704,1040],[1251,665,944,866,374,591,1220,519,798,709,377,807,1323,610,1043,1117,847,902,274,957,1423,0,597,704,1180,1172,731,1437,1223,1650,1383,1078,1076,1303,1706,473,1285,587,1157,1385,1293,719,1139,978,616],[1555,864,1097,1019,337,974,1524,727,1101,989,899,903,1275,1081,1346,1420,981,1205,624,1261,1727,594,0,412,1483,1476,382,1584,1417,1953,1686,1381,1028,1607,1658,796,1588,692,1292,1689,967,370,1274,906,1000],[1260,569,802,724,450,960,1229,432,807,694,925,609,885,1067,1052,1126,687,911,610,966,1432,708,415,0,1189,1181,539,1289,1123,1659,1392,1087,637,1312,1267,579,1294,397,997,1394,588,527,979,612,986],[224,768,616,746,1203,625,572,1033,450,654,815,1090,1523,957,580,253,909,398,949,298,770,944,1358,1247,0,288,1492,1103,890,627,516,429,1394,668,1878,744,739,906,952,295,1748,1480,1121,1448,694],[421,753,575,705,1250,672,512,1018,472,614,862,1074,1482,1004,506,302,893,393,933,263,715,991,1405,1231,288,0,1540,1043,826,679,503,356,1362,595,1837,728,665,890,911,533,1733,1528,1080,1432,742],[1690,999,1232,1154,443,1109,1659,862,1236,1124,1034,1038,1410,1216,1481,1555,1116,1340,759,1396,1862,729,378,536,1618,1611,0,1719,1552,2088,1821,1516,1163,1742,1793,931,1723,827,1427,1824,1124,147,1409,1041,1135],[1172,930,603,644,1569,1029,1001,1209,749,839,1219,944,1162,1362,688,1038,734,838,1210,878,1166,1348,1607,1301,1101,1043,1741,0,394,1521,1182,949,1042,977,1516,1005,935,1014,602,1306,1547,1729,574,1383,1099],[952,710,383,424,1377,809,763,989,528,619,999,758,1130,1141,450,818,567,617,990,658,928,1128,1505,1203,881,823,1640,391,0,1301,943,729,1010,738,1484,785,696,794,381,1086,1515,1628,707,1282,878],[652,1238,1061,1191,1706,1128,727,1503,953,1099,1318,1559,1967,1460,991,756,1378,878,1418,748,925,1447,1861,1717,619,692,1995,1528,1311,0,564,828,1848,869,2322,1213,940,1375,1396,628,2218,1983,1565,1917,1197],[626,970,793,923,1494,916,258,1235,689,832,1106,1239,1611,1248,724,546,1069,610,1151,481,457,1235,1649,1449,556,492,1783,1248,1035,555,0,360,1491,401,1965,946,472,1108,1054,602,1950,1771,1209,1650,985],[545,659,498,628,1183,605,189,924,378,537,794,966,1338,937,425,411,796,299,839,246,392,924,1338,1137,426,362,1472,965,749,827,370,0,1218,272,1693,634,343,796,781,672,1639,1460,936,1338,674],[1443,752,882,804,1024,1212,1412,760,990,877,1222,683,274,1364,1129,1309,767,1094,907,1149,1602,1149,1055,639,1372,1364,1179,1159,1107,1842,1575,1270,0,1417,656,763,1376,518,904,1577,584,1167,862,782,1281],[786,880,675,754,1423,845,219,1164,618,730,1035,975,1346,1177,560,652,804,539,1080,486,312,1164,1578,1378,667,603,1713,984,770,858,400,274,1227,0,1701,875,177,1036,789,906,1731,1701,945,1579,914],[1713,1063,1042,1014,1362,1482,1498,1097,1259,1080,1559,771,368,1701,1185,1579,846,1364,1244,1419,1658,1486,1392,977,1642,1585,1516,1215,1163,2063,1679,1491,358,1474,0,1100,1432,856,960,1847,863,1504,918,1120,1551],[819,274,512,434,646,588,788,388,366,277,574,479,996,716,611,685,430,470,258,525,991,500,801,601,748,740,935,1005,791,1218,951,646,748,871,1379,0,853,260,741,953,1103,923,723,802,634],[858,900,553,632,1496,917,292,1179,691,802,1107,853,1225,1250,547,724,683,612,1152,558,382,1236,1651,1393,739,675,1785,862,649,930,472,346,1105,173,1579,947,0,984,667,978,1610,1773,823,1472,987],[946,255,478,400,761,714,915,282,492,380,725,286,764,867,737,812,363,597,409,652,1118,651,799,496,874,867,933,1012,799,1345,1077,772,516,998,1146,265,979,0,673,1080,870,921,656,570,784],[1003,647,326,361,1369,860,840,926,579,556,1050,695,1067,1192,527,869,504,668,981,709,1000,1179,1442,1140,932,874,1577,597,384,1352,1021,780,947,815,1421,775,774,731,0,1137,1452,1565,644,1219,929],[181,927,831,898,1349,771,752,1193,596,812,961,1249,1737,1103,814,399,1068,544,1108,512,950,1090,1504,1406,300,532,1639,1317,1104,665,589,674,1553,894,2092,903,965,1065,1166,0,1908,1627,1335,1607,841],[1804,1113,1243,1165,1046,1532,1773,1004,1350,1238,1497,1044,832,1639,1524,1670,1127,1455,1181,1510,1976,1305,968,597,1733,1725,1136,1554,1501,2203,1936,1630,584,1812,1129,1123,1771,879,1298,1938,0,1124,1257,1143,1557],[1642,951,1184,1106,395,1061,1611,814,1188,1076,986,990,1362,1168,1433,1507,1068,1292,711,1348,1814,681,330,488,1570,1563,99,1671,1504,2040,1773,1468,1115,1694,1745,883,1675,779,1379,1776,1076,0,1361,993,1087],[1267,617,646,568,1270,1036,1122,859,814,634,1226,464,952,1368,809,1133,400,918,969,973,1282,1211,1308,1002,1196,1188,1442,528,787,1666,1302,1094,832,1097,1306,755,1056,661,553,1401,1337,1430,0,1084,1105],[1470,779,942,864,906,1170,1439,642,1017,904,1135,743,1004,1277,1224,1336,826,1121,820,1176,1642,1062,944,638,1399,1391,1079,1313,1262,1869,1602,1297,757,1522,1387,790,1504,578,1136,1604,1111,1067,1046,0,1196],[923,580,671,676,657,205,913,661,434,478,269,901,1453,411,771,766,720,530,416,657,1116,398,812,875,880,870,946,1158,944,1348,1081,770,1205,996,1816,555,1013,717,1007,1057,1443,934,1013,1120,0]]};
+const GEO_PERTO_MIN = 10, GEO_FOLGA = 1.25, GEO_ARQ = path.join(DADOS, 'geo.json');
+const GEO_CAB = { 'user-agent': 'euro-ponte/1.0 (atendimento imobiliario em Joinville)', accept: 'application/json' };
+let geo = lerJson(GEO_ARQ, null) || { imoveis: {}, lugares: {} };
+let geoUltima = 0, geoErro = '', geoRodando = false;
+function geoSalvar() { try { gravarJson(GEO_ARQ, geo); } catch (e) { } }
+function geoChaveBairro(s) { return semAcento(s).replace(/\bjd\.?\s/g, 'jardim ').replace(/\bpq\.?\s/g, 'parque ').replace(/\bulisses\b/, 'ulysses').replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+const GEO_IDX = {}; GEOJOI.nomes.forEach((n, i) => { GEO_IDX[geoChaveBairro(n)] = i; }); GEO_IDX['pirabeiraba'] = GEO_IDX['pirabeiraba centro'];
+function geoBairro(s) {   // índice do bairro citado no texto (o nome mais longo que aparecer), ou -1
+  const t = ' ' + geoChaveBairro(s) + ' '; let melhor = -1, tam = 0;
+  for (const k in GEO_IDX) if (t.includes(' ' + k + ' ') && k.length > tam) { melhor = GEO_IDX[k]; tam = k.length; }
+  return melhor;
+}
+const geoMin = (seg) => Math.max(1, Math.round(seg * GEO_FOLGA / 60));
+function geoMinBairros(a, b) { return a === b ? 0 : geoMin((GEOJOI.seg[a][b] + GEOJOI.seg[b][a]) / 2); }
+function geoBairrosPerto(a) {   // quem faz divisa e quem, sem fazer divisa, fica a até 10 min de carro
+  const div = GEOJOI.vizinhos[a], per = [];
+  GEOJOI.nomes.forEach((n, b) => { if (b !== a && !div.includes(b) && geoMinBairros(a, b) <= GEO_PERTO_MIN) per.push(b); });
+  return { divisa: div.map(i => GEOJOI.nomes[i]), perto: per.sort((x, y) => geoMinBairros(a, x) - geoMinBairros(a, y)).map(i => GEOJOI.nomes[i]) };
+}
+function geoSaoPerto(a, b) { return a >= 0 && b >= 0 && (a === b || GEOJOI.vizinhos[a].includes(b) || geoMinBairros(a, b) <= GEO_PERTO_MIN); }
+function geoTabelaTexto() {
+  return GEOJOI.nomes.map((n, a) => { const p = geoBairrosPerto(a); return `- ${n}: ${p.divisa.length ? 'faz divisa com ' + p.divisa.join(', ') : 'sem divisa mapeada'}${p.perto.length ? '; até 10 min de carro: ' + p.perto.join(', ') : ''}`; }).join('\n');
+}
+function geoHav(a, b, c, d) { const R = 6371000, p = Math.PI / 180, x = Math.sin((c - a) * p / 2) ** 2 + Math.cos(a * p) * Math.cos(c * p) * Math.sin((d - b) * p / 2) ** 2; return Math.round(2 * R * Math.asin(Math.sqrt(x))); }
+const geoDist = (m) => m >= 1000 ? String(Math.round(m / 100) / 10).replace('.', ',') + ' km' : m + ' m';
+async function geoBuscar(url, opt) {   // no máximo 1 chamada por segundo (regra de uso dos serviços do OpenStreetMap)
+  const espera = geoUltima + 1100 - Date.now(); if (espera > 0) await dorme(espera); geoUltima = Date.now();
+  const r = await fetch(url, Object.assign({ headers: GEO_CAB, signal: AbortSignal.timeout(30000) }, opt || {}));
+  if (!r.ok) throw new Error('mapa respondeu ' + r.status);
+  return r.json();
+}
+async function geoNominatim(params) { const j = await geoBuscar('https://nominatim.openstreetmap.org/search?' + params + '&format=jsonv2&limit=3&addressdetails=1&countrycodes=br&viewbox=-49.2,-26.05,-48.65,-26.5&bounded=1'); return Array.isArray(j) ? j : []; }
+function geoEnderecoDaFicha(pasta) {   // "- Endereço: Rua X, 576, Bairro" -> { rua, numero, bairro (índice), texto }
+  const m = /-\s*Endere[çc]o:\s*([^\n]+)/i.exec(lerTexto(path.join(pasta, 'ficha.md'))); if (!m) return null;
+  const p = m[1].split(',').map(x => x.trim()).filter(Boolean); if (!p.length) return null;
+  let ib = -1; for (let i = p.length - 1; i >= 1 && ib < 0; i--) ib = geoBairro(p[i]);
+  if (ib < 0) ib = geoBairro(pasta.replace(/\(ref.*$/, '').split(' - ').slice(1).join(' '));
+  return { rua: p[0].replace(/\.+$/, '').trim(), numero: ((p.slice(1).find(x => /^\d{1,5}\b/.test(x)) || '').match(/^\d+/) || [''])[0], bairro: ib, texto: m[1].trim() };
+}
+async function geoImovel(pasta, forcar) {   // ponto do imóvel no mapa (fica guardado). aprox = só o centro do bairro, sem o endereço exato
+  const g = geo.imoveis[pasta]; if (g && g.lat && !forcar) return g;
+  const e = geoEnderecoDaFicha(pasta); if (!e) return null;
+  const centro = e.bairro >= 0 ? GEOJOI.centros[e.bairro] : null, nomeB = e.bairro >= 0 ? GEOJOI.nomes[e.bairro] : '';
+  const serve = (x) => x && x.lat && (!centro || geoHav(Number(x.lat), Number(x.lon), centro[0], centro[1]) <= 5000);
+  let x = null, falhou = false;
+  try {
+    x = (await geoNominatim('street=' + encodeURIComponent((e.numero ? e.numero + ' ' : '') + e.rua) + '&city=Joinville&state=' + encodeURIComponent('Santa Catarina'))).find(serve);
+    if (!x) x = (await geoNominatim('q=' + encodeURIComponent(e.rua + (nomeB ? ', ' + nomeB : '') + ', Joinville'))).find(serve);
+  } catch (err) { geoErro = 'endereço: ' + err.message; falhou = true; }
+  if (!x && !centro) return null;
+  const novo = Object.assign({}, g || {}, x ? { lat: Number(x.lat), lon: Number(x.lon), aprox: false } : { lat: centro[0], lon: centro[1], aprox: true }, { bairro: nomeB, endereco: e.texto, em: Date.now() });
+  if (!falhou || !g) { geo.imoveis[pasta] = novo; geoSalvar(); }   // se o mapa falhou e já havia algo guardado, não troca
+  return novo;
+}
+const GEO_TIPOS = [   // [chave do mapa, valores, como falar, raio máximo em metros em linha reta]
+  ['amenity', 'school', 'escola', 1500], ['amenity', 'kindergarten', 'creche', 1500], ['amenity', 'clinic|doctors', 'posto de saúde', 1500], ['amenity', 'hospital', 'hospital', 3000],
+  ['shop', 'supermarket', 'supermercado', 2000], ['shop', 'convenience', 'mercado', 1000], ['shop', 'bakery', 'padaria', 1000], ['amenity', 'pharmacy', 'farmácia', 1500],
+  ['leisure', 'park', 'praça', 1200], ['amenity', 'fuel', 'posto de combustível', 1500], ['highway', 'bus_stop', 'ponto de ônibus', 600]];
+async function geoEntorno(pasta) {   // o mais próximo de cada tipo; distância a pé aproximada (linha reta + 30%, arredondada de 50 em 50 m)
+  const g = await geoImovel(pasta); if (!g || g.aprox) return null;   // sem o ponto exato não dá para dizer o que tem perto
+  const a = `around:1500,${g.lat},${g.lon}`;
+  const q = `[out:json][timeout:40];(nwr(${a})[amenity~"^(school|kindergarten|clinic|doctors|pharmacy|fuel)$"];nwr(around:3000,${g.lat},${g.lon})[amenity=hospital];nwr(around:2000,${g.lat},${g.lon})[shop=supermarket];nwr(${a})[shop~"^(convenience|bakery)$"];nwr(${a})[leisure=park];node(around:600,${g.lat},${g.lon})[highway=bus_stop];);out center tags 300;`;
+  let j = null;
+  for (const base of ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) {
+    try { j = await geoBuscar(base, { method: 'POST', headers: Object.assign({ 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8' }, GEO_CAB), body: 'data=' + encodeURIComponent(q), signal: AbortSignal.timeout(60000) }); break; } catch (e) { geoErro = 'entorno: ' + e.message; }
+  }
+  if (!j || !Array.isArray(j.elements)) return null;
+  const itens = [];
+  for (const [chave, vals, rotulo, raio] of GEO_TIPOS) {
+    const re = new RegExp('^(' + vals + ')$');
+    const c = j.elements.map(el => { const t = el.tags || {}, la = el.lat || (el.center || {}).lat, lo = el.lon || (el.center || {}).lon; return re.test(t[chave] || '') && la ? { nome: String(t.name || '').trim(), m: geoHav(g.lat, g.lon, la, lo) } : null; })
+      .filter(x => x && x.m <= raio && (x.nome || chave === 'highway')).sort((x, y) => x.m - y.m)[0];
+    if (c) itens.push({ tipo: rotulo, nome: chave === 'highway' ? '' : c.nome, m: Math.max(50, Math.round(c.m * 1.3 / 50) * 50) });
+  }
+  const at = geo.imoveis[pasta] || g; at.entorno = itens; at.entornoEm = Date.now(); geo.imoveis[pasta] = at; geoSalvar();
+  return itens;
+}
+const geoItensTexto = (itens) => (itens || []).map(i => i.nome ? `${semAcento(i.nome).startsWith(semAcento(i.tipo).split(' ')[0]) ? '' : i.tipo + ' '}${i.nome} (a uns ${geoDist(i.m)})` : `${i.tipo} a uns ${geoDist(i.m)}`).join('; ');
+function geoEntornoTexto(pasta) {   // só entra no atendimento o que o Djhonata aprovou (ou escreveu) no CRM
+  const g = geo.imoveis[pasta]; if (!g || !g.aprovado) return '';
+  return g.revisado || geoItensTexto(g.entorno);
+}
+async function geoLugar(texto) {   // lugar citado pelo cliente -> { nome, lat, lon, bairro, ehBairro, aprox } (guarda o que achou por 90 dias)
+  const k = semAcento(texto).replace(/\s+/g, ' ').trim(); if (k.length < 3) return null;
+  const guardado = geo.lugares[k]; if (guardado && Date.now() - (guardado.em || 0) < 90 * 864e5) return guardado.lat ? guardado : null;
+  const semCidade = String(texto).replace(/\b(em\s+)?joinville\b|\bsc\b|\bbairro\b/ig, ' ').replace(/\s+/g, ' ').trim(), exato = GEO_IDX[geoChaveBairro(semCidade)], ib = geoBairro(semCidade);
+  const centroDe = (i, aprox) => ({ nome: (aprox ? semCidade + ' (' : 'bairro ') + GEOJOI.nomes[i] + (aprox ? ', pelo centro do bairro)' : ''), lat: GEOJOI.centros[i][0], lon: GEOJOI.centros[i][1], bairro: GEOJOI.nomes[i], ehBairro: !aprox, aprox: !!aprox });
+  let r = null;
+  if (exato !== undefined) r = centroDe(exato, false);
+  else {
+    const achar = async (q) => { const x = (await geoNominatim('q=' + encodeURIComponent(q + ', Joinville')))[0]; if (!x) return null; const b = geoBairro(((x.address || {}).suburb || '') + ' ' + ((x.address || {}).neighbourhood || '') + ' ' + ((x.address || {}).city_district || '')); return { nome: String(x.display_name || q).split(',').slice(0, 2).join(',').trim(), lat: Number(x.lat), lon: Number(x.lon), bairro: b >= 0 ? GEOJOI.nomes[b] : '' }; };
+    r = await achar(semCidade);
+    if (!r && ib >= 0) {   // "hospital regional no boa vista": tenta sem o bairro; se nem assim, vale o centro do bairro citado
+      const semBairro = semAcento(semCidade).replace(geoChaveBairro(GEOJOI.nomes[ib]), ' ').replace(/\b(no|na|do|da|de|em|perto|proximo|ao|a|o)\s*$/g, ' ').replace(/\s+/g, ' ').trim();
+      if (semBairro.length >= 4) r = await achar(semBairro);
+      if (!r) r = centroDe(ib, true);
+    }
+  }
+  geo.lugares[k] = Object.assign({ em: Date.now() }, r || {}); geoSalvar();
+  return r;
+}
+async function geoTempos(orig, dests) {   // tempo de carro de um ponto até vários (um pedido só ao roteador)
+  const pts = [orig].concat(dests).map(p => Number(p.lon).toFixed(5) + ',' + Number(p.lat).toFixed(5)).join(';');
+  const j = await geoBuscar('https://router.project-osrm.org/table/v1/driving/' + pts + '?sources=0&annotations=duration,distance');
+  if (!j || j.code !== 'Ok' || !j.durations) throw new Error('roteador: ' + ((j && j.code) || 'sem resposta'));
+  return dests.map((_, i) => ({ min: geoMin(j.durations[0][i + 1]), km: Math.round(((j.distances || [[]])[0][i + 1] || 0) / 100) / 10 }));
+}
+function geoRef(pasta) { return (/\(ref (\d+)\)/.exec(pasta) || /Refer[êe]ncia no sistema:\s*(\d+)/i.exec(lerTexto(path.join(pasta, 'ficha.md'))) || [])[1] || ''; }
+async function geoRotina(max = 12) {   // aos poucos: localiza no mapa os imóveis novos e levanta o que tem perto de cada um
+  if (geoRodando) return 0; geoRodando = true; let n = 0;
+  try {
+    for (const p of pastasImoveis()) {
+      if (n >= max) break;
+      const g = geo.imoveis[p];
+      if (g && g.lat && !g.aprox && g.entornoEm) continue;
+      if (g && g.tentativa && Date.now() - g.tentativa < 12 * 3600e3) continue;
+      if (!lerTexto(path.join(p, 'ficha.md'))) continue;
+      n++;
+      try { const x = await geoImovel(p, !!(g && g.aprox)); if (x && !x.aprox) await geoEntorno(p); } catch (e) { geoErro = e.message; }
+      geo.imoveis[p] = Object.assign(geo.imoveis[p] || {}, { tentativa: Date.now() });
+    }
+    if (n) { geoSalvar(); log('geografia: conferidos', n, 'imóveis; no mapa:', Object.values(geo.imoveis).filter(x => x.lat && !x.aprox).length, geoErro ? '(último erro: ' + geoErro + ')' : ''); }
+  } finally { geoRodando = false; }
+  return n;
+}
+setInterval(() => geoRotina().catch(e => log('geo', e.message)), 10 * 60e3);
+setTimeout(() => geoRotina().catch(e => log('geo', e.message)), 90e3);
+
 async function executar(nome, entrada, ctx) {
   try {
+    if (nome === 'distancia') {
+      const p = acharPasta(entrada.imovel || ''); if (!p) return 'Imóvel não encontrado no catálogo. Confira a ref no CATALOGO.md.';
+      const NAO_SEI = 'Não consegui calcular o trajeto agora. NÃO diga que é perto nem que é longe: diga que vai confirmar o tempo de trajeto e siga o atendimento.';
+      let g = null, l = null; try { g = await geoImovel(p); l = await geoLugar(entrada.lugar || ''); } catch (e) { log('geo', e.message); return NAO_SEI; }
+      if (!g) return NAO_SEI;
+      if (!l) return `Não achei "${entrada.lugar}" no mapa de Joinville. Pergunte ao cliente em qual bairro ou rua fica e chame de novo com essa informação. Sem isso, não diga que é perto nem longe.`;
+      let t = null; try { t = (await geoTempos(l, [g]))[0]; } catch (e) { log('geo', e.message); }
+      const d = dadosDaFicha(p), ib = geoBairro(g.bairro || ''), il = geoBairro(l.bairro || '');
+      if (!t) { if (ib < 0 || il < 0) return NAO_SEI; t = { min: geoMinBairros(ib, il), km: 0, estimado: true }; }
+      const divisa = l.ehBairro && ib >= 0 && il >= 0 && (ib === il || GEOJOI.vizinhos[ib].includes(il)), perto = t.min <= GEO_PERTO_MIN || divisa;
+      log('distância', d.nome, '->', l.nome, t.min, 'min', perto ? 'perto' : 'não é perto');
+      return `${d.nome} (${g.bairro || 'Joinville'}) até ${l.nome}${l.bairro && !l.ehBairro && !l.aprox ? ' (' + l.bairro + ')' : ''}: uns ${t.min} min de carro${t.km ? ', ' + String(t.km).replace('.', ',') + ' km' : ''}, fora do horário de pico${t.estimado || g.aprox || l.aprox ? ' (estimativa pelo bairro, sem o endereço exato)' : ''}. `
+        + (perto ? `PODE dizer que é perto${divisa && ib !== il ? ' (os bairros fazem divisa)' : ''}, falando o tempo.` : `NÃO é perto: não use "perto", "pertinho" nem "na região". Diga o tempo real ("fica a uns ${t.min} minutos de carro") e, se fizer sentido para o cliente, veja com imoveis_perto o que existe mais próximo desse lugar.`);
+    }
+    if (nome === 'imoveis_perto') {
+      let l = null; try { l = await geoLugar(entrada.lugar || ''); } catch (e) { log('geo', e.message); return 'Não consegui consultar o mapa agora. Pergunte o bairro do lugar e ofereça os imóveis desse bairro e dos bairros que aparecem com ele na tabela BAIRROS PERTO.'; }
+      if (!l) return `Não achei "${entrada.lugar}" no mapa de Joinville. Pergunte ao cliente em qual bairro fica e use a tabela BAIRROS PERTO.`;
+      const cand = pastasImoveis().map(p => ({ p, g: geo.imoveis[p] })).filter(x => x.g && x.g.lat).map(x => Object.assign(x, { reta: geoHav(l.lat, l.lon, x.g.lat, x.g.lon) })).sort((a, b) => a.reta - b.reta).slice(0, 24);
+      if (!cand.length) return 'Os imóveis ainda não foram localizados no mapa. Use a tabela BAIRROS PERTO com o bairro do lugar' + (l.bairro ? ' (' + l.bairro + ')' : '') + '.';
+      let tempos = null; try { tempos = await geoTempos(l, cand.map(x => x.g)); } catch (e) { log('geo', e.message); }
+      const lista = cand.map((x, i) => Object.assign(x, { t: tempos ? tempos[i] : { min: geoMin(x.reta * 1.4 / 8.3), km: Math.round(x.reta * 1.4 / 100) / 10, est: true } })).sort((a, b) => a.t.min - b.t.min).slice(0, 8);
+      log('imóveis perto de', l.nome, lista.slice(0, 3).map(x => x.p.slice(0, 30) + ' ' + x.t.min + 'min').join(' | '));
+      return `Lugar: ${l.nome}${l.bairro && !l.ehBairro && !l.aprox ? ' (' + l.bairro + ')' : ''}. Imóveis mais próximos, por tempo de carro fora do horário de pico${tempos ? '' : ' (estimado pela distância)'}:\n`
+        + lista.map(x => { const d = dadosDaFicha(x.p), r = geoRef(x.p); return `- ${d.nome}${r ? ' (ref ' + r + ')' : ''}, ${x.g.bairro || 'Joinville'}: ${x.t.min} min${x.t.km ? ' (' + String(x.t.km).replace('.', ',') + ' km)' : ''}${x.g.aprox ? ', pelo centro do bairro' : ''} · ${d.preco ? brl(d.preco) : 'preço na ficha'} · ${d.pronto ? 'pronto' : d.entrega ? 'entrega ' + String(d.entrega.mes).padStart(2, '0') + '/' + d.entrega.ano : 'entrega na ficha'}`; }).join('\n')
+        + `\nOfereça só os que cabem no que o cliente pediu (valor, tipo, pronto ou em construção), começando pelo mais próximo, e diga o tempo de carro. Só chame de "perto" os de até ${GEO_PERTO_MIN} min.`;
+    }
     if (nome === 'simular_fluxo') {
       const r = simularFluxo(entrada);
       if (r.erro) return r.erro;
@@ -428,7 +590,10 @@ async function executar(nome, entrada, ctx) {
       const guia = video
         ? `OFERTA DESTE IMÓVEL: mande o VÍDEO "${video}" com enviar_arquivo, com a descrição pronta (seção "Descrição pronta para o WhatsApp") como legenda, numa mensagem só. Não mande fotos agora; mais fotos só se o cliente pedir.`
         : `OFERTA DESTE IMÓVEL (sem vídeo): mande a foto 1 (fachada) "${foto1 || 'primeira foto da ficha'}" com enviar_arquivo, com a descrição pronta como legenda, numa mensagem só. Mais fotos só se o cliente pedir.`;
-      return `Pasta: ${p}\n${guia}\nArquivos de mídia na pasta: ${arqs.map(a => `${p}/${a}`).join(' | ') || 'nenhum (as fotos são os links da ficha)'}\n\n${ficha}`;
+      const ge = geoEnderecoDaFicha(p), entornoTxt = geoEntornoTexto(p), bp = ge && ge.bairro >= 0 ? geoBairrosPerto(ge.bairro) : null;
+      const local = (bp ? `\nLOCALIZAÇÃO: bairro ${GEOJOI.nomes[ge.bairro]}. Faz divisa com: ${bp.divisa.join(', ') || 'nenhum mapeado'}.${bp.perto.length ? ' Até 10 min de carro: ' + bp.perto.join(', ') + '.' : ''} Só estes bairros podem ser chamados de "perto"; para qualquer outro lugar use a ferramenta distancia.` : '')
+        + (entornoTxt ? `\nPERTO DESTE IMÓVEL (conferido no mapa e aprovado pelo Djhonata; distâncias aproximadas a pé): ${entornoTxt}.` : '\nPERTO DESTE IMÓVEL: ainda sem informação conferida. Se o cliente perguntar o que tem perto, diga que vai confirmar.');
+      return `Pasta: ${p}\n${guia}${local}\nArquivos de mídia na pasta: ${arqs.map(a => `${p}/${a}`).join(' | ') || 'nenhum (as fotos são os links da ficha)'}\n\n${ficha}`;
     }
     if (nome === 'enviar_arquivo') {
       let caminho = String(entrada.caminho || ''); const legenda = entrada.legenda || '';
@@ -2010,12 +2175,13 @@ function fuClienteFalou(jid, telefone, ts) {   // o cliente escreveu: respondeu 
   }
 }
 
+const NO_AR_DESDE = Date.now();
 function estadoPublico() {
   const uso = lerJson(path.join(DADOS, 'uso.json'), {});
   const hoje = uso[agoraSP().toISOString().slice(0, 10)] || null;
   return {
     conectado, numero: meuNumero, qr: !!ultimoQR, whatsDesligado: !!estado.whatsDesligado, iniciando,
-    assistente: !!estado.ativo, horario: `${HORA_INI}–${HORA_FIM}`, dentroDoHorario: dentroDoHorario(),
+    assistente: !!estado.ativo, horario: `${HORA_INI}–${HORA_FIM}`, dentroDoHorario: dentroDoHorario(), versao: VERSAO, noArDesde: NO_AR_DESDE,
     regras: ARQS_REGRAS.map(f => ({ arquivo: f, ok: !!lerTexto(f) })), imoveis: pastasImoveis().length, bloqueados: lerBloqueados().size,
     usoHoje: hoje, modelo: MODELO, teste: estado.teste && estado.teste.ativo ? (estado.teste.numeros || []) : [],
     voz: !!ELEVEN_KEY, transcricao: ELEVEN_KEY ? 'ElevenLabs' : GEMINI_KEY ? 'Gemini' : '',
@@ -2397,6 +2563,7 @@ async function conectarWhatsApp() {
 
 // ---------- servidor web: painel (espelho) + recebimento do catálogo ----------
 function tokenOk(u) { const t = u.searchParams.get('t') || ''; return TOKEN && t.length === TOKEN.length && crypto.timingSafeEqual(Buffer.from(t), Buffer.from(TOKEN)); }
+let VERSAO = ''; try { VERSAO = crypto.createHash('sha1').update(fs.readFileSync(path.join(BASE, 'index.js'))).digest('hex'); } catch (e) { }   // impressão digital do programa que está rodando (o CRM e o PC conferem se a atualização chegou)
 const SESSAO = crypto.createHmac('sha256', TOKEN || 'sem-token').update('painel-v2').digest('hex');
 function cookies(req) { const o = {}; for (const p of String(req.headers.cookie || '').split(';')) { const i = p.indexOf('='); if (i > 0) o[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim()); } return o; }
 function logado(req, u) { const c = cookies(req).ep || ''; return (c.length === SESSAO.length && crypto.timingSafeEqual(Buffer.from(c), Buffer.from(SESSAO))) || tokenOk(u); }
@@ -2759,6 +2926,20 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           let p = {}; try { p = JSON.parse(b.texto || '{}'); } catch (e) { }
           (async () => { if (p.status) await classificarTudo(p.compradores || [], true, p); await etiquetarTudo(); })().catch(e => log('etiquetar', e.message));
           await dorme(1500);
+        }
+        else if (ac === 'geo') {   // CRM: o que o mapa achou perto de cada imóvel, para o Djhonata revisar e aprovar. texto = "atualizar" adianta a busca
+          if (b.texto === 'atualizar') geoRotina(30).catch(e => log('geo', e.message));
+          const lista = pastasImoveis().filter(p => lerTexto(path.join(p, 'ficha.md'))).map(p => { const g = geo.imoveis[p] || {}, d = dadosDaFicha(p); return { pasta: p, nome: d.nome, ref: geoRef(p), bairro: g.bairro || '', localizado: !!(g.lat && !g.aprox), aprox: !!g.aprox, auto: geoItensTexto(g.entorno), texto: g.revisado || '', aprovado: !!g.aprovado, em: g.entornoEm || 0 }; });
+          return json(res, { ok: true, imoveis: lista, rodando: geoRodando, erro: geoErro, pertoMin: GEO_PERTO_MIN, tabela: geoTabelaTexto() });
+        }
+        else if (ac === 'geo_salvar') {   // jid = pasta do imóvel (ou "todos"); on = aprovado ou não; texto = texto revisado pelo Djhonata (vazio = usar o do mapa)
+          const alvo = String(b.jid || '');
+          if (alvo === 'todos') { let n = 0; for (const p of Object.keys(geo.imoveis)) { const g = geo.imoveis[p]; if (g && !g.aprovado && ((g.entorno || []).length || g.revisado)) { g.aprovado = true; g.aprovadoEm = Date.now(); n++; } } geoSalvar(); log('geografia: aprovados de uma vez', n); return json(res, { ok: true, aprovados: n }); }
+          if (!pastasImoveis().includes(alvo)) return json(res, { erro: 'imóvel não encontrado' }, 404);
+          const g = geo.imoveis[alvo] = geo.imoveis[alvo] || {};
+          if (typeof b.texto === 'string' && b.texto !== 'manter') g.revisado = b.texto.replace(/\s+/g, ' ').trim().slice(0, 600);
+          g.aprovado = !!b.on && !!(g.revisado || (g.entorno || []).length); g.aprovadoEm = g.aprovado ? Date.now() : 0; geoSalvar();
+          return json(res, { ok: true, pasta: alvo, aprovado: g.aprovado, texto: g.revisado || '', auto: geoItensTexto(g.entorno) });
         }
         else if (ac === 'regras_ler') {
           const arq = ARQS_REGRAS.includes(b.jid) ? b.jid : 'REGRAS-ATENDIMENTO.md';
