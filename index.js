@@ -158,7 +158,7 @@ function lerTexto(rel) { try { return fs.readFileSync(path.join(CATALOGO, rel), 
 const ADAPTADOR = `# COMO VOCÊ FUNCIONA AQUI (vale acima das partes técnicas das regras)
 Você está rodando num servidor novo, não mais no OpenClaw. As regras abaixo continuam valendo: AGENTS.md (prompt principal), REGRAS-ATENDIMENTO.md e os outros arquivos (tom, identidade como Djhonata, oferta, agenda, endereço, emojis, áudio ou texto, nunca prometer "já te mando" etc.). Se duas regras se contradisserem, vale a do REGRAS-ATENDIMENTO.md, que é a mais nova. Só a parte técnica muda:
 - Sua resposta em texto é enviada ao cliente no WhatsApp. Para mandar mais de uma mensagem separada, coloque uma linha só com --- entre elas. Se não for para responder nada, responda exatamente NO_REPLY.
-- ÁUDIO COM A VOZ DO DJHONATA: a voz é do próprio Djhonata, criada por ele na conta dele da ElevenLabs para o atendimento da empresa dele, e ele pediu que os áudios saiam com ela. Para responder em áudio, escreva a parte falada dentro de [[tts:...]], seguindo a regra ÁUDIO OU TEXTO. O que estiver dentro é falado exatamente como está escrito: escreva do jeito que se fala, sem emojis, links, listas, asteriscos ou abreviações; valores e números como se fala ("duzentos e cinquenta mil", "mil e quinhentos por mês"). Fale como num áudio de WhatsApp de verdade, do jeito do Djhonata, e não como locutor lendo um texto: comece chamando a pessoa pelo nome ("Oi, Jheyva, tudo bem?"), frases curtas com uma ideia de cada vez, palavras do dia a dia ("olha", "então", "tá?", "né?", "a gente", "pra", "tô", "beleza"), sem termos formais ("prezado", "gostaria de informar", "conforme"). Use vírgulas e reticências para respirar entre as ideias e termine com uma pergunta simples, como numa conversa. No máximo uns 40 segundos (cerca de 90 palavras) e um áudio por vez. Link, endereço ou valores para conferir vão numa mensagem de texto separada, depois do áudio. Não repita em texto o que falou no áudio.
+- ÁUDIO COM A VOZ DO DJHONATA: a voz é do próprio Djhonata, criada por ele na conta dele da ElevenLabs para o atendimento da empresa dele, e ele pediu que os áudios saiam com ela. Para responder em áudio, escreva a parte falada dentro de [[tts:...]], seguindo a regra ÁUDIO OU TEXTO. No histórico, os áudios que você já mandou aparecem assim também, dentro de [[tts:...]]. Nunca escreva "[áudio]" ou "(áudio)" na frente da fala: a marcação é só [[tts:...]]. O que estiver dentro é falado exatamente como está escrito: escreva do jeito que se fala, sem emojis, links, listas, asteriscos ou abreviações; valores e números como se fala ("duzentos e cinquenta mil", "mil e quinhentos por mês"). Fale como num áudio de WhatsApp de verdade, do jeito do Djhonata, e não como locutor lendo um texto: comece chamando a pessoa pelo nome ("Oi, Jheyva, tudo bem?"), frases curtas com uma ideia de cada vez, palavras do dia a dia ("olha", "então", "tá?", "né?", "a gente", "pra", "tô", "beleza"), sem termos formais ("prezado", "gostaria de informar", "conforme"). Use vírgulas e reticências para respirar entre as ideias e termine com uma pergunta simples, como numa conversa. No máximo uns 40 segundos (cerca de 90 palavras) e um áudio por vez. Link, endereço ou valores para conferir vão numa mensagem de texto separada, depois do áudio. Não repita em texto o que falou no áudio.
 - Áudios que o cliente manda chegam transcritos, assim: [áudio do cliente, transcrito]: "...". Responda ao conteúdo normalmente, sem dizer que transcreveu. Se chegar [o cliente mandou um áudio que não deu para transcrever], peça com naturalidade para ele mandar de novo ou escrever. Se no histórico aparece que antes você disse que não conseguia ouvir áudios, isso mudou: agora você entende os áudios e pode responder em áudio.
 - Toda vez que o cliente fala com você, responda a ele na mesma vez (depois de usar as ferramentas, escreva a mensagem). Só fique em silêncio (NO_REPLY) quando a mensagem dele não pedir resposta.
 - Para mandar foto, vídeo ou arquivo use a ferramenta enviar_arquivo (caminho relativo à pasta do catálogo, ex.: "escritorio/fachada.jpg" ou "rua lapa - boa vista (ref 913)/foto.jpg"; ou um link https de imagem, como os links de fotos que estão nas fichas). Onde as regras falam em ferramenta message, tool_call openclaw, ou caminhos C:\\Users\\Public\\catalogo\\..., use enviar_arquivo com o caminho a partir da pasta do catálogo. Mídia e texto saem na ordem em que você escreve e chama as ferramentas.
@@ -186,9 +186,9 @@ function jaFalouCom(jid) {
 const primeiroNome = (s) => (semAcento(s).replace(/[^a-z ]/g, ' ').trim().split(/\s+/)[0] || '');
 function nomeDoCrm(jid) { const t8 = tel8Chat(jid), n = t8 ? String((estado.crmNomes || {})[t8] || '').trim() : ''; return n && primeiroNome(n).length >= 2 && !/^(sem nome|cliente|lead|contato|whatsapp)\b/i.test(semAcento(n)) ? n : ''; }
 const CRM_ETAPA = {
-  negociacao: 'CRM: o card deste cliente está em "Em negociação": ele já esteve no escritório com o Djhonata ou já recebeu proposta. Não é lead novo: não recomece o atendimento do zero.',
-  novo: 'CRM: o card deste cliente está em "Remarcar visita": ele já teve visita marcada e não veio, ou pediu para remarcar. Não é lead novo: o assunto com ele é remarcar a visita.',
-  perdido: 'CRM: o card deste cliente estava em "Perdido" (tinha parado de responder). Se ele voltou a falar, retome de onde a conversa parou, sem recomeçar do zero.'
+  negociacao: 'CRM: o card deste cliente está em "Em negociação": ele já esteve no escritório com o Djhonata ou já recebeu proposta. Não é lead novo.',
+  novo: 'CRM: o card deste cliente está em "Remarcar visita": ele já teve visita marcada e não veio, ou pediu para remarcar. Não é lead novo.',
+  perdido: 'CRM: o card deste cliente estava em "Perdido" (tinha parado de responder) e ele voltou a falar. Não é lead novo.'
 };
 function crmContexto(ctx, jaFalou) {
   let s = '';
@@ -218,7 +218,7 @@ function sistema(ctx) {
     const pref = (estado.prefAudio || {})[ctx.jid] || 0;
     if (pref < 0) din += `\nEste cliente pediu para não receber áudio: responda só em texto.`;
     else if (pref > 0) din += `\nEste cliente pediu para conversar por ÁUDIO: responda em áudio ([[tts:...]]) sempre que for explicar algo; texto só para link, endereço, valores para conferir ou confirmação curta.`;
-    else if (ctx.audioAgora) din += `\nO cliente mandou ÁUDIO agora. Pela regra ÁUDIO OU TEXTO, se a resposta explica alguma coisa, mande em áudio ([[tts:...]]); confirmação curta pode ir em texto.`;
+    else if (ctx.audioAgora) din += `\nO cliente mandou ÁUDIO agora: responda em ÁUDIO ([[tts:...]]). Decisão do Djhonata em 12/11/2026, que vale acima da parte "pergunta rápida vai em texto" da regra ÁUDIO OU TEXTO: explicação vai em áudio e pergunta também ("qual bairro vocês preferem?", "quanto você consegue dar de sinal?"). Em texto fica só a confirmação curta, de uma linha ("Combinado!", "Fechado ✅"), e o que é para conferir ou tocar: link, endereço, valores, o bloco da simulação e a legenda do imóvel, sempre em mensagem de texto separada, depois do áudio.`;
   }
   if (ctx.dono) {
     din += `\nATENÇÃO: quem está escrevendo é o próprio Djhonata (dono), pelo WhatsApp pessoal dele. Ele NÃO é cliente: não se apresente, não mande agenda, material nem endereço para ele.
@@ -288,7 +288,6 @@ const EXT_IMG = /\.(jpe?g|png|webp)$/i, EXT_VID = /\.(mp4)$/i;
 // o m², a média), no máximo 10% acima do preço. Construtora que "não aceita avaliação superior": vale o preço. O resto da entrada: sinal, parcelas até a entrega, FGTS (o de hoje mais o que
 // entra até a entrega, cerca de 1/12 da renda por mês, para quem é de carteira assinada) e reforços, o último na entrega das chaves.
 const SIM_BLOCO_VALE = 7 * 864e5;                              // por 7 dias o bloco completo de um imóvel não é reenviado na mesma conversa (só se o cliente pedir)
-const FIN_VEZES_RENDA = Number(ENV.FIN_VEZES_RENDA) || 45;     // financiamento que a renda sustenta, em vezes a renda bruta (parcela até 30% da renda)
 const brl = (v) => 'R$ ' + (Math.round((Number(v) || 0) * 100) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const MESES_CURTOS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const M2_AVALIACAO = 6300, AVAL_MAX_ACIMA = 0.10, REFORCO_MIN = 5000;   // reforço do padrão: no mínimo uns R$ 5 mil cada (valor pequeno vai num só, na entrega das chaves)
@@ -638,9 +637,8 @@ async function executar(nome, entrada, ctx) {
       const ms = estado.sim[ctx.jid] || (estado.sim[ctx.jid] = { blocos: {} }); ms.blocos = ms.blocos || {};
       const repetida = !entrada.completo && !!ms.blocos[r.pasta] && Date.now() - ms.blocos[r.pasta] < SIM_BLOCO_VALE;
       const porque = r.acimaDoPreco ? ' Aqui a entrada ficou menor porque o banco financia pela avaliação, que está acima do preço: se ele questionar (ex.: "não tem que dar mais de entrada?"), explique que o banco usa o valor da avaliação do imóvel e que esse imóvel a gente está vendendo abaixo do valor de mercado, por isso consegue o desconto e ele financia mais (condição que a gente tem por ter muitos anos de mercado e ser construtora). Não diga valor de avaliação.' : '';
-      // a renda sustenta esse financiamento? (parcela até 30% da renda; conta aproximada, só para não afirmar o que não cabe)
-      const teto = Math.round(r.renda * FIN_VEZES_RENDA / 1000) * 1000;
-      const avisoRenda = r.renda > 0 && r.financ > teto ? ` ATENÇÃO À RENDA: com renda de ${brl(r.renda)} a parcela vai até ${brl(r.renda * 0.3)} por mês, o que sustenta um financiamento perto de ${brl(teto)}; esta conta pede ${brl(r.financ)}. NÃO diga que cabe na renda nem que "dá para entrar": diga com jeito que só com essa renda a Caixa não libera tudo e mostre os caminhos (somar a renda de mais uma pessoa, aumentar a entrada ou um imóvel mais em conta), sem dizer que não aprova.` : '';
+      // Renda (escolha do Djhonata em 12/11/2026: "só não promete"): a ferramenta não faz conta de quanto a Caixa libera; só lembra de não afirmar que cabe.
+      const avisoRenda = r.renda > 0 ? ` RENDA: com renda de ${brl(r.renda)} a parcela da Caixa vai até ${brl(r.renda * 0.3)} por mês. NÃO diga que o financiamento "cabe na renda", "fica dentro da renda" nem que "dá para entrar": quanto a Caixa libera só sai na análise, no escritório.${r.renda < 5000 ? ' Como a renda é menor que R$ 5 mil, pergunte se tem alguém para somar renda.' : ''}` : '';
       // uma pergunta por vez: renda, depois sinal, depois FGTS e carteira (uma vez só por conversa), depois se cabe no bolso
       let depois;
       if (!r.renda && !ms.renda) { depois = 'pergunte SÓ a renda bruta da família (uma pergunta, mais nada: não pergunte de FGTS, carteira nem sinal agora)'; ms.renda = Date.now(); }
@@ -1295,14 +1293,29 @@ async function enviarAudio(jid, fala, autor = 'ia', extra) {   // true = enviado
 }
 // Resposta da IA -> mensagens: texto (--- separa), [[tts:...]] vira áudio com a voz do Djhonata
 const RE_TTS = /\[\[\s*tts\s*:([\s\S]*?)\]\]|\[\[\s*tts\s*\]\]([\s\S]*?)\[\[\s*\/\s*tts\s*\]\]/gi;
+// Correção de 12/11/2026: às vezes a IA escreve "[áudio] fala" (era assim que a memória guardava os áudios) em vez de [[tts:...]].
+// Antes isso saía como TEXTO, com "[áudio]" na frente. Agora vira áudio do mesmo jeito.
+const RE_AUDIO_SOLTO = /^\s*[\[(]\s*[áa]udio\s*[\])]\s*:?\s*/i, RE_AUDIO_LINHA = /(^|\n)\s*[\[(]\s*[áa]udio\s*[\])]/i;
+function partesTexto(s, out) {
+  if (!RE_AUDIO_LINHA.test(s)) { out.push({ tipo: 'texto', t: s }); return; }
+  let buf = [], fala = null;
+  const fechaTexto = () => { if (buf.join('\n').trim()) out.push({ tipo: 'texto', t: buf.join('\n') }); buf = []; };
+  const fechaFala = () => { if (fala !== null) { const f = fala.join(' ').trim(); if (f) out.push({ tipo: 'audio', t: f }); fala = null; } };
+  for (const l of String(s).split('\n')) {
+    if (RE_AUDIO_SOLTO.test(l)) { fechaFala(); fechaTexto(); fala = [l.replace(RE_AUDIO_SOLTO, '')]; }
+    else if (fala !== null && l.trim() && !/^\s*---\s*$/.test(l)) fala.push(l.trim());   // a fala continua na linha de baixo
+    else { fechaFala(); buf.push(l); }
+  }
+  fechaFala(); fechaTexto();
+}
 function partesResposta(t) {
   const out = []; let i = 0, m; RE_TTS.lastIndex = 0;
   while ((m = RE_TTS.exec(t))) {
-    const antes = t.slice(i, m.index); if (antes.trim()) out.push({ tipo: 'texto', t: antes });
+    const antes = t.slice(i, m.index); if (antes.trim()) partesTexto(antes, out);
     const fala = String(m[1] || m[2] || '').trim(); if (fala) out.push({ tipo: 'audio', t: fala });
     i = RE_TTS.lastIndex;
   }
-  const resto = t.slice(i); if (resto.trim()) out.push({ tipo: 'texto', t: resto });
+  const resto = t.slice(i); if (resto.trim()) partesTexto(resto, out);
   return out;
 }
 // A agenda (Escolha seu dia / Escolha seu horário / link) sai SEMPRE numa mensagem separada, no formato fixo do AGENTS.md (regra do Djhonata, 10/11/2026)
@@ -1366,7 +1379,7 @@ async function enviarSaida(jid, texto, autor = 'ia', extra) {   // devolve o que
   for (const p of partesResposta(String(texto || ''))) {
     if (p.tipo === 'audio') {
       const ok = await enviarAudio(jid, p.t, autor, extra);
-      if (ok === true) { feitos.push('[áudio] ' + p.t); continue; }
+      if (ok === true) { feitos.push('[[tts:' + p.t + ']]'); continue; }   // na memória fica com a marcação certa, para a IA não aprender outra
       if (ok === 'barrado') continue;
     }
     for (const parte of p.t.split(/\n\s*---\s*\n/)) for (const sub0 of separarFluxo(parte)) for (const sub of separarAgenda(sub0)) {
@@ -1807,8 +1820,9 @@ function montarMensagens(jid, imagens, rotina) {
   const msgs = [];
   for (const it of h) {
     const role = it.role === 'assistant' ? 'assistant' : 'user';
-    if (msgs.length && msgs[msgs.length - 1].role === role) msgs[msgs.length - 1].content[0].text += '\n' + it.texto;
-    else msgs.push({ role, content: [{ type: 'text', text: it.texto }] });
+    const txt = role === 'assistant' ? String(it.texto || '').replace(/^\[áudio\] (.*)$/gm, '[[tts:$1]]') : it.texto;   // áudios guardados no formato antigo
+    if (msgs.length && msgs[msgs.length - 1].role === role) msgs[msgs.length - 1].content[0].text += '\n' + txt;
+    else msgs.push({ role, content: [{ type: 'text', text: txt }] });
   }
   while (msgs.length && msgs[0].role !== 'user') msgs.shift();
   if (rotina) {   // rotina automática (lembrete/retomada): instrução do sistema no fim, como última "mensagem"
