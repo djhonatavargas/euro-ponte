@@ -211,6 +211,7 @@ Esta conversa pode ter mensagens antigas de quando ele testou a assistente fingi
   } else {
     const comb = (estado.combinados || {})[ctx.jid];
     if (comb && comb.length) din += `\nCombinados com este cliente (orientações do Djhonata, siga):\n` + comb.map(c => '- ' + c.texto).join('\n');
+    din += adsContexto(ctx.jid);
     const v = (estado.visitas || {})[ctx.jid];
     if (v && quandoMs(v.q) > Date.now() - 3600e3) din += `\nVisita marcada deste cliente: ${descreverQuando(v.q)}, no escritório.`;
     const ag = agendaEnviadaEm(ctx.jid);
@@ -1402,6 +1403,7 @@ async function aoReceber(m, tipoUpsert) {
       }
     }
   }
+  if (cifrada && !m.key.fromMe && recente && (tipoUpsert === 'notify' || atrasada)) agendarSemDecifrar(m, jid, ts, telefone);
   if (cifrada) return;   // sem conteúdo ainda: quando o WhatsApp reenviar decifrada, ela passa por aqui de novo
   if (!recente) return; // mensagem antiga (sincronização do histórico): só espelho
 
@@ -1456,6 +1458,56 @@ async function aoReceber(m, tipoUpsert) {
   const txtAgora = String(x.conversation || (x.extendedTextMessage && x.extendedTextMessage.text) || '').trim();
   const curta = !dono && txtAgora && txtAgora.length <= 22 && !/[?]/.test(txtAgora);
   f.timer = setTimeout(() => processar(jid).catch(e => log('erro processar', e.message)), dono ? Math.min(ESPERA_MS, 9000) : (curta ? ESPERA_CURTA_MS : ESPERA_MS));
+}
+
+// ---------- anúncio -> imóvel (pedido do Djhonata, 12/11/2026) ----------
+// O WhatsApp manda o código do anúncio junto da 1ª mensagem. O CRM diz de qual imóvel é cada anúncio (ou se é genérico)
+// e a assistente já abre o atendimento com o imóvel certo, sem mexer nos anúncios.
+const ADS_ARQ = path.join(DADOS, 'anuncios-imoveis.json');
+let adsMapa = lerJson(ADS_ARQ, null) || {};   // { código do anúncio: { nome, pasta, generico, em } }
+function adsVistos() {   // anúncios que já trouxeram cliente (pelo que está guardado nas conversas), do mais recente para o mais antigo
+  const v = {}; let semCodigo = 0;
+  for (const c of Object.values(chats)) {
+    const a = c && c.anuncio; if (!a || a.pelaMensagem) continue;
+    if (!a.anuncioId) { semCodigo++; continue; }
+    const x = v[a.anuncioId] || (v[a.anuncioId] = { id: a.anuncioId, titulo: '', link: '', n: 0, ult: 0 });
+    x.n++; if ((a.em || 0) >= x.ult) { x.ult = a.em || 0; x.titulo = a.titulo || x.titulo; x.link = a.link || x.link; }
+  }
+  return { lista: Object.values(v).sort((a, b) => b.ult - a.ult).slice(0, 80), semCodigo };
+}
+function adsDoChat(jid) {   // { id, titulo, pasta, generico } do anúncio que trouxe este cliente, ou null
+  const a = (chats[jid] || {}).anuncio; if (!a || a.pelaMensagem) return null;
+  const m = a.anuncioId ? adsMapa[a.anuncioId] : null;
+  return { id: a.anuncioId || '', titulo: a.titulo || '', em: a.em || 0, pasta: m && m.pasta && pastasImoveis().includes(m.pasta) ? m.pasta : '', generico: !!(m && m.generico) };
+}
+function adsContexto(jid) {   // linha que entra nas instruções da conversa nos 3 primeiros dias depois do clique
+  const a = adsDoChat(jid); if (!a || !a.em || Date.now() - a.em > 3 * 864e5) return '';
+  if (a.pasta) return `\nANÚNCIO: este cliente chegou pelo anúncio do imóvel ${dadosDaFicha(a.pasta).nome} (pasta "${a.pasta}"). Se você ainda não mandou esse imóvel nesta conversa, apresente-se e já mande ele (ler_ficha, o vídeo ou a foto e a descrição), perguntando se foi esse que ele viu no anúncio. Não pergunte o bairro antes. Se ele disser que viu outro, pergunte qual ou o bairro e siga normalmente.`;
+  if (a.generico) return `\nANÚNCIO: este cliente chegou por um anúncio genérico, que não é de um imóvel específico. Faça a abertura normal e pergunte o bairro.`;
+  if (a.titulo) return `\nANÚNCIO: este cliente chegou pelo anúncio de título "${a.titulo}", que ainda não está ligado a um imóvel. Se o título disser o bairro ou o imóvel, use isso na abertura; se for um título geral, pergunte o bairro.`;
+  return '';
+}
+
+// ---------- 1ª mensagem que o WhatsApp não decifrou (decisão do Djhonata, 12/11/2026) ----------
+// Se em 2 minutos o conteúdo não chegar e ninguém respondeu, a assistente faz a abertura normal, como com qualquer lead novo.
+const SEM_DECIFRAR_MS = Number(ENV.SEM_DECIFRAR_MS || 120e3), semDecifrarVistas = new Set();
+function agendarSemDecifrar(m, jid, ts, telefone) {
+  const id = m.key.id; if (!id || semDecifrarVistas.has(id)) return; semDecifrarVistas.add(id);
+  if (semDecifrarVistas.size > 2000) semDecifrarVistas.clear();
+  setTimeout(() => {
+    try {
+      if (lerConv(jid).length) return;                               // a mensagem abriu nesse meio tempo, ou não era o primeiro contato
+      if (lerEsp(jid).some(e => e.autor !== 'cliente')) return;      // alguém já respondeu (assistente, celular ou painel)
+      if (filas.has(jid) || ocupado.has(jid)) return;
+      if (telefone && (normal(telefone) === normal(DONO) || lerBloqueados().has(normal(telefone)))) return;
+      anotar(jid, 'user', '[O cliente mandou a primeira mensagem, mas o WhatsApp não entregou o conteúdo dela para você. Trate como o primeiro contato de um lead novo: faça a abertura normal. Não diga que a mensagem não abriu.]', id + ':sem-decifrar');
+      const c = chatPublico(jid);
+      filas.set(jid, { jid, telefone: telefone || c.telefone, nome: m.pushName || c.nome || '', dono: false, imagens: [], timer: null, ultTs: ts });
+      deverResposta(jid, ts);
+      log('primeira mensagem não decifrada: a assistente faz a abertura', telefone || jid);
+      processar(jid).catch(e => log('erro processar', e.message));
+    } catch (e) { log('sem decifrar', e.message); }
+  }, SEM_DECIFRAR_MS);
 }
 
 // ---------- de onde veio o lead: anúncio de WhatsApp da Meta (clique no anúncio) ----------
@@ -2777,7 +2829,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           for (const x of lista) {
             const t8 = String(x.p.telefone).replace(/\D/g, '').slice(-8), c = chats[x.j] || {};
             const ms = lerEsp(x.j).slice(-nMsgs);
-            partes.push('===== ' + (x.p.nome || 'sem nome') + ' | ' + x.p.telefone + ' | CRM: ' + ((estado.crmStatus || {})[t8] || 'sem card') + (c.anuncio ? ' | anúncio: ' + (c.anuncio.titulo || 'sim') : '') + (x.p.iaOff ? ' | IA desligada neste chat' : '') + '\n'
+            partes.push('===== ' + (x.p.nome || 'sem nome') + ' | ' + x.p.telefone + ' | CRM: ' + ((estado.crmStatus || {})[t8] || 'sem card') + (c.anuncio ? ' | anúncio: ' + (c.anuncio.titulo || 'sim') + (c.anuncio.anuncioId ? ' [' + c.anuncio.anuncioId + ((adsMapa[c.anuncio.anuncioId] || {}).pasta ? ' = ' + adsMapa[c.anuncio.anuncioId].pasta : (adsMapa[c.anuncio.anuncioId] || {}).generico ? ' = genérico' : '') + ']' : '') : '') + (x.p.iaOff ? ' | IA desligada neste chat' : '') + '\n'
               + ms.map(m => hm(m.ts) + ' [' + m.autor + (m.rotina ? ':' + m.rotina : '') + (m.followup ? ':followup' : '') + (m.tipo && m.tipo !== 'text' ? ':' + m.tipo : '') + '] ' + String(m.texto || '').replace(/\s*\n+\s*/g, ' / ').slice(0, 420)).join('\n'));
             await new Promise(r => setTimeout(r, 2));
           }
@@ -2926,6 +2978,24 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           let p = {}; try { p = JSON.parse(b.texto || '{}'); } catch (e) { }
           (async () => { if (p.status) await classificarTudo(p.compradores || [], true, p); await etiquetarTudo(); })().catch(e => log('etiquetar', e.message));
           await dorme(1500);
+        }
+        else if (ac === 'anuncios') {   // CRM: de qual imóvel é cada anúncio. Devolve o que está gravado, os anúncios que já trouxeram cliente e os imóveis do catálogo
+          const v = adsVistos();
+          const imoveis = pastasImoveis().filter(p => lerTexto(path.join(p, 'ficha.md'))).map(p => ({ pasta: p, nome: dadosDaFicha(p).nome, ref: geoRef(p) }));
+          return json(res, { ok: true, mapa: adsMapa, vistos: v.lista, semCodigo: v.semCodigo, imoveis });
+        }
+        else if (ac === 'anuncios_salvar') {   // texto = JSON { código do anúncio: { nome, pasta, generico } }. Sem pasta e sem generico = tira a ligação daquele anúncio
+          let m = null; try { m = JSON.parse(b.texto || ''); } catch (e) { }
+          if (!m || typeof m !== 'object' || Array.isArray(m)) return json(res, { erro: 'lista inválida' }, 400);
+          const validas = new Set(pastasImoveis()); let n = 0; const recusados = [];
+          for (const [id, v] of Object.entries(m)) {
+            if (!/^[\w-]{1,40}$/.test(id) || !v || typeof v !== 'object') { recusados.push(id); continue; }
+            if (v.pasta && !validas.has(String(v.pasta))) { recusados.push(id); continue; }   // imóvel que não existe no catálogo: não grava
+            if (!v.pasta && !v.generico) { if (adsMapa[id]) { delete adsMapa[id]; n++; } continue; }
+            adsMapa[id] = { nome: String(v.nome || '').slice(0, 120), pasta: v.pasta ? String(v.pasta) : '', generico: !v.pasta && !!v.generico, em: Date.now() }; n++;
+          }
+          gravarJson(ADS_ARQ, adsMapa); log('anúncios ligados a imóveis:', Object.keys(adsMapa).length, recusados.length ? '(recusados: ' + recusados.length + ')' : '');
+          return json(res, { ok: true, mapa: adsMapa, mudou: n, recusados });
         }
         else if (ac === 'geo') {   // CRM: o que o mapa achou perto de cada imóvel, para o Djhonata revisar e aprovar. texto = "atualizar" adianta a busca
           if (b.texto === 'atualizar') geoRotina(30).catch(e => log('geo', e.message));
