@@ -652,8 +652,10 @@ async function executar(nome, entrada, ctx) {
       ms.em = Date.now(); for (const k of Object.keys(estado.sim)) if (Date.now() - (estado.sim[k].em || 0) > 30 * 864e5) delete estado.sim[k];
       salvarEstado();
       if (repetida) {
-        const consulta = r.texto.split('\n').map(l => l.replace(/^\s*📋\s*\*?/, 'Conta atualizada: ').replace(/\*\s*$/, '').replace(/^\s*(💰|✅|🏦|💵)\s*/, '- ')).join('\n');
-        return `NÃO mande o bloco da simulação de novo: o cliente já recebeu a conta completa deste imóvel nesta conversa. Responda em 1 a 3 linhas, com as suas palavras, SÓ o que mudou em relação à conta que você já mandou (ex.: "com 40 mil de sinal a parcela cai para R$ 800 por mês"), usando os valores abaixo. Só mande a conta completa outra vez se o cliente PEDIR: nesse caso chame simular_fluxo de novo com completo = true. Depois, na mesma resposta, ${depois}.${fecho}\n\nVALORES ATUALIZADOS (só para você consultar; NÃO envie esta lista):\n${consulta}`;
+        // A linha "Sem reforço, a parcela mensal..." é OUTRA forma de pagar. Em 12/11/2026 a IA leu esse valor como "a parcela" e somou com os reforços (conta da Luana): agora vai rotulada.
+        const consulta = r.texto.split('\n').map(l => /^\s*Sem reforço, a parcela mensal/i.test(l) ? '- OUTRA FORMA DE PAGAR (no lugar do reforço, NUNCA junto com ele): s' + l.trim().slice(1) : l.replace(/^\s*📋\s*\*?/, 'Conta atualizada: ').replace(/\*\s*$/, '').replace(/^\s*(💰|✅|🏦|💵)\s*/, '- ')).join('\n');
+        const avisoParcela = /Sem reforço, a parcela mensal/i.test(r.texto) ? ' ATENÇÃO: a parcela mensal dele é a da linha "Entrada parcelada" e ela continua igual quando existe reforço. A linha "OUTRA FORMA DE PAGAR" é uma segunda opção (parcela maior e nenhum reforço): nunca diga esse valor como "a parcela" junto com os reforços.' : '';
+        return `NÃO mande o bloco da simulação de novo: o cliente já recebeu a conta completa deste imóvel nesta conversa. Responda em 1 a 3 linhas, com as suas palavras, SÓ o que mudou em relação à conta que você já mandou (ex.: "com 40 mil de sinal a parcela cai para R$ 800 por mês"), usando os valores abaixo. Só mande a conta completa outra vez se o cliente PEDIR: nesse caso chame simular_fluxo de novo com completo = true. Depois, na mesma resposta, ${depois}.${fecho}${avisoParcela}\n\nVALORES ATUALIZADOS (só para você consultar; NÃO envie esta lista):\n${consulta}`;
       }
       ms.blocos[r.pasta] = Date.now();
       return `Mande o bloco abaixo ao cliente por TEXTO, do jeito que está, SOZINHO numa mensagem: não escreva nada antes nem depois dentro dele, porque o cliente encaminha esse bloco para a esposa, o marido ou a família junto com o vídeo do imóvel (o sistema separa o bloco numa mensagem própria). Depois, em OUTRA mensagem, curta, ${depois}.${fecho}\n\n${r.texto}`;
@@ -1962,13 +1964,15 @@ async function verificarSaldos() {   // aviso no WhatsApp pessoal: no máximo 1 
 setInterval(() => verificarSaldos().catch(e => log('saldos', e.message)), 3 * 3600e3);
 setTimeout(() => verificarSaldos().catch(e => log('saldos', e.message)), 5 * 60e3);
 
-// Identidade (12/11/2026): para o cliente, quem fala é o Djhonata. Resposta que fala dele em terceira pessoa ("já pedi para o Djhonata verificar",
-// "o Djhonata vai te responder") não sai: a IA reescreve em primeira pessoa (uma vez por resposta).
+// Identidade (12/11/2026): para o cliente, quem fala é o Djhonata. Resposta que fala dele como outra pessoa ("já pedi para o Djhonata verificar",
+// "vou levar para o Djhonata e ele fala com você") não sai: a IA reescreve em primeira pessoa (uma vez por resposta).
 const AVISO_INTERNO = ' O cliente não sabe desse aviso: para ele, quem está falando é você, o Djhonata. Se for dizer que vai conferir algo, diga em primeira pessoa ("vou confirmar isso e já te falo"); nunca escreva "pedi para o Djhonata", "o Djhonata vai ver" nem "assim que ele responder".';
-const RE_3P_A = /\b(?:pedi|pe[çc]o|pedir|falei|falo|falar|avisei|aviso|avisar|passei|passo|passar|perguntei|pergunto|perguntar|chamei|chamo|chamar|confirmei|confirmo|confirmar|consultei|consulto|consultar|encaminhei|encaminho|encaminhar|mandei|mando|mandar|repassei|repasso|repassar)\b[^.!?\n]{0,30}?\b(?:para|pra|pro|com|ao)\s+(?:o\s+)?Djhonata\b/i;
-const RE_3P_B = /\bo\s+Djhonata\s+(?:vai|j[áa]|te|pode|est[áa]|retorna|responde|confirma|verifica|manda|liga|entra|fala|chama|passa|v[êe]|disse|pediu|falou|avisou|mandou)\b/i;
-function falaEmTerceira(t) { const x = String(t || ''); return RE_3P_A.test(x) || RE_3P_B.test(x); }
-const AVISO_3P = '(sistema) O texto que você escreveu agora NÃO foi enviado ao cliente, porque nele você fala do Djhonata em terceira pessoa. Para o cliente, quem está falando é você, o Djhonata. Escreva a MESMA resposta em primeira pessoa (ex.: em vez de "já pedi para o Djhonata verificar", "vou confirmar isso e já te falo"; em vez de "assim que ele responder", "assim que eu confirmar"), sem mudar o resto e sem comentar esta correção.';
+// Onde "Djhonata" é ela mesma se apresentando (não conta como terceira pessoa): "Aqui é o Djhonata", "sou eu, o Djhonata", assinatura numa linha só.
+const RE_EU_DJHONATA = /\b(?:aqui\s+(?:é|quem\s+fala\s+é)|(?:eu\s+)?sou(?:\s+eu,?)?|me\s+chamo|meu\s+nome\s+é|pode\s+me\s+chamar\s+de|quem\s+(?:fala|est[áa]\s+falando|te\s+atende|est[áa]\s+te\s+atendendo)(?:\s+aqui|\s+com\s+voc[êe]s?)?\s+é)\s+(?:mesmo,?\s+)?(?:o\s+)?(?:pr[óo]prio\s+)?Djhonata(?:\s+Vargas)?\b|(?:^|[\s,;:.!?])é\s+o\s+(?:pr[óo]prio\s+)?Djhonata\s+(?:falando|mesmo|aqui)\b|\bDjhonata\s+aqui\b|(?:^|\n)\s*Djhonata(?:\s+Vargas)?\s*(?:[,|–-][^\n]{0,60})?(?=\n|$)/gi;
+// Qualquer outra menção ao nome é falar dele como se fosse outra pessoa ("vou levar para o Djhonata", "o Djhonata fala com você", "quem fecha é o Djhonata").
+const RE_ARROBA_DJHONATA = /\S*(?:[@\/]djhonata|djhonata[._][a-z0-9])\S*/gi;   // @djhonata.vargas, instagram.com/djhonata.vargas: é o endereço dele, não é falar dele
+function falaEmTerceira(t) { return /\bDjhonata\b/i.test(String(t || '').replace(RE_ARROBA_DJHONATA, ' ').replace(RE_EU_DJHONATA, ' ')); }
+const AVISO_3P = '(sistema) O texto que você escreveu agora NÃO foi enviado ao cliente, porque nele você fala do Djhonata como se fosse outra pessoa. Para o cliente, quem está falando é você, o Djhonata. Escreva a MESMA resposta em primeira pessoa (ex.: em vez de "já pedi para o Djhonata verificar", "vou confirmar isso e já te falo"; em vez de "vou levar isso para o Djhonata e ele fala com você", "vou ver isso aqui e já te retorno"; em vez de "assim que ele responder", "assim que eu confirmar"), sem citar o nome Djhonata nem "ele", sem mudar o resto e sem comentar esta correção.';
 // Ela fala como o Djhonata (homem): "obrigada" vira "obrigado" antes de sair, em texto e em áudio.
 const generoDoDono = (t) => String(t || '').replace(/\b([Oo])brigada\b/g, '$1brigado').replace(/\bOBRIGADA\b/g, 'OBRIGADO');
 async function responder(f) {
