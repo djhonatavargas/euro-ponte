@@ -63,6 +63,9 @@ const GEMINI_KEY = ENV.GEMINI_API_KEY || ENV.GOOGLE_API_KEY || '';  // opcional:
 // Rotinas (lembrete de visita e retomada) só nesse horário
 const ROTINAS = ENV.ROTINAS !== '0';
 const ROT_INI = ENV.ROTINA_INI || '08:00', ROT_FIM = ENV.ROTINA_FIM || '21:30';
+// Retomada do mesmo dia (decisão do Djhonata, 12/11/2026): só das 9h às 19h30; o que passar disso sai na manhã seguinte.
+// Lembrete de visita e retorno combinado com o cliente seguem o horário das rotinas (acima).
+let RET_INI = ENV.RETOMADA_INI || '09:00', RET_FIM = ENV.RETOMADA_FIM || '19:30';
 
 const DADOS = path.join(BASE, 'dados');
 const CATALOGO = path.join(BASE, 'catalogo');
@@ -254,7 +257,7 @@ const FERRAMENTAS = [
   { name: 'ler_ficha', description: 'Lê a ficha de um imóvel do catálogo (descrição pronta do CRM, dados e lista de fotos e vídeo). Use a ref (ex.: "913") ou parte do nome da rua/residencial.', input_schema: { type: 'object', properties: { busca: { type: 'string' } }, required: ['busca'] } },
   { name: 'enviar_arquivo', description: 'Envia ao cliente uma foto, vídeo ou arquivo do catálogo (caminho relativo à pasta do catálogo) ou uma imagem por link https. A legenda vai junto com a mídia.', input_schema: { type: 'object', properties: { caminho: { type: 'string' }, legenda: { type: 'string' } }, required: ['caminho'] } },
   { name: 'simular_fluxo', description: 'Monta a simulação do pagamento de um imóvel com os números do cliente e devolve o texto pronto para mandar ao cliente, por texto, do jeito que veio. O financiamento já sai calculado do jeito mais atrativo para o cliente (avaliação do banco ou preço, o que for maior; não fale da avaliação ao cliente). Sem os números dele, usa o padrão (sinal de R$ 10 mil e R$ 1.500 por mês). imovel = ref (ex.: "832") ou parte do nome da rua/residencial. sinal = quanto ele dá na assinatura. parcela = quanto fica bom por mês até a entrega. fgts = saldo de FGTS que ele tem hoje (0 se não tem; não mande se ainda não sabe). carteira = true se ele (ou a família) trabalha de carteira assinada: aí o FGTS cresce todo mês até a entrega e diminui a entrada. renda = renda bruta mensal da família. reforcos = em quantos reforços dividir o que faltar (o último é na entrega das chaves); mande um número maior quando ele achar o reforço pesado. pos_chaves = em quantas parcelas mensais DEPOIS da entrega dividir o que faltar da entrada (use quando a entrada não cabe no bolso dele mesmo ajustando sinal e parcelas, ou em imóvel pronto ou com entrega muito perto; comece com 12 e vá até 24 se ele precisar; se o cliente disse quanto pode pagar por mês, mande esse valor em parcela junto: cada parcela pós-chaves fica nesse valor, até 36 vezes, e o que não couber já sai no texto como reforço ou complemento a combinar): o texto já sai avisando que depende de a construtora aceitar e que se formaliza na proposta, no escritório. completo = true só quando o cliente PEDIR a conta completa de novo (sem isso, da segunda vez em diante a ferramenta devolve só os valores para você dizer o que mudou em 1 a 3 linhas).', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, sinal: { type: 'number' }, parcela: { type: 'number' }, fgts: { type: 'number' }, carteira: { type: 'boolean' }, renda: { type: 'number' }, reforcos: { type: 'number' }, pos_chaves: { type: 'number' }, completo: { type: 'boolean' } }, required: ['imovel'] } },
-  { name: 'avisar_djhonata', description: 'Manda um aviso no WhatsApp pessoal do Djhonata.', input_schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
+  { name: 'avisar_djhonata', description: 'Manda um aviso interno no WhatsApp pessoal do Djhonata. O cliente não vê e não fica sabendo desse aviso: com ele você continua falando em primeira pessoa, como o próprio Djhonata (ex.: "vou confirmar isso e já te falo"), nunca "pedi para o Djhonata".', input_schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
   { name: 'agenda_visita', description: 'Agenda do escritório. acao = "consultar" devolve os horários livres de um dia (mande data AAAA-MM-DD); acao = "marcar" marca a visita do cliente atual (mande data AAAA-MM-DD, hora HH:00 e, se o cliente disse, o nome dele). A agenda é de hora em hora. Use sempre que o cliente disser um dia ou um horário para vir: consulte antes de confirmar e, estando livre, marque. Se a ferramenta disser que não está livre, ofereça os horários que ela devolver. Ela já registra a visita no CRM e liga os lembretes: não chame registrar_crm para isso.', input_schema: { type: 'object', properties: { acao: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nome: { type: 'string' } }, required: ['acao'] } },
   { name: 'registrar_crm', description: 'Registra no CRM um evento do cliente atual e move o card dele: novoStatus = atendimento, visita_marcada, remarcar, sem_interesse ou pausado ("em negociação" NÃO é com você: só o Djhonata move para lá, depois que o cliente vem ao escritório; cliente negociando valores pelo WhatsApp continua em atendimento). Em visita_marcada mande data (AAAA-MM-DD) e hora (HH:MM): o sistema usa para os lembretes da visita. Se o cliente cancelar ou pedir para remarcar, use remarcar (os lembretes param). Mande nomeReal quando o cliente disser o nome e imovel quando souber qual imóvel interessa. resultado = frase curta do que aconteceu.', input_schema: { type: 'object', properties: { novoStatus: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nomeReal: { type: 'string' }, imovel: { type: 'string' }, resumo: { type: 'string' }, resultado: { type: 'string' } } } },
   { name: 'agendar_retorno', description: 'Marca para VOCÊ chamar o cliente de volta num dia e horário combinados. Use quando o cliente disser que fala depois e der uma hora ou um dia (ex.: "falo contigo depois das 14h30", "me chama amanhã cedo", "só consigo à noite"). quando = AAAA-MM-DD HH:MM no horário de Joinville (se ele disse "depois das 14h30", use 14:40; "amanhã cedo" = 09:00; "à noite" = 19:00). assunto = uma linha com o que ficou combinado e de onde retomar (ex.: "ver opções perto do Jardim Paraíso"). Depois de marcar, responda ao cliente em uma linha que você chama nessa hora (ex.: "Combinado, te chamo às 14h40"). Não use para visita ao escritório (isso é agenda_visita) nem quando ele não der hora nem dia.', input_schema: { type: 'object', properties: { quando: { type: 'string' }, assunto: { type: 'string' } }, required: ['quando'] } },
@@ -705,10 +708,10 @@ async function executar(nome, entrada, ctx) {
       if (estado.teste && estado.teste.ativo) {   // no teste o "cliente" é o próprio Djhonata: o aviso fica só no CRM
         registrarEspelho(ctx.jid, { id: 'av' + Date.now().toString(36), autor: 'aviso', tipo: 'text', texto: '🔔 Aviso ao Djhonata (não enviado, modo teste): ' + txt, ts: Date.now() });
         log('teste: aviso ao Djhonata ficou só no CRM');
-        return 'Aviso registrado para o Djhonata. Continue atendendo o cliente normalmente.';
+        return 'Aviso registrado para o Djhonata. Continue atendendo o cliente normalmente.' + AVISO_INTERNO;
       }
       await enviarTexto(DONO + '@s.whatsapp.net', '🔔 ' + txt, 'aviso');
-      return 'Aviso enviado ao Djhonata. Continue atendendo o cliente normalmente.';
+      return 'Aviso enviado ao Djhonata. Continue atendendo o cliente normalmente.' + AVISO_INTERNO;
     }
     if (nome === 'agendar_retorno') {   // pacote de 12/11/2026: o cliente disse "falo depois das 14h30" -> a assistente chama no horário combinado
       const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{1,2})[:h](\d{2})/.exec(String(entrada.quando || '').trim());
@@ -1375,6 +1378,7 @@ async function pacoteEscritorio(jid, autor, extra) {   // foto e endereço só n
 }
 async function enviarSaida(jid, texto, autor = 'ia', extra) {   // devolve o que saiu (para a memória da conversa)
   const feitos = [];
+  if (autor === 'ia') texto = generoDoDono(texto);
   const proprio = String(texto || '').split('\n').filter(l => !RE_LINK_AGENDA.test(l) && !linhaDaAgenda(l)).join('\n');   // o texto da IA sem o bloco da agenda
   for (const p of partesResposta(String(texto || ''))) {
     if (p.tipo === 'audio') {
@@ -1958,6 +1962,15 @@ async function verificarSaldos() {   // aviso no WhatsApp pessoal: no máximo 1 
 setInterval(() => verificarSaldos().catch(e => log('saldos', e.message)), 3 * 3600e3);
 setTimeout(() => verificarSaldos().catch(e => log('saldos', e.message)), 5 * 60e3);
 
+// Identidade (12/11/2026): para o cliente, quem fala é o Djhonata. Resposta que fala dele em terceira pessoa ("já pedi para o Djhonata verificar",
+// "o Djhonata vai te responder") não sai: a IA reescreve em primeira pessoa (uma vez por resposta).
+const AVISO_INTERNO = ' O cliente não sabe desse aviso: para ele, quem está falando é você, o Djhonata. Se for dizer que vai conferir algo, diga em primeira pessoa ("vou confirmar isso e já te falo"); nunca escreva "pedi para o Djhonata", "o Djhonata vai ver" nem "assim que ele responder".';
+const RE_3P_A = /\b(?:pedi|pe[çc]o|pedir|falei|falo|falar|avisei|aviso|avisar|passei|passo|passar|perguntei|pergunto|perguntar|chamei|chamo|chamar|confirmei|confirmo|confirmar|consultei|consulto|consultar|encaminhei|encaminho|encaminhar|mandei|mando|mandar|repassei|repasso|repassar)\b[^.!?\n]{0,30}?\b(?:para|pra|pro|com|ao)\s+(?:o\s+)?Djhonata\b/i;
+const RE_3P_B = /\bo\s+Djhonata\s+(?:vai|j[áa]|te|pode|est[áa]|retorna|responde|confirma|verifica|manda|liga|entra|fala|chama|passa|v[êe]|disse|pediu|falou|avisou|mandou)\b/i;
+function falaEmTerceira(t) { const x = String(t || ''); return RE_3P_A.test(x) || RE_3P_B.test(x); }
+const AVISO_3P = '(sistema) O texto que você escreveu agora NÃO foi enviado ao cliente, porque nele você fala do Djhonata em terceira pessoa. Para o cliente, quem está falando é você, o Djhonata. Escreva a MESMA resposta em primeira pessoa (ex.: em vez de "já pedi para o Djhonata verificar", "vou confirmar isso e já te falo"; em vez de "assim que ele responder", "assim que eu confirmar"), sem mudar o resto e sem comentar esta correção.';
+// Ela fala como o Djhonata (homem): "obrigada" vira "obrigado" antes de sair, em texto e em áudio.
+const generoDoDono = (t) => String(t || '').replace(/\b([Oo])brigada\b/g, '$1brigado').replace(/\bOBRIGADA\b/g, 'OBRIGADO');
 async function responder(f) {
   const ctx = { jid: f.jid, telefone: f.telefone, nome: f.nome, dono: f.dono, notas: [], audioAgora: !!f.audio, rotina: (f.extra && f.extra.rotina) || '' };
   const system = sistema(ctx);
@@ -1966,7 +1979,7 @@ async function responder(f) {
   const ferramentas = f.dono && !(estado.teste && estado.teste.ativo) ? [...FERRAMENTAS, FERRAMENTA_DONO] : FERRAMENTAS;
   if (!f.rotina) { try { await sock.sendPresenceUpdate('composing', f.jid); } catch (e) { } }
   const saida = [], textosIA = [], paradas = [];
-  let usouFerramenta = false, cutucou = 0;
+  let usouFerramenta = false, cutucou = 0, corrigiuId = 0;
   try {
   for (let volta = 0; volta < 9; volta++) {
     const resp = await claude(system, messages, ferramentas);
@@ -1983,10 +1996,14 @@ async function responder(f) {
     if (!(resp.content || []).some(b => (b.type === 'text' && String(b.text || '').trim()) || b.type === 'tool_use')) { try { gravarJson(path.join(DADOS, 'ia-vazia.json'), { ts: new Date().toISOString(), jid: f.jid, stop_reason: resp.stop_reason, content: resp.content, usage: resp.usage }); } catch (e) { } }
     messages.push({ role: 'assistant', content: (resp.content || []).length ? resp.content : [{ type: 'text', text: '(sem resposta)' }] });
     const resultados = [];
+    // fala do Djhonata em terceira pessoa: segura o texto desta resposta inteira e pede em primeira pessoa (as ferramentas rodam normalmente)
+    const segura3p = !f.dono && !corrigiuId && (resp.content || []).some(b => b.type === 'text' && falaEmTerceira(b.text));
+    if (segura3p) { corrigiuId = 1; log('identidade: resposta falava do Djhonata em terceira pessoa; pedindo em primeira pessoa', f.telefone || f.jid); }
     for (const bloco of resp.content || []) {
       if (bloco.type === 'text') {
         const t = bloco.text.trim(); if (t) textosIA.push(t.slice(0, 200));
         if (!t || /^NO_REPLY\b/.test(t) || /^nada a fazer\W*$/i.test(t)) continue;
+        if (segura3p) continue;
         // o Djhonata pode ter desligado a assistente nessa conversa enquanto ela pensava
         if (!podeResponder(f.jid, f.telefone)) { log('resposta descartada (pausada no meio)', f.jid); return; }
         saida.push(...await enviarSaida(f.jid, t, 'ia', f.extra));
@@ -1998,7 +2015,8 @@ async function responder(f) {
       }
     }
     // usou ferramenta: devolve o resultado sempre (mesmo quando ela marca "end_turn"; sem isso a IA dá erro 400)
-    if (resultados.length) { messages.push({ role: 'user', content: resultados }); continue; }
+    if (resultados.length) { if (segura3p) resultados.push({ type: 'text', text: AVISO_3P }); messages.push({ role: 'user', content: resultados }); continue; }
+    if (segura3p) { messages.push({ role: 'user', content: [{ type: 'text', text: AVISO_3P }] }); continue; }
     // terminou sem falar nada com o cliente (resposta vazia, ou só usou ferramenta): pede a resposta.
     // 1ª vez: como ele prefere (áudio, se mandou ou pediu); 2ª vez: em texto, para o cliente nunca ficar sem resposta.
     const disseNoReply = textosIA.some(t => /^NO_REPLY\b/.test(t) || /^nada a fazer\W*$/i.test(t));
@@ -2026,10 +2044,11 @@ async function responder(f) {
 }
 
 // ---------- rotinas do OpenClaw: lembretes de visita e retomada ----------
-// Lembrete 1: ~24h antes (8h–21h30). Lembrete 2: no dia, 2–3h antes. Retomada: uma vez, 3h depois que o cliente
+// Lembrete 1: ~24h antes (8h–21h30). Lembrete 2: no dia, 2–3h antes. Retomada (só das 9h às 19h30): uma vez, 3h depois que o cliente
 // parou de responder (2h se ela mandou a agenda), dentro das 24h do cliente. Tudo passa pelos freios de envio.
 const rotinas = { rodando: false, dia: '', lembretes: 0, retomadas: 0, ultima: '' };
 function dentroRotina() { const d = agoraSP(); const x = d.getHours() * 60 + d.getMinutes(); return x >= minutos(ROT_INI) && x <= minutos(ROT_FIM); }
+function dentroRetomada(ms) { const d = new Date((ms || Date.now()) - 3 * 3600e3), x = d.getUTCHours() * 60 + d.getUTCMinutes(); return x >= minutos(RET_INI) && x <= minutos(RET_FIM); }   // Joinville é UTC-3
 function tel8Chat(jid) { return String((chats[jid] || {}).telefone || pnDe(jid).split('@')[0] || '').replace(/\D/g, '').slice(-8); }
 function jidPorTel8(t8) { let melhor = '', ult = -1; for (const k of Object.keys(chats)) { if (jidValido(k) && tel8Chat(k) === t8 && (chats[k].ult || 0) > ult) { melhor = k; ult = chats[k].ult || 0; } } return melhor; }
 function quandoMs(q) {   // 'AAAA-MM-DDTHH:MM' em Joinville (UTC-3) -> ms; sem hora = 9h
@@ -2146,7 +2165,7 @@ async function verificarRotinas() {
       if (agora < T || !janela || !rotinaPermitida(jid, 'retomada')) continue;
       fila.push({ jid, tipo: 'retorno', r });
     }
-    if (janela) {
+    if (janela && dentroRetomada()) {
       for (const jid of Object.keys(chats)) {
         const c = chats[jid];
         if (!['ia', 'aviso'].includes(c.ultAutor) || !c.ult || agora - c.ult > 22 * 3600e3 || agora - c.ult < 2 * 3600e3) continue;
@@ -2208,11 +2227,13 @@ setInterval(() => verificarRotinas().catch(e => log('rotinas', e.message)), 2 * 
 
 // ---------- Follow-up dos perdidos (pedido do Djhonata, 11/11/2026) ----------
 // O CRM manda os clientes que estão em Perdido. A IA lê a conversa de cada um e escreve a análise e UMA mensagem de retomada.
-// Nada sai sem o Djhonata aprovar no CRM. Os aprovados saem até 30 por dia, de segunda a sábado, das 9h às 19h, dos mais
+// Nada sai sem o Djhonata aprovar no CRM. Os aprovados saem até 30 por dia, de segunda a sexta das 9h às 19h e sábado das 9h às 12h, dos mais
 // quentes para os mais frios, com uns 15 a 25 minutos entre um e outro. Quem disse que não quer, comprou com outro ou adiou
 // não recebe nada e vai para "Desistiu" no CRM. Se o cliente responder, o card vai para "Em atendimento" e a assistente continua.
 const FU_F = path.join(DADOS, 'followups.json');
-const FU_DIA = Number(ENV.FOLLOWUP_DIA || 30), FU_INI = '09:00', FU_FIM = '19:00';
+const FU_DIA = Number(ENV.FOLLOWUP_DIA || 30), FU_INI = '09:00', FU_FIM = '19:00', FU_FIM_SAB = '12:00';
+// Horário do follow-up (decisão do Djhonata, 12/11/2026): segunda a sexta das 9h às 19h, sábado das 9h às 12h; domingo não sai.
+const fuFimDoDia = (dow) => dow === 0 ? -1 : minutos(dow === 6 ? FU_FIM_SAB : FU_FIM);
 const fu = lerJson(FU_F, {});
 for (const v of Object.values(fu)) if (v.status === 'gerando') v.status = 'fila';   // o servidor reiniciou no meio
 for (const v of Object.values(fu)) if (v.status === 'erro' && /JSON|mensagem/.test(v.erro || '') && !v.refeito) { v.status = 'fila'; v.tent = 0; v.refeito = 1; }   // erro de resposta cortada: tenta de novo uma vez
@@ -2226,7 +2247,7 @@ const fuDia = (ms) => spDe(ms).toISOString().slice(0, 10);
 function fuUltimoEnvio() { let t = 0; for (const v of Object.values(fu)) if ((v.enviadoEm || 0) > t) t = v.enviadoEm; return t; }
 function fuEnviadosHoje() { const h = fuDia(Date.now()); return Object.values(fu).filter(v => v.enviadoEm && fuDia(v.enviadoEm) === h).length; }
 function fuFilaAprovada() { return Object.values(fu).filter(v => v.status === 'aprovado').sort((a, b) => (b.prioridade || 0) - (a.prioridade || 0) || (a.aprovadoEm || 0) - (b.aprovadoEm || 0)); }
-function fuNaJanela(ms) { const d = spDe(ms), m = d.getUTCHours() * 60 + d.getUTCMinutes(); return d.getUTCDay() !== 0 && m >= minutos(FU_INI) && m <= minutos(FU_FIM); }
+function fuNaJanela(ms) { const d = spDe(ms), m = d.getUTCHours() * 60 + d.getUTCMinutes(); return m >= minutos(FU_INI) && m <= fuFimDoDia(d.getUTCDay()); }
 function fuProximaAbertura(ms) {   // próximo 9h (segunda a sábado) depois de ms
   const d = spDe(ms); let t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 9 + 3, 0);
   if (t <= ms) t += 864e5;
@@ -2381,7 +2402,7 @@ function estadoPublico() {
     usoHoje: hoje, modelo: MODELO, teste: estado.teste && estado.teste.ativo ? (estado.teste.numeros || []) : [],
     voz: !!ELEVEN_KEY, transcricao: ELEVEN_KEY ? 'ElevenLabs' : GEMINI_KEY ? 'Gemini' : '',
     audio: { transcritos: ouvido.feitas, falados: voz.feitas, erros: ouvido.erros + voz.erros, ultimoErro: (voz.ultimoErro || ouvido.ultimoErro || '').slice(0, 160) },
-    rotinas: ROTINAS ? { visitas: Object.keys(estado.visitas || {}).length, lembretesHoje: rotinas.lembretes, retomadasHoje: rotinas.retomadas, horario: `${ROT_INI}–${ROT_FIM}` } : null,
+    rotinas: ROTINAS ? { visitas: Object.keys(estado.visitas || {}).length, lembretesHoje: rotinas.lembretes, retomadasHoje: rotinas.retomadas, horario: `${ROT_INI}–${ROT_FIM}`, retomada: `${RET_INI}–${RET_FIM}`, retornos: Object.keys(estado.retornos || {}).length } : null,
     pendentes: Object.keys(estado.devendo || {}).length, naFila: filas.size
   };
 }
@@ -3202,6 +3223,9 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const lids = Object.keys(chats).filter(j => j.endsWith('@lid'));
           let bl = ''; try { bl = fs.readFileSync(path.join(DADOS, 'baileys.log'), 'utf8').split('\n').slice(-25).map(l => { try { const o = JSON.parse(l); return (o.msg || '') + ' ' + JSON.stringify(o.err ? o.err.message : (o.error || '')).slice(0, 200); } catch (e) { return l.slice(0, 200); } }).join('\n'); } catch (e) { }
           return json(res, { baileys: bl, etiquetas: etq.labels, etiquetando, temAddLabel: !!(sock && typeof sock.addLabel === 'function'), chats: Object.keys(chats).length, lids: lids.length, lidsComTelefone: lids.filter(j => lidPn[j] || chats[j].telefone).length, mapa: Object.keys(lidPn).length, contatos: Object.keys(contatos).length, temLidMapping: !!(sock && sock.signalRepository && sock.signalRepository.lidMapping) });
+        }
+        else if (ac === 'retornos') {   // retornos combinados com clientes ("amanhã cedo eu te chamo"), para conferência
+          return json(res, { retornos: Object.entries(estado.retornos || {}).map(([jid, r]) => ({ jid, telefone: (chats[jid] || {}).telefone || '', nome: (chats[jid] || {}).nome || '', quando: r.q, assunto: r.assunto || '', criado: r.criado || 0 })) });
         }
         else if (ac === 'log') {
           let t = ''; try { t = fs.readFileSync(path.join(DADOS, 'ponte.log'), 'utf8'); } catch (e) { }
