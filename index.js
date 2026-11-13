@@ -3188,6 +3188,23 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           if (rA !== 'Enviado.') return json(res, { erro: rA }, /desconectado/i.test(rA) ? 409 : 400);
           anotar(jid, 'assistant', `(Djhonata enviou ${caminho}${legendaA ? ' com a legenda: ' + legendaA.slice(0, 300) : ''})`);
           return json(res, { ok: true, caminho });
+        } else if (ac === 'projeto_baixar') {   // 13/11/2026: o CRM manda o link temporário do anexo no Loft e o servidor baixa o projeto para a pasta do imóvel (a assistente passa a mandar a planta sozinha). texto = JSON { ref, url, nome }
+          let pj = null; try { pj = JSON.parse(String(b.texto || '')); } catch (e) { }
+          if (!pj || typeof pj !== 'object' || !pj.url) return json(res, { erro: 'mande texto = JSON { ref, url, nome }' }, 400);
+          const pastaP = acharPasta(String(pj.ref || '')); if (!pastaP || !/^\d{2,5}$/.test(String(pj.ref || ''))) return json(res, { erro: 'imóvel não encontrado' }, 404);
+          let up = null; try { up = new URL(String(pj.url)); } catch (e) { }
+          if (!up || up.protocol !== 'https:' || !((up.hostname === 's3.sa-east-1.amazonaws.com' && up.pathname.startsWith('/static.vista/')) || up.hostname === 'cdn.vistahost.com.br')) return json(res, { erro: 'endereço não permitido' }, 400);
+          const nomeP = String(pj.nome || '').trim(), nl = semAcento(nomeP).replace(/[^a-z0-9 .]/g, ' '), extP = ((/\.(pdf|jpe?g|png)$/i.exec(nomeP) || [])[1] || '').toLowerCase().replace('jpeg', 'jpg');
+          // Só projeto e planta. Documento interno (autorização de venda, contrato, documento pessoal, tabela) nunca entra na pasta que vai para o cliente.
+          if (!extP || !/projeto|planta|arquitet|humaniz|implanta|layout|pavimento|terreo|superior|inferior/.test(nl) || /autoriza|contrato|procura|matricula|certid|\brg\b|\bcpf\b|\bcnh\b|identidade|comprovante|iptu|escritura|proposta|recibo|boleto|declara|termo|ficha|cadastr|documento|laudo|avalia|habite|alvara|vistoria|financ|extrato|tabela|preco|memorial/.test(nl)) return json(res, { erro: 'esse anexo não é projeto ou planta' }, 400);
+          let bufP = null; try { const rp = await fetch(up.href, { signal: AbortSignal.timeout(90000) }); if (rp.ok) bufP = Buffer.from(await rp.arrayBuffer()); } catch (e) { log('projeto: não baixou', pastaP, e.message); }
+          if (!bufP || bufP.length < 500) return json(res, { erro: 'o arquivo não baixou (o link do Loft vale só 10 minutos)' }, 502);
+          if (bufP.length > 15e6) return json(res, { erro: 'arquivo acima de 15 MB' }, 400);
+          const cab = bufP.subarray(0, 8), ehPdf = cab.subarray(0, 4).toString('latin1') === '%PDF', ehJpg = cab[0] === 0xff && cab[1] === 0xd8, ehPng = cab[0] === 0x89 && cab.subarray(1, 4).toString('latin1') === 'PNG';
+          if ((extP === 'pdf' && !ehPdf) || (extP === 'jpg' && !ehJpg) || (extP === 'png' && !ehPng)) return json(res, { erro: 'o conteúdo não é ' + extP.toUpperCase() }, 400);
+          const arqP = 'projeto-' + (nl.replace(/\.(pdf|jpe?g|png)$/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'do-imovel') + '.' + extP;
+          fs.writeFileSync(path.join(CATALOGO, pastaP, arqP), bufP); log('projeto guardado', pastaP, arqP, bufP.length);
+          return json(res, { ok: true, pasta: pastaP, arquivo: arqP, bytes: bufP.length });
         } else if (ac === 'saldos') {   // aba Pagamentos do CRM
           await lerEleven(!!b.on);
           return json(res, { saldos: dadosSaldos(), baixos: saldosBaixos() });
