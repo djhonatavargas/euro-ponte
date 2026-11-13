@@ -2736,7 +2736,8 @@ Regras:
 - "objecoes": toda dúvida ou objeção que apareceu, com o status. "pendencias": promessas em aberto (planta, resposta, retorno).
 - "comecar": comece pelo que está em aberto e pode derrubar a venda.
 - Mensagens [ia] e [voce] foram enviadas em nome do Djhonata. Frases curtas, português simples, sem emoji. Valores no formato R$ 10.000,00.
-- O JSON tem de ser válido: dentro dos textos nunca use aspas duplas nem quebra de linha. Para citar o cliente use aspas simples ('assim').`;
+- O JSON tem de ser válido: dentro dos textos nunca use aspas duplas nem quebra de linha. Para citar o cliente use aspas simples ('assim').
+- Cada texto com no máximo 180 caracteres, em frase completa.`;
 function fichaQuando(q) { const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(q || ''); if (!m) return ''; const d = new Date(+m[1], +m[2] - 1, +m[3]); return ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'][d.getDay()] + `, ${m[3]}/${m[2]}/${m[1]}` + (m[4] ? `, às ${+m[4]}h${m[5] !== '00' ? m[5] : ''}` : ''); }
 function fichaLinha(m) { const d = new Date((m.ts || 0) - 3 * 3600e3).toISOString(); return d.slice(8, 10) + '/' + d.slice(5, 7) + ' ' + d.slice(11, 16) + ' [' + m.autor + (m.tipo && m.tipo !== 'text' ? ':' + m.tipo : '') + '] ' + String(m.texto || '').replace(/\s*\n+\s*/g, ' / ').slice(0, 1500); }
 function fichaImovel(pasta) {   // dados do imóvel como estão no cadastro (ficha.md), mais o fluxo padrão de hoje
@@ -2764,14 +2765,14 @@ async function fichaGerar(jid, motivo) {
     let j = await tentar('');
     if (!j || typeof j !== 'object') j = await tentar('\n\nATENÇÃO: a resposta anterior não era um JSON válido. Devolva só o JSON pedido, sem texto antes nem depois, sem aspas duplas dentro dos textos.');
     if (!j || typeof j !== 'object') throw new Error('resposta sem JSON');
-    const tx = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n), lista = (v, n) => (Array.isArray(v) ? v : []).map(x => tx(x, 220)).filter(Boolean).slice(0, n);
+    const tx = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n), lista = (v, n) => (Array.isArray(v) ? v : []).map(x => tx(x, 340)).filter(Boolean).slice(0, n);
     const ji = j.imovel || {}, fl = j.fluxo || {}, im = ims.find(i => i.pasta === ji.pasta) || (ims.length === 1 ? ims[0] : null);
     const linhas = (Array.isArray(fl.linhas) ? fl.linhas : []).map(x => ({ item: tx((x || {}).item, 120), valor: tx((x || {}).valor, 40) })).filter(x => x.item).slice(0, 10);
     const ficha = { v: 1, jid, nome: c.nome || '', telefone: c.telefone || '', origem, crm: st, visita: visTxt,
       imovel: im ? Object.assign({}, im, { unidade: tx(ji.unidade, 160), medidas: tx(ji.medidas, 160) }) : null,
       fluxo: { enviado: !!fl.enviado && linhas.length > 0, quando: tx(fl.quando, 40), linhas, total: tx(fl.total, 40), dito: tx(fl.dito, 300), resposta: tx(fl.resposta, 300) },
       quer: lista(j.quer, 7), informou: lista(j.informou, 7),
-      objecoes: (Array.isArray(j.objecoes) ? j.objecoes : []).map(o => ({ ponto: tx((o || {}).ponto, 140), status: tx((o || {}).status, 20), nota: tx((o || {}).nota, 200) })).filter(o => o.ponto).slice(0, 7),
+      objecoes: (Array.isArray(j.objecoes) ? j.objecoes : []).map(o => ({ ponto: tx((o || {}).ponto, 220), status: tx((o || {}).status, 20), nota: tx((o || {}).nota, 340) })).filter(o => o.ponto).slice(0, 7),
       pendencias: lista(j.pendencias, 5), comecar: lista(j.comecar, 3), geradaEm: Date.now(), ateTs: todas[todas.length - 1].ts || 0, deTs: l[0].ts || 0, msgs: l.length, motivo };
     gravarJson(arqFichaAt(jid), ficha); delete fichaAt.erros[jid];
     log('ficha de atendimento:', motivo, jid, im ? im.nome : 'sem imóvel');
@@ -3486,6 +3487,11 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           } catch (e) { log('ficha: foto', pasta, e.message); }
           if (buf && buf.length > 3e6) buf = null;
           return json(res, { ok: true, pasta, tipo: /\.png(\?|$)/i.test(f1) ? 'image/png' : /\.webp(\?|$)/i.test(f1) ? 'image/webp' : 'image/jpeg', b64: buf ? buf.toString('base64') : '' });
+        }
+        else if (ac === 'fichas_gerar') {   // texto = telefones separados por vírgula: põe na fila quem tem conversa e ainda não tem ficha
+          const tels = String(b.texto || '').split(/[,;\s]+/).filter(Boolean); let naFila = 0, jaTem = 0, semConversa = 0;
+          for (const t of tels) { const j = fichaAlvo(t); if (!j || !lerEsp(j).length) { semConversa++; continue; } if (lerFichaAt(j)) { jaTem++; continue; } fichaPedir(j, 'quem já marcou visita'); naFila++; }
+          return json(res, { ok: true, naFila, jaTem, semConversa });
         }
         else if (ac === 'fichas') {   // quais clientes já têm ficha de atendimento
           const lista = []; try { for (const f of fs.readdirSync(FICHAS_DIR)) if (f.endsWith('.json')) { const x = lerJson(path.join(FICHAS_DIR, f), null); if (x && x.jid) lista.push({ jid: x.jid, nome: x.nome, telefone: x.telefone, geradaEm: x.geradaEm, imovel: x.imovel ? x.imovel.nome : '' }); } } catch (e) { }
