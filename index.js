@@ -2755,7 +2755,7 @@ async function fichaGerar(jid, motivo) {
     const dados = `CLIENTE: ${c.nome || 'sem nome'} | telefone ${c.telefone || ''} | origem: ${origem} | etapa no CRM: ${st || 'sem card'}${visTxt ? ' | visita marcada: ' + visTxt : ''}\n\nIMÓVEIS ENVIADOS NA CONVERSA (dados do cadastro):\n`
       + (ims.map(i => `- pasta: ${i.pasta} | ${i.nome} | ${i.endereco} | ${i.tipo} | ${i.area} | ${i.comodos} | ${i.vagas} | ${i.preco} | entrega: ${i.entrega} | unidades: ${i.unidades || 'não informado'}`).join('\n') || '(nenhum imóvel do catálogo foi enviado)')
       + '\n\nCONVERSA (horário de Joinville):\n' + l.slice(-220).map(fichaLinha).join('\n');
-    const bruto = await claudeTexto(SIS_FICHA, dados, 1800, 0);
+    const bruto = await claudeTexto(SIS_FICHA, dados, 1800);   // sem temperatura: o modelo atual não aceita esse parâmetro
     const mj = /\{[\s\S]*\}/.exec(bruto || ''); let j = null; try { j = mj ? JSON.parse(mj[0]) : null; } catch (e) { }
     if (!j || typeof j !== 'object') throw new Error('resposta sem JSON');
     const tx = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n), lista = (v, n) => (Array.isArray(v) ? v : []).map(x => tx(x, 220)).filter(Boolean).slice(0, n);
