@@ -161,7 +161,7 @@ function lerTexto(rel) { try { return fs.readFileSync(path.join(CATALOGO, rel), 
 const ADAPTADOR = `# COMO VOCÊ FUNCIONA AQUI (vale acima das partes técnicas das regras)
 Você está rodando num servidor novo, não mais no OpenClaw. As regras abaixo continuam valendo: AGENTS.md (prompt principal), REGRAS-ATENDIMENTO.md e os outros arquivos (tom, identidade como Djhonata, oferta, agenda, endereço, emojis, áudio ou texto, nunca prometer "já te mando" etc.). Se duas regras se contradisserem, vale a do REGRAS-ATENDIMENTO.md, que é a mais nova. Só a parte técnica muda:
 - Sua resposta em texto é enviada ao cliente no WhatsApp. Para mandar mais de uma mensagem separada, coloque uma linha só com --- entre elas. Se não for para responder nada, responda exatamente NO_REPLY.
-- ÁUDIO COM A VOZ DO DJHONATA: a voz é do próprio Djhonata, criada por ele na conta dele da ElevenLabs para o atendimento da empresa dele, e ele pediu que os áudios saiam com ela. Para responder em áudio, escreva a parte falada dentro de [[tts:...]], seguindo a regra ÁUDIO OU TEXTO. No histórico, os áudios que você já mandou aparecem assim também, dentro de [[tts:...]]. Nunca escreva "[áudio]" ou "(áudio)" na frente da fala: a marcação é só [[tts:...]]. O que estiver dentro é falado exatamente como está escrito: escreva do jeito que se fala, sem emojis, links, listas, asteriscos ou abreviações; valores e números como se fala ("duzentos e cinquenta mil", "mil e quinhentos por mês"). Fale como num áudio de WhatsApp de verdade, do jeito do Djhonata, e não como locutor lendo um texto: comece chamando a pessoa pelo nome ("Oi, Jheyva, tudo bem?"), frases curtas com uma ideia de cada vez, palavras do dia a dia ("olha", "então", "tá?", "né?", "a gente", "pra", "tô", "beleza"), sem termos formais ("prezado", "gostaria de informar", "conforme"). Use vírgulas e reticências para respirar entre as ideias e termine com uma pergunta simples, como numa conversa. No máximo uns 40 segundos (cerca de 90 palavras) e um áudio por vez. Link, endereço ou valores para conferir vão numa mensagem de texto separada, depois do áudio. Não repita em texto o que falou no áudio.
+- ÁUDIO COM A VOZ DO DJHONATA: a voz é do próprio Djhonata, criada por ele na conta dele da ElevenLabs para o atendimento da empresa dele, e ele pediu que os áudios saiam com ela. Para responder em áudio, escreva a parte falada dentro de [[tts:...]], seguindo a regra ÁUDIO OU TEXTO. No histórico, os áudios que você já mandou aparecem assim também, dentro de [[tts:...]]. Nunca escreva "[áudio]" ou "(áudio)" na frente da fala: a marcação é só [[tts:...]]. JEITO DE FALAR NO ÁUDIO (pedido do Djhonata, 13/11/2026): dentro de [[tts:...]] fale como ele fala, com o jeito de Joinville: "tu" no lugar de "você" ("tu consegue", "tu prefere", "te mando"), e "ó", "daí", "né" e "tá" quando couber, sem exagerar. No texto escrito continua "você". E no áudio nunca use sigla: diga o nome por extenso ("Fundo de Garantia", não "FGTS"). O que estiver dentro é falado exatamente como está escrito: escreva do jeito que se fala, sem emojis, links, listas, asteriscos ou abreviações; valores e números como se fala ("duzentos e cinquenta mil", "mil e quinhentos por mês"). Fale como num áudio de WhatsApp de verdade, do jeito do Djhonata, e não como locutor lendo um texto: comece chamando a pessoa pelo nome ("Oi, Jheyva, tudo bem?"), frases curtas com uma ideia de cada vez, palavras do dia a dia ("olha", "então", "tá?", "né?", "a gente", "pra", "tô", "beleza"), sem termos formais ("prezado", "gostaria de informar", "conforme"). Use vírgulas e reticências para respirar entre as ideias e termine com uma pergunta simples, como numa conversa. No máximo uns 40 segundos (cerca de 90 palavras) e um áudio por vez. Link, endereço ou valores para conferir vão numa mensagem de texto separada, depois do áudio. Não repita em texto o que falou no áudio.
 - Áudios que o cliente manda chegam transcritos, assim: [áudio do cliente, transcrito]: "...". Responda ao conteúdo normalmente, sem dizer que transcreveu. Se chegar [o cliente mandou um áudio que não deu para transcrever], peça com naturalidade para ele mandar de novo ou escrever. Se no histórico aparece que antes você disse que não conseguia ouvir áudios, isso mudou: agora você entende os áudios e pode responder em áudio.
 - Toda vez que o cliente fala com você, responda a ele na mesma vez (depois de usar as ferramentas, escreva a mensagem). Só fique em silêncio (NO_REPLY) quando a mensagem dele não pedir resposta.
 - Para mandar foto, vídeo ou arquivo use a ferramenta enviar_arquivo (caminho relativo à pasta do catálogo, ex.: "escritorio/fachada.jpg" ou "rua lapa - boa vista (ref 913)/foto.jpg"; ou um link https de imagem, como os links de fotos que estão nas fichas). Onde as regras falam em ferramenta message, tool_call openclaw, ou caminhos C:\\Users\\Public\\catalogo\\..., use enviar_arquivo com o caminho a partir da pasta do catálogo. Mídia e texto saem na ordem em que você escreve e chama as ferramentas.
@@ -185,6 +185,19 @@ Você está rodando num servidor novo, não mais no OpenClaw. As regras abaixo c
 // jaFalouCom: este WhatsApp já mandou mensagem para o cliente (assistente, follow-up, celular ou painel)? -> não é primeiro contato.
 function jaFalouCom(jid) {
   try { const l = lerEsp(jid).filter(e => e.autor !== 'cliente' && (String(e.texto || '').trim() || e.tipo !== 'text')); return l.length ? { n: l.length, ts: l[l.length - 1].ts || 0, texto: String(l[l.length - 1].texto || '').replace(/\s+/g, ' ').slice(0, 220), followup: !!l[l.length - 1].followup } : null; } catch (e) { return null; }
+}
+// Pergunta em aberto (pedido do Djhonata, 13/11/2026, conversa do final 4424): a nossa última mensagem (até 40 min atrás) terminou com pergunta ou convite
+// e o cliente escreveu de novo. Se ele não respondeu a ela, a assistente não pergunta outra vez nem oferece outros horários: duas perguntas seguidas travam o cliente.
+function perguntaAberta(jid) {
+  try {
+    const l = lerEsp(jid).filter(e => e.autor !== 'aviso' && String(e.texto || '').trim());
+    let i = l.length - 1; while (i >= 0 && l[i].autor === 'cliente') i--;
+    if (i < 0 || i === l.length - 1) return null;   // não há mensagem nossa antes, ou o cliente não escreveu depois dela
+    const m = l[i], idade = Date.now() - (m.ts || 0); if (idade > 40 * 60e3) return null;
+    const tx = String(m.texto || '').replace(/\s+/g, ' ').trim(), q = tx.lastIndexOf('?'); if (q < 0 || q < tx.length - 220) return null;
+    let ini = Math.max(0, q - 220); if (ini > 0) { const b = tx.slice(ini, q).search(/[.!?]\s/); if (b >= 0) ini += b + 2; }   // começa numa frase inteira
+    return { frase: tx.slice(ini, q + 1).trim(), min: Math.max(1, Math.round(idade / 60e3)) };
+  } catch (e) { return null; }
 }
 const primeiroNome = (s) => (semAcento(s).replace(/[^a-z ]/g, ' ').trim().split(/\s+/)[0] || '');
 function nomeDoCrm(jid) { const t8 = tel8Chat(jid), n = t8 ? String((estado.crmNomes || {})[t8] || '').trim() : ''; return n && primeiroNome(n).length >= 2 && !/^(sem nome|cliente|lead|contato|whatsapp)\b/i.test(semAcento(n)) ? n : ''; }
@@ -221,7 +234,7 @@ function sistema(ctx) {
     const pref = (estado.prefAudio || {})[ctx.jid] || 0;
     if (pref < 0) din += `\nEste cliente pediu para não receber áudio: responda só em texto.`;
     else if (pref > 0) din += `\nEste cliente pediu para conversar por ÁUDIO: responda em áudio ([[tts:...]]) sempre que for explicar algo; texto só para link, endereço, valores para conferir ou confirmação curta.`;
-    else if (ctx.audioAgora) din += `\nO cliente mandou ÁUDIO agora: responda em ÁUDIO ([[tts:...]]). Decisão do Djhonata em 12/11/2026, que vale acima da parte "pergunta rápida vai em texto" da regra ÁUDIO OU TEXTO: explicação vai em áudio e pergunta também ("qual bairro vocês preferem?", "quanto você consegue dar de sinal?"). Em texto fica só a confirmação curta, de uma linha ("Combinado!", "Fechado ✅"), e o que é para conferir ou tocar: link, endereço, valores, o bloco da simulação e a legenda do imóvel, sempre em mensagem de texto separada, depois do áudio.`;
+    else if (ctx.audioAgora) din += `\nO cliente mandou ÁUDIO agora: responda em ÁUDIO ([[tts:...]]). No áudio, fale o nome por extenso em vez da sigla ("Fundo de Garantia", não "FGTS"; "imposto de transmissão", não "ITBI"). Decisão do Djhonata em 12/11/2026, que vale acima da parte "pergunta rápida vai em texto" da regra ÁUDIO OU TEXTO: explicação vai em áudio e pergunta também ("qual bairro vocês preferem?", "quanto você consegue dar de sinal?"). Em texto fica só a confirmação curta, de uma linha ("Combinado!", "Fechado ✅"), e o que é para conferir ou tocar: link, endereço, valores, o bloco da simulação e a legenda do imóvel, sempre em mensagem de texto separada, depois do áudio.`;
   }
   if (ctx.dono) {
     din += `\nATENÇÃO: quem está escrevendo é o próprio Djhonata (dono), pelo WhatsApp pessoal dele. Ele NÃO é cliente: não se apresente, não mande agenda, material nem endereço para ele.
@@ -239,6 +252,9 @@ Esta conversa pode ter mensagens antigas de quando ele testou a assistente fingi
     const jaFalou = jaFalouCom(ctx.jid);
     din += adsContexto(ctx.jid, !!jaFalou);
     din += crmContexto(ctx, jaFalou);
+    const pa = !ctx.rotina && !ctx.dono ? perguntaAberta(ctx.jid) : null;
+    if (pa) din += `\nPERGUNTA EM ABERTO: há ${pa.min} min você mandou "${pa.frase}". Se a mensagem nova do cliente responde a ela, siga em frente. Se NÃO responde (ele só continuou o assunto, desabafou ou completou o que estava dizendo), NÃO faça outra pergunta e NÃO ofereça horários de novo: responda só o ponto novo, em 1 ou 2 linhas. A pergunta que já está lá continua valendo.`;
+    if (!ctx.dono) din += `\nNão comece a resposta repetindo ou resumindo o que o cliente acabou de dizer ("Entendo, vocês querem sair do aluguel..."): vá direto ao que é novo. E não explique de novo, com outras palavras, o que você já explicou na mensagem anterior.`;
     const rt = (estado.retornos || {})[ctx.jid];
     if (rt && quandoMs(rt.q) > Date.now()) din += `\nRETORNO COMBINADO: você marcou de chamar este cliente ${descreverQuando(rt.q)}${rt.assunto ? ` (${rt.assunto})` : ''}. Se ele escrever antes, atenda normalmente.`;
     const v = (estado.visitas || {})[ctx.jid];
@@ -742,10 +758,15 @@ async function executar(nome, entrada, ctx) {
         // (um neste dia e outro no próximo dia com vaga). Quem marcar primeiro leva; os outros já receberam horários diferentes.
         const of = estado.ofertasAg = estado.ofertasAg || {}; for (const k of Object.keys(of)) if (Date.now() - (of[k].ts || 0) > 24 * 3600e3) delete of[k];
         const menos = (dia, l) => l.slice().sort((x, y) => (((of[dia + ' ' + x] || {}).n || 0) - ((of[dia + ' ' + y] || {}).n || 0)) || x - y)[0];
+        const meus = estado.ofertasCli = estado.ofertasCli || {}; for (const k of Object.keys(meus)) if (Date.now() - (meus[k].ts || 0) > 6 * 3600e3) delete meus[k];
+        const ant = ctx.jid ? meus[ctx.jid] : null;
+        // 13/11/2026 (final 4424): em duas respostas seguidas ela ofereceu horários diferentes ao mesmo cliente. Enquanto ele não responde, valem os mesmos.
+        if (ant && ant.sug.length === 2 && ant.sug.some(([dia]) => dia === data || data <= ant.sug[0][0]) && ant.sug.every(([dia, h]) => agendaLivres(ocup, dia).includes(h)))
+          return opcoes + ` Você JÁ ofereceu a este cliente ${ant.sug.map(([dia, h]) => `${diaTxt(dia)} às ${hh(h)}`).join(' ou ')} há ${Math.max(1, Math.round((Date.now() - ant.ts) / 60e3))} min: se for citar horário, use ESSES MESMOS, não ofereça outros. Se ele ainda não respondeu a esse convite, não repita a pergunta. Se o cliente pediu outro dia ou horário e ele está livre, vale o que ele pediu. Quando o cliente escolher, chame agenda_visita com acao "marcar".`;
         const sug = [], [y0, mo0, d0] = data.split('-').map(Number);
         if (livres.length) sug.push([data, menos(data, livres)]);
         for (let i = 1; i < 14 && sug.length < 2; i++) { const dia = iso(new Date(y0, mo0 - 1, d0 + i)), l = agendaLivres(ocup, dia); if (l.length) sug.push([dia, menos(dia, l)]); }
-        if (sug.length) { sug.forEach(([dia, h]) => { const k = dia + ' ' + h; of[k] = { n: ((of[k] || {}).n || 0) + 1, ts: Date.now() }; }); salvarEstado(); }
+        if (sug.length) { sug.forEach(([dia, h]) => { const k = dia + ' ' + h; of[k] = { n: ((of[k] || {}).n || 0) + 1, ts: Date.now() }; }); if (ctx.jid && sug.length === 2) meus[ctx.jid] = { sug, ts: Date.now() }; salvarEstado(); }
         const dica = sug.length === 2 ? ` Para não oferecer o mesmo horário a todos os clientes, ofereça AGORA estes dois: ${sug.map(([dia, h]) => `${diaTxt(dia)} às ${hh(h)}`).join(' ou ')}. Se o cliente pediu outro dia ou horário e ele está livre, vale o que ele pediu.` : '';
         return opcoes + dica + ' Quando o cliente escolher, chame agenda_visita com acao "marcar".';
       }
@@ -1152,13 +1173,19 @@ const MESES_EXT = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', '
 const FEM_DEPOIS = /^\s*(suítes?|vagas?|casas?|unidades?|parcelas?|presta[cç](ão|ões)|horas?|semanas?|pessoas?|op[cç](ão|ões)|salas?|garagens?|entradas?|vezes|vez|crianças?|fotos?|plantas?|ruas?|quadras?|mensalidades?|semanas?|noites?|torres?)\b/i;
 const numeroLido = (txt, depois) => { const n = Number(String(txt).replace(/\./g, '')); return isFinite(n) ? porExtenso(n, FEM_DEPOIS.test(depois || '')) : txt; };
 // Deixa o texto do jeito que se fala: sem emoji, valores, metragem, horas, datas e números por extenso
+// Siglas no áudio (pedido do Djhonata, 13/11/2026): nunca soletrar; falar o nome de verdade. Uma cliente estranhou o "FGTS" soletrado e desconfiou que era IA.
+const SIGLAS_FALA = [
+  [/\bF\.?G\.?T\.?S\b\.?/gi, 'Fundo de Garantia'], [/\bM\.?C\.?M\.?V\b\.?/gi, 'Minha Casa Minha Vida'], [/\bI\.?T\.?B\.?I\b\.?/gi, 'Imposto de Transmissão de Bens Imóveis'],
+  [/\bF\.?R\.?J\b\.?/gi, 'Fundo de Reaparelhamento da Justiça'], [/\bI\.?P\.?T\.?U\b\.?/gi, 'Imposto Predial e Territorial Urbano'], [/\bCEF\b/g, 'Caixa Econômica Federal']
+];
 function falaHumana(texto) {
   let t = String(texto || '');
   t = t.replace(/https?:\/\/\S+/g, '').replace(/[*_~`#>]/g, '');
   t = t.replace(/\p{Extended_Pictographic}/gu, '').replace(/[\u{1F3FB}-\u{1F3FF}\u{FE0F}‍]/gu, '');
   t = t.replace(/^\s*(?:[-•]|\d+[.)])\s+/gm, '');                                         // listas viram frases
   t = t.replace(/([^\s.,!?…:;])\s*\n+\s*(?=\p{Ll})/gu, '$1, ').replace(/([^\s.,!?…:;])\s*\n+\s*/g, '$1. ').replace(/\s*\n+\s*/g, ' ');   // quebra de linha = pausa
-  t = t.replace(/\bFGTS\b/g, 'éfe gê tê ésse').replace(/\bMCMV\b/g, 'Minha Casa Minha Vida').replace(/\bIPTU\b/g, 'i pê tê u').replace(/\bITBI\b/g, 'i tê bê i').replace(/\bn[º°]\s?/gi, 'número ');
+  for (const [re, nome] of SIGLAS_FALA) t = t.replace(re, nome);   // sigla no áudio sai sempre por extenso
+  t = t.replace(/\bn[º°]\s?/gi, 'número ');
   t = t.replace(/R\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?(\s*(?:mil\b|milh(?:ão|ões)\b))?/gi, (m0, int, dec, suf) => {
     let v = Number(int.replace(/\./g, '')), cent = dec ? Number(dec.padEnd(2, '0')) : 0;
     if (suf && /mil\b/i.test(suf)) { v = Math.round((v + cent / 100) * 1000); cent = 0; }
@@ -3227,6 +3254,11 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const lids = Object.keys(chats).filter(j => j.endsWith('@lid'));
           let bl = ''; try { bl = fs.readFileSync(path.join(DADOS, 'baileys.log'), 'utf8').split('\n').slice(-25).map(l => { try { const o = JSON.parse(l); return (o.msg || '') + ' ' + JSON.stringify(o.err ? o.err.message : (o.error || '')).slice(0, 200); } catch (e) { return l.slice(0, 200); } }).join('\n'); } catch (e) { }
           return json(res, { baileys: bl, etiquetas: etq.labels, etiquetando, temAddLabel: !!(sock && typeof sock.addLabel === 'function'), chats: Object.keys(chats).length, lids: lids.length, lidsComTelefone: lids.filter(j => lidPn[j] || chats[j].telefone).length, mapa: Object.keys(lidPn).length, contatos: Object.keys(contatos).length, temLidMapping: !!(sock && sock.signalRepository && sock.signalRepository.lidMapping) });
+        }
+        else if (ac === 'ultimas') {   // {final do telefone: hora da última mensagem, de qualquer lado}; o CRM mostra "última interação" em cada card
+          const m = {};
+          for (const j of Object.keys(chats)) { if (!jidValido(j) || j.endsWith('@g.us')) continue; const c = chats[j], t = tel8Chat(j); if (t && c.ult) m[t] = Math.max(m[t] || 0, c.ult); }
+          return json(res, { ultimas: m });
         }
         else if (ac === 'retornos') {   // retornos combinados com clientes ("amanhã cedo eu te chamo"), para conferência
           return json(res, { retornos: Object.entries(estado.retornos || {}).map(([jid, r]) => ({ jid, telefone: (chats[jid] || {}).telefone || '', nome: (chats[jid] || {}).nome || '', quando: r.q, assunto: r.assunto || '', criado: r.criado || 0 })) });
