@@ -533,6 +533,10 @@ function textoRecenteCliente(jid) {   // o que o cliente mandou desde a última 
   for (let i = h.length - 1; i >= 0 && h[i].role === 'user'; i--) t.push(h[i].texto);
   return t.join(' ');
 }
+// Projeto ou planta do imóvel (pedido do Djhonata, 13/11/2026): quando o cliente pede a planta, o projeto vai. Arquivo de projeto = PDF da pasta, ou imagem com "projeto" ou "planta" no nome.
+const EH_PROJETO = /\.pdf$|(projeto|planta)[^\\/]*\.(jpe?g|png|webp)$/i;
+function projetosDaPasta(p) { try { return fs.readdirSync(path.join(CATALOGO, p)).filter(f => EH_PROJETO.test(f)).map(f => `${p}/${f}`); } catch (e) { return []; } }
+function clientePediuProjeto(jid) { return /\b(plantas?|projetos?|pdf|layout)\b/i.test(textoRecenteCliente(jid)); }
 function clientePediuFotos(jid) { return /\b(fotos?|imagens?)\b/i.test(textoRecenteCliente(jid)); }
 
 // ---------- geografia de Joinville (pedido do Djhonata, 12/11/2026): bairros vizinhos, tempo de carro e o que tem perto de cada imóvel ----------
@@ -768,12 +772,21 @@ async function executar(nome, entrada, ctx) {
       const ge = geoEnderecoDaFicha(p), entornoTxt = geoEntornoTexto(p), bp = ge && ge.bairro >= 0 ? geoBairrosPerto(ge.bairro) : null;
       const local = (bp ? `\nLOCALIZAÇÃO: bairro ${GEOJOI.nomes[ge.bairro]}. Faz divisa com: ${bp.divisa.join(', ') || 'nenhum mapeado'}.${bp.perto.length ? ' Até 10 min de carro: ' + bp.perto.join(', ') + '.' : ''} Só estes bairros podem ser chamados de "perto"; para qualquer outro lugar use a ferramenta distancia.` : '')
         + (entornoTxt ? `\nPERTO DESTE IMÓVEL (conferido no mapa e aprovado pelo Djhonata; distâncias aproximadas a pé): ${entornoTxt}.` : '\nPERTO DESTE IMÓVEL: ainda sem informação conferida. Se o cliente perguntar o que tem perto, diga que vai confirmar.');
-      return `Pasta: ${p}\n${guia}${local}\nArquivos de mídia na pasta: ${arqs.map(a => `${p}/${a}`).join(' | ') || 'nenhum (as fotos são os links da ficha)'}\n\n${ficha}`;
+      const projs = projetosDaPasta(p);
+      const projTxt = projs.length
+        ? `\nPROJETO NA PASTA: ${projs.join(' | ')}. Se o cliente pedir a planta ou o projeto, mande este arquivo com enviar_arquivo, com uma legenda curta, e depois convide com dois horários. Não mande sem ele pedir.`
+        : `\nPROJETO: não há arquivo de projeto na pasta deste imóvel. Se o cliente pedir a planta ou o projeto, diga uma vez "Vou separar o projeto e já te mando aqui" e use avisar_djhonata com "ENVIAR PROJETO", o nome do cliente e o imóvel.`;
+      const unid = /^- Unidades dispon[íi]veis:.*\d/mi.test(ficha) ? `\nPONTA OU MEIO: de ponta são a casa 1 e a de maior número do conjunto (some as disponíveis e as vendidas das anotações); as outras são de meio. Se perguntarem, responda com o número da casa e o valor.` : '';
+      const fichaTxt = ficha.replace(/Se o cliente pedir, diga que vai pedir para o Djhonata enviar e mande o aviso\.?/g, 'Se o cliente pedir, siga a linha PROJETO acima.');
+      return `Pasta: ${p}\n${guia}${local}${projTxt}${unid}\nArquivos de mídia na pasta: ${arqs.map(a => `${p}/${a}`).join(' | ') || 'nenhum (as fotos são os links da ficha)'}\n\n${fichaTxt}`;
     }
     if (nome === 'enviar_arquivo') {
-      let caminho = String(entrada.caminho || ''); const legenda = entrada.legenda || '';
+      let caminho = String(entrada.caminho || '').replace(/^[a-z]:[\\/]+users[\\/]+public[\\/]+catalogo[\\/]+/i, ''); const legenda = entrada.legenda || '';
+      // projeto ou planta (13/11/2026): vai quando o cliente pede, e não conta como a oferta do imóvel
+      const ehProjeto = !/^https?:\/\//i.test(caminho) && EH_PROJETO.test(caminho);
+      if (ehProjeto && !ctx.dono && !clientePediuProjeto(ctx.jid)) return 'Não enviado: o projeto só vai quando o cliente pedir a planta ou o projeto. Continue a conversa sem falar disso.';
       // regra da oferta: com vídeo vai o vídeo; sem vídeo, a foto da fachada; outras fotos só se o cliente pediu
-      const pasta = ctx.dono ? '' : pastaDoCaminho(caminho);
+      const pasta = ctx.dono || ehProjeto ? '' : pastaDoCaminho(caminho);
       let extra;
       if (pasta) {
         const ehVideo = EXT_VID.test(caminho.split('?')[0]);
@@ -1546,7 +1559,7 @@ async function enviarArquivo(jid, caminho, legenda, autor = 'ia', extra) {
   let conteudo, tipo, ref = '';
   if (/^https?:\/\//i.test(caminho)) { conteudo = { url: caminho }; tipo = EXT_VID.test(caminho) ? 'video' : 'image'; ref = caminho; }
   else {
-    const rel = caminho.replace(/^[\\/]+/, '').replace(/\\/g, '/');
+    const rel = caminho.replace(/\\/g, '/').replace(/^[a-z]:\/+users\/+public\/+catalogo\/+/i, '').replace(/^\/+/, '');
     const abs = path.resolve(CATALOGO, rel);
     if (!abs.startsWith(CATALOGO + path.sep) || !fs.existsSync(abs)) return 'Arquivo não encontrado: ' + caminho;
     // Só foto, vídeo e PDF saem do catálogo. A ficha (ficha.md) e os arquivos de regras têm anotações internas: nunca vão para o WhatsApp (pedido do Djhonata, 13/11/2026;
@@ -1559,7 +1572,7 @@ async function enviarArquivo(jid, caminho, legenda, autor = 'ia', extra) {
   try { await guardaEnvio(jid, autor, legenda, tipo); } catch (e) { return 'Não enviado: ' + e.message; }
   const msg = tipo === 'image' ? { image: conteudo, caption: legenda || undefined }
     : tipo === 'video' ? { video: conteudo, caption: legenda || undefined, mimetype: 'video/mp4' }
-      : { document: conteudo, fileName: path.basename(caminho), caption: legenda || undefined, mimetype: 'application/octet-stream' };
+      : { document: conteudo, fileName: path.basename(caminho), caption: legenda || undefined, mimetype: /\.pdf$/i.test(caminho) ? 'application/pdf' : 'application/octet-stream' };
   const r = await sock.sendMessage(jid, msg);
   const id = lembrarEnvio(r);
   registrarEspelho(jid, Object.assign({ id, autor, tipo, texto: legenda || '', arquivo: ref, nomeArquivo: tipo === 'document' ? path.basename(caminho) : undefined, ts: Date.now() }, extra || {}));
