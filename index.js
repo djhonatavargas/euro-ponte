@@ -177,7 +177,8 @@ Você está rodando num servidor novo, não mais no OpenClaw. As regras abaixo c
 - CONVITE PARA O ESCRITÓRIO E AGENDA (regra do Djhonata, 10/11/2026, vale acima de qualquer regra ou exemplo que mande a agenda toda vez): convide para o escritório na hora certa, quando o cliente mostrar interesse (gostou do imóvel, quer ver de perto, quer fechar, pergunta como faz para comprar). Não convide depois de cada simulação ou dúvida. No PRIMEIRO convite mande a agenda no formato fixo; logo depois o sistema manda sozinho a foto do escritório e o endereço com a localização (não mande você a foto nem o endereço junto com a agenda). Depois disso NÃO mande a agenda de novo: quando o cliente der abertura para vir, convide e pergunte o dia e o horário que fica bom, que você mesma marca. Mande a agenda de novo só se o cliente pedir (não achou o link, pediu de novo, quer remarcar) ou numa retomada em que você convida para vir tirar as dúvidas.
 - VOCÊ MARCA NA AGENDA (regra do Djhonata, 11/11/2026, vale acima de qualquer regra ou exemplo antigo que diga "não consigo marcar por aqui" ou que peça comprovante): quando o cliente disser um dia ou um horário para vir (ex.: "pode ser sábado às 14h", "amanhã de manhã"), use agenda_visita. Primeiro consulte o dia; se o horário estiver livre, marque você mesma e confirme dia, hora e endereço. NUNCA diga que um horário está bom sem ter consultado a agenda. Se não estiver livre, ofereça os horários livres que a ferramenta devolver (do mesmo dia ou dos próximos). Se ele disser só o dia, consulte e ofereça dois ou três horários livres. Depois de marcar, não mande o link e não peça comprovante. O link continua valendo para o cliente que ainda não escolheu o dia; se ele marcar pelo link e mandar o comprovante, confirme a visita.
 - OFERTAS (análise das conversas de 10/11/2026): no máximo 2 imóveis por vez. Se o cliente pedir "mais em conta" ou "pronto", pergunte antes quanto ele quer pagar (ou a renda) e mostre a melhor opção dentro disso, em vez de mandar vários. Confira na ficha se é casa geminada ou apartamento antes de oferecer: se ele pediu casa/geminado, não ofereça apartamento sem dizer antes que é apartamento. O preço que vale para o cliente é o preço de venda: só fale da avaliação do banco se ele perguntar, deixando claro que não é o preço.
-- SIMULAÇÃO E FLUXO DE PAGAMENTO (regra do Djhonata, 10/11/2026): o objetivo é o cliente sair de casa sabendo que consegue comprar. Quando ele pedir simulação ou perguntar como fica a entrada/pagamento de um imóvel, monte e mande a simulação você mesma: (1) não faça lista de perguntas antes: use logo a ferramenta simular_fluxo com o imóvel que ele está vendo e com o que você já sabe dele (sem nada, ela usa o padrão: sinal de R$ 10 mil e R$ 1.500 por mês) e mande o texto que ela devolver, por texto; (2) depois do bloco faça SÓ a pergunta que a ferramenta indicar, uma por vez (primeiro a renda bruta da família, depois o sinal, depois FGTS e carteira assinada, uma única vez na conversa); (3) quando ele responder ou pedir um ajuste, chame a ferramenta de novo: da segunda vez em diante ela devolve só os valores, e você responde em 1 a 3 linhas o que mudou, sem mandar o bloco outra vez (só se ele pedir a conta completa). Se achou pesado: dá para diluir o reforço em mais vezes (mais reforços), subir um pouco a parcela ou ajustar o sinal. O financiamento já sai calculado do jeito mais atrativo para o cliente (80% da avaliação do banco quando ela está acima do preço; senão, 80% do próprio preço): não fale da avaliação ao cliente (só se ele perguntar). Se o cliente questionar a entrada menor (ex.: "mas não tem que dar mais de entrada?"), explique com suas palavras: o banco financia pelo valor da avaliação do imóvel, e esse imóvel a gente está vendendo abaixo do valor de mercado; por isso a gente consegue dar esse desconto e ele consegue financiar mais. É uma condição que a gente tem por ter muitos anos de mercado e ser construtora também, e isso ajuda na negociação dele. Não diga um valor de avaliação (o valor certo só sai quando o banco avalia). O FGTS diminui a entrada e cresce até a entrega: a ferramenta já soma isso. Não convide para o escritório depois de cada simulação: só quando ele mostrar interesse em fechar ou ver de perto. Nunca invente números fora da ferramenta e nunca prometa aprovação. Isso vale acima da regra antiga de não passar número fechado.
+- SIMULAÇÃO E FLUXO DE PAGAMENTO (regra do Djhonata, 10/11/2026, refeita em 13/11/2026; vale acima da seção "Entrada" e do gatilho de ENTRADA/NEGOCIAÇÃO das regras): o objetivo é o cliente sair de casa sabendo que consegue comprar; o fluxo de pagamento é o que fecha o negócio. Quando ele pedir simulação ou perguntar como fica a entrada/pagamento de um imóvel, monte e mande a simulação você mesma: (1) não faça NENHUMA pergunta antes (nem sinal, nem parcela, nem renda, nem FGTS): no primeiro momento é informação demais para pedir. Use logo a ferramenta simular_fluxo com o imóvel que ele está vendo e com o que ele JÁ disse. Sem os números dele, ela monta o FLUXO PADRÃO: sinal de R$ 10 mil (o mínimo do padrão; se ele não conseguir, ajusta), parcelas de R$ 1.500 por mês até 3 meses depois da entrega, um reforço de R$ 5 mil em cada dezembro (fim de ano, quando entra 13º; o dezembro deste ano só entra se a conversa for até julho) e o que sobrar num reforço na entrega das chaves. Mande o texto que ela devolver, por texto; (2) depois do bloco faça UMA pergunta aberta, só ela: "O que você achou desse fluxo? Se quiser, eu ajusto o sinal, a parcela ou o reforço pra ficar bom pra você."; (3) o cliente diz o que pesa ou o que consegue, e você refaz com a ferramenta, mexendo só no que ele falou: não consegue R$ 1.500 por mês -> parcela = o que ele consegue (ex.: 1000); não consegue o reforço de fim de ano -> balao = 0 (ou o valor que ele consegue); não consegue dar o valor na entrega das chaves -> reforco = 0 (ou o valor que ele consegue) e pos_chaves = 36: o que faltar vira parcelas mensais DEPOIS das chaves, no valor da parcela que ele pode pagar (a ferramenta usa só as parcelas que precisar), e se sobrar um valor pequeno ele fica na entrega das chaves para a conta fechar ("pelo menos R$ 400 você precisa dar na entrega das chaves"); consegue mais de sinal -> sinal maior. Da segunda vez em diante a ferramenta devolve só os valores, e você responde em 1 a 3 linhas o que mudou, sem mandar o bloco outra vez (só se ele pedir a conta completa). Uma pergunta por vez, sempre. FGTS: no fluxo NÃO considere e NÃO pergunte de FGTS nem de carteira assinada. Só fale de FGTS quando o cliente achar o fluxo pesado (aí pergunte UMA vez: "Você tem FGTS? Dá pra usar pra abater na entrada.") ou quando ele mesmo citar. RENDA: não pergunte a renda para montar o fluxo. PARCELA DO FINANCIAMENTO: você NÃO fala de parcela pela renda do cliente (nada de "30% da renda"). Fale a estimativa pela faixa de preço do imóvel, que já sai no bloco ("em torno de R$ X por mês"): imóvel de 350 mil, uns R$ 1.700; 400 mil, uns R$ 1.800; 450 mil, uns R$ 2.200; 500 mil, uns R$ 2.600; 600 mil, uns R$ 3.000. É estimativa: o valor certo sai na aprovação da Caixa. O financiamento já sai calculado do jeito mais atrativo para o cliente (80% da avaliação do banco quando ela está acima do preço; senão, 80% do próprio preço): não fale da avaliação ao cliente (só se ele perguntar). Se o cliente questionar a entrada menor (ex.: "mas não tem que dar mais de entrada?"), explique com suas palavras: o banco financia pelo valor da avaliação do imóvel, e esse imóvel a gente está vendendo abaixo do valor de mercado; por isso a gente consegue dar esse desconto e ele consegue financiar mais. É uma condição que a gente tem por ter muitos anos de mercado e ser construtora também, e isso ajuda na negociação dele. Não diga um valor de avaliação (o valor certo só sai quando o banco avalia). Não convide para o escritório depois de cada simulação: só quando ele mostrar interesse em fechar ou ver de perto. Nunca invente números fora da ferramenta e nunca prometa aprovação. Isso vale acima da regra antiga de não passar número fechado.
+- OFERTA CERTA (regra do Djhonata, 13/11/2026; vale acima de "o mais em conta do bairro" e de qualquer regra de escolher pelo menor preço): o imóvel mais barato do bairro NÃO é necessariamente a melhor compra. O cliente daqui compra geminado NA PLANTA com condição facilitada: sinal pequeno, parcelas de R$ 1.000 a R$ 2.000 e o resto na entrega. A melhor oferta é o imóvel com a MELHOR CONDIÇÃO DE COMPRA: o que deixa menos para pagar na entrega das chaves no fluxo padrão, porque tem entrada menor (o banco avalia acima do preço e isso vira desconto para o cliente) e entrega mais longa (mais meses de parcela e mais reforços de fim de ano). Para escolher o que oferecer: na tabela CONDIÇÃO DE COMPRA, no fim, pegue o PRIMEIRO do bairro que o cliente pediu (ou do bairro perto, pela tabela BAIRROS PERTO) que atende o que ele pediu (tipo, quartos, medida, valor máximo se ele deu). Ex.: no Aventureiro, um de R$ 375 mil com entrada de 52,6 mil é oferta melhor que um de R$ 360 mil com entrada de 57,6 mil. Se ele achar o valor alto, o próximo é o que vem depois na tabela entre os que servem (menor sobra na entrega e menor entrada), não o de menor preço. Imóvel pronto para morar é exceção: só ofereça se o cliente pedir pronto ou precisar mudar logo. Ao apresentar, fale a condição com naturalidade (ex.: "esse dá pra entrar com 10 mil de sinal e parcelas de 1.500"); não fale "avaliação" nem "desconto" em número e não mande a tabela. Continua valendo UM imóvel por vez.
 - GEOGRAFIA DE JOINVILLE (regra do Djhonata, 12/11/2026, vale acima de qualquer outra): informação errada de localização faz o cliente perder a viagem e a confiança. Você só pode dizer que um imóvel ou bairro fica "perto", "pertinho", "ao lado", "colado" ou "na região" de outro bairro ou lugar em dois casos: (a) os dois bairros aparecem juntos na tabela BAIRROS PERTO, no fim destas instruções; ou (b) a ferramenta distancia devolveu até 10 minutos de carro. Fora disso, nunca use essas palavras: diga o tempo real que a ferramenta devolveu ("fica a uns 25 minutos de carro do Aventureiro"). Antes de afirmar qualquer coisa sobre distância entre um imóvel e um lugar, chame a ferramenta distancia. Quando o cliente disser onde trabalha, estuda ou mora (ex.: "trabalho no Hospital Regional", "na Tupy", "moro no Jardim Paraíso"), chame imoveis_perto com esse lugar, ofereça os mais próximos que caibam no que ele pediu e diga o tempo de carro. Sobre o que tem perto de um imóvel (escola, mercado, posto de saúde, ônibus), use só o que vier em "PERTO DESTE IMÓVEL" na ficha; se não vier nada, diga que vai confirmar. Nunca invente distância, tempo de trajeto ou ponto de referência, nem em áudio.
 - O Djhonata acompanha as conversas por um painel e às vezes escreve direto para o cliente. As mensagens dele aparecem no histórico como "(Djhonata escreveu)"; as que você mandou a pedido dele, como "(mensagem a pedido do Djhonata)". Continue a conversa a partir disso: não repita o que ele já mandou, não contradiga e não se apresente de novo.`;
 
@@ -223,6 +224,8 @@ function sistema(ctx) {
     if (t) partes.push(`\n\n===== ${f} =====\n${t}`);
   }
   partes.push('\n\n===== BAIRROS PERTO (Joinville; só estes pares podem ser chamados de "perto") =====\n' + geoTabelaTexto() + '\nSe dois bairros não aparecem juntos numa linha, NÃO são perto: use a ferramenta distancia e diga o tempo.');
+  const oferta = ofertaTabelaTexto();
+  if (oferta) partes.push('\n\n===== CONDIÇÃO DE COMPRA (imóveis na planta, por bairro, do MELHOR para o pior; regra OFERTA CERTA) =====\nConta feita das fichas, com o fluxo padrão (sinal de R$ 10 mil, parcelas de R$ 1.500 até 3 meses depois da entrega e reforço de R$ 5 mil em cada dezembro; "sobra na entrega" é o que fica para pagar na entrega das chaves). O primeiro de cada bairro é o de melhor condição de compra: o que deixa menos para a entrega das chaves. Serve para você ESCOLHER o que oferecer; não mande esta tabela ao cliente e não fale de avaliação nem de desconto.\n' + oferta);
   const fixo = partes.join('');
   const d = agoraSP();
   const dia = d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -272,7 +275,7 @@ Esta conversa pode ter mensagens antigas de quando ele testou a assistente fingi
 const FERRAMENTAS = [
   { name: 'ler_ficha', description: 'Lê a ficha de um imóvel do catálogo (descrição pronta do CRM, dados e lista de fotos e vídeo). Use a ref (ex.: "913") ou parte do nome da rua/residencial.', input_schema: { type: 'object', properties: { busca: { type: 'string' } }, required: ['busca'] } },
   { name: 'enviar_arquivo', description: 'Envia ao cliente uma foto, vídeo ou arquivo do catálogo (caminho relativo à pasta do catálogo) ou uma imagem por link https. A legenda vai junto com a mídia.', input_schema: { type: 'object', properties: { caminho: { type: 'string' }, legenda: { type: 'string' } }, required: ['caminho'] } },
-  { name: 'simular_fluxo', description: 'Monta a simulação do pagamento de um imóvel com os números do cliente e devolve o texto pronto para mandar ao cliente, por texto, do jeito que veio. O financiamento já sai calculado do jeito mais atrativo para o cliente (avaliação do banco ou preço, o que for maior; não fale da avaliação ao cliente). Sem os números dele, usa o padrão (sinal de R$ 10 mil e R$ 1.500 por mês). imovel = ref (ex.: "832") ou parte do nome da rua/residencial. sinal = quanto ele dá na assinatura. parcela = quanto fica bom por mês até a entrega. fgts = saldo de FGTS que ele tem hoje (0 se não tem; não mande se ainda não sabe). carteira = true se ele (ou a família) trabalha de carteira assinada: aí o FGTS cresce todo mês até a entrega e diminui a entrada. renda = renda bruta mensal da família. reforcos = em quantos reforços dividir o que faltar (o último é na entrega das chaves); mande um número maior quando ele achar o reforço pesado. pos_chaves = em quantas parcelas mensais DEPOIS da entrega dividir o que faltar da entrada (use quando a entrada não cabe no bolso dele mesmo ajustando sinal e parcelas, ou em imóvel pronto ou com entrega muito perto; comece com 12 e vá até 24 se ele precisar; se o cliente disse quanto pode pagar por mês, mande esse valor em parcela junto: cada parcela pós-chaves fica nesse valor, até 36 vezes, e o que não couber já sai no texto como reforço ou complemento a combinar): o texto já sai avisando que depende de a construtora aceitar e que se formaliza na proposta, no escritório. completo = true só quando o cliente PEDIR a conta completa de novo (sem isso, da segunda vez em diante a ferramenta devolve só os valores para você dizer o que mudou em 1 a 3 linhas).', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, sinal: { type: 'number' }, parcela: { type: 'number' }, fgts: { type: 'number' }, carteira: { type: 'boolean' }, renda: { type: 'number' }, reforcos: { type: 'number' }, pos_chaves: { type: 'number' }, completo: { type: 'boolean' } }, required: ['imovel'] } },
+  { name: 'simular_fluxo', description: 'Monta a simulação do pagamento de um imóvel e devolve o texto pronto para mandar ao cliente, por texto, do jeito que veio. O financiamento já sai calculado do jeito mais atrativo para o cliente (avaliação do banco ou preço, o que for maior; não fale da avaliação ao cliente) e a parcela do financiamento sai como estimativa pela faixa de preço do imóvel (nunca pela renda). Sem os números dele, monta o FLUXO PADRÃO: sinal de R$ 10 mil, parcelas de R$ 1.500 por mês até 3 meses depois da entrega, reforço de R$ 5 mil em cada dezembro e o que sobrar na entrega das chaves. Chame assim na PRIMEIRA vez (só imovel), sem perguntar nada antes. Depois mude SÓ o que o cliente falar: imovel = ref (ex.: "832") ou parte do nome da rua/residencial. sinal = quanto ele dá na assinatura. parcela = quanto ele consegue pagar por mês (vale para as parcelas da entrada e para o pós-chaves). balao = valor do reforço de cada dezembro (0 quando ele disser que não consegue reforço no fim do ano). reforco = quanto o cliente DISSE que consegue dar na entrega das chaves, em reais (0 quando ele disser que não consegue nada na entrega). pos_chaves = máximo de parcelas mensais DEPOIS da entrega para o que faltar (mande 36; a ferramenta usa só as parcelas que precisar, no valor de parcela dele; se sobrar menos que uma parcela, esse resto fica na entrega das chaves para a conta fechar): o texto já sai avisando que depende de a construtora aceitar e que se formaliza na proposta, no escritório. fgts = saldo de FGTS que ele tem hoje: mande SÓ depois que o cliente falar de FGTS. carteira = true se ele disse que trabalha de carteira assinada e quer usar o FGTS: aí o FGTS cresce até a entrega. renda = renda bruta mensal da família, só se ele informou (serve para o FGTS de quem é de carteira assinada; não muda a parcela do financiamento). completo = true só quando o cliente PEDIR a conta completa de novo (sem isso, da segunda vez em diante a ferramenta devolve só os valores para você dizer o que mudou em 1 a 3 linhas).', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, sinal: { type: 'number' }, parcela: { type: 'number' }, balao: { type: 'number' }, reforco: { type: 'number' }, pos_chaves: { type: 'number' }, fgts: { type: 'number' }, carteira: { type: 'boolean' }, renda: { type: 'number' }, completo: { type: 'boolean' } }, required: ['imovel'] } },
   { name: 'avisar_djhonata', description: 'Manda um aviso interno no WhatsApp pessoal do Djhonata. O cliente não vê e não fica sabendo desse aviso: com ele você continua falando em primeira pessoa, como o próprio Djhonata (ex.: "vou confirmar isso e já te falo"), nunca "pedi para o Djhonata".', input_schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
   { name: 'agenda_visita', description: 'Agenda do escritório. acao = "consultar" devolve os horários livres de um dia (mande data AAAA-MM-DD); acao = "marcar" marca a visita do cliente atual (mande data AAAA-MM-DD, hora HH:00 e, se o cliente disse, o nome dele). A agenda é de hora em hora. Use sempre que o cliente disser um dia ou um horário para vir: consulte antes de confirmar e, estando livre, marque. Se a ferramenta disser que não está livre, ofereça os horários que ela devolver. Ela já registra a visita no CRM e liga os lembretes: não chame registrar_crm para isso.', input_schema: { type: 'object', properties: { acao: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nome: { type: 'string' } }, required: ['acao'] } },
   { name: 'registrar_crm', description: 'Registra no CRM um evento do cliente atual e move o card dele: novoStatus = atendimento, visita_marcada, remarcar, sem_interesse ou pausado ("em negociação" NÃO é com você: só o Djhonata move para lá, depois que o cliente vem ao escritório; cliente negociando valores pelo WhatsApp continua em atendimento). Em visita_marcada mande data (AAAA-MM-DD) e hora (HH:MM): o sistema usa para os lembretes da visita. Se o cliente cancelar ou pedir para remarcar, use remarcar (os lembretes param). Mande nomeReal quando o cliente disser o nome e imovel quando souber qual imóvel interessa. resultado = frase curta do que aconteceu.', input_schema: { type: 'object', properties: { novoStatus: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nomeReal: { type: 'string' }, imovel: { type: 'string' }, resumo: { type: 'string' }, resultado: { type: 'string' } } } },
@@ -303,13 +306,13 @@ function acharPasta(busca) {
 const EXT_IMG = /\.(jpe?g|png|webp)$/i, EXT_VID = /\.(mp4)$/i;
 // ---------- simulação do pagamento (o Djhonata pediu: a assistente monta e manda sozinha, 10/11/2026) ----------
 // Financiamento = 80% do que for mais atrativo para o cliente: a avaliação do banco, quando está acima do preço; senão, o próprio
-// preço (sem falar da avaliação ao cliente). Avaliação: a anotada na ficha; se não tiver, a sugestão do CRM (menor área × R$ 6.300
-// o m², a média), no máximo 10% acima do preço. Construtora que "não aceita avaliação superior": vale o preço. O resto da entrada: sinal, parcelas até a entrega, FGTS (o de hoje mais o que
+// preço (sem falar da avaliação ao cliente). Avaliação: a anotada na ficha; se não tiver, a sugestão do CRM (menor área × o m² da
+// tabela pela entrega, de R$ 6.300 a R$ 7.500), no máximo 15% acima do preço e redonda para baixo no milhar. Construtora que "não aceita avaliação superior": vale o preço. O resto da entrada: sinal, parcelas até a entrega, FGTS (o de hoje mais o que
 // entra até a entrega, cerca de 1/12 da renda por mês, para quem é de carteira assinada) e reforços, o último na entrega das chaves.
 const SIM_BLOCO_VALE = 7 * 864e5;                              // por 7 dias o bloco completo de um imóvel não é reenviado na mesma conversa (só se o cliente pedir)
 const brl = (v) => 'R$ ' + (Math.round((Number(v) || 0) * 100) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const MESES_CURTOS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
-const M2_AVALIACAO = 6300, AVAL_MAX_ACIMA = 0.10, REFORCO_MIN = 5000;   // reforço do padrão: no mínimo uns R$ 5 mil cada (valor pequeno vai num só, na entrega das chaves)
+const M2_AVALIACAO = 6300, AVAL_MAX_ACIMA = 0.15, MESES_DEPOIS_ENTREGA = 3;   // m² base, teto da avaliação estimada (15% acima do preço) e parcelas da entrada até 3 meses depois da entrega
 function valorBR(s) {   // "430.000,00" | "305.000" | "580 mil" -> número
   s = String(s || '').trim();
   const mil = /^(\d+(?:[.,]\d+)?)\s*mil$/i.exec(s); if (mil) return Math.round(parseFloat(mil[1].replace(',', '.')) * 1000);
@@ -341,24 +344,87 @@ function dadosDaFicha(pasta) {
   const am = /-\s*[ÁA]rea:\s*([^\n]+)/i.exec(t);
   const areas = am ? [...am[1].matchAll(/(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)\s*m²/g)].map(x => numArea(x[1])).filter(v => v > 0) : [];
   const tipo = (/-\s*Tipo[^:\n]*:\s*([^\n]+)/i.exec(t) || [])[1] || '';
+  const constr = ((/-\s*Tipo de constru[çc][ãa]o:\s*([^\n]+)/i.exec(t) || [])[1] || '').trim();   // "Geminado sobrado", "Apartamento", "Geminado térreo"...
   return {
     nome: nome.replace(/\s+—\s+/, ' – ').trim(), preco, entrega: d ? { mes: Number(d[2]), ano: Number(d[3]) } : null, pronto: /pronto/i.test(ent) || (!d && /entregue|pronto/i.test(t)),
-    area: areas.length ? Math.min(...areas) : 0, terreno: /terreno|\blote\b/i.test(tipo),
+    area: areas.length ? Math.min(...areas) : 0, terreno: /terreno|\blote\b/i.test(tipo), tipo: (/^[^\[]/.test(constr) ? constr : tipo).split(/[,(]/)[0].trim().toLowerCase().slice(0, 30),
     aval: avaliacaoDaFicha(t, preco), naoAceitaSuperior: /n[aã]o aceita avalia[çc][ãa]o superior/i.test(t)
   };
 }
-function avaliacaoUsada(f) {   // o que for mais atrativo para o cliente (regra do Djhonata, 10/11/2026): a avaliação quando está acima do preço; senão, o próprio preço
-  let av = f.aval || (f.area > 0 && !f.terreno ? Math.min(f.area * M2_AVALIACAO, f.preco * (1 + AVAL_MAX_ACIMA)) : 0);   // a da ficha vale como está; a estimada, no máximo 10% acima
-  if (f.naoAceitaSuperior || !(av > f.preco)) av = f.preco;   // ex.: Residencial Itália (ref 947), preço acima da avaliação: vale o preço
-  return av;
+// m² de avaliação pela entrega (tabela do Djhonata, 13/11/2026: o imóvel vale mais lá na frente): pronto ou até junho de 2027 = 6.300;
+// julho a dezembro de 2027 = 6.600; 2028 = 7.000; 2029 em diante = 7.500.
+function m2Avaliacao(f) {
+  const e = f && f.entrega; if (!e || f.pronto || e.ano < 2027) return M2_AVALIACAO;
+  if (e.ano === 2027) return e.mes <= 6 ? 6300 : 6600;
+  return e.ano === 2028 ? 7000 : 7500;
 }
-// meses (contados de hoje) dos reforços: o último na entrega das chaves e os outros de 12 em 12 meses para trás;
-// se pedir mais reforços do que cabem por ano, ficam mais perto um do outro. Nunca nos 2 primeiros meses.
-function mesesDosReforcos(n, pedidos) {
-  const anuais = Math.max(1, Math.floor((n - 2) / 12) + 1);
-  const q = Math.max(1, Math.min(Math.round(pedidos) || anuais, Math.max(1, n - 1)));
-  const passo = q <= anuais ? 12 : Math.max(1, Math.floor((n - 2) / (q - 1)));
-  return Array.from({ length: q }, (_, k) => n - passo * (q - 1 - k));
+function avaliacaoUsada(f) {   // o que for mais atrativo para o cliente (regra do Djhonata, 10/11/2026): a avaliação quando está acima do preço; senão, o próprio preço
+  let av = f.aval || (f.area > 0 && !f.terreno ? Math.min(f.area * m2Avaliacao(f), f.preco * (1 + AVAL_MAX_ACIMA)) : 0);   // a da ficha vale como está; a estimada, no máximo 15% acima do preço
+  if (f.naoAceitaSuperior || !(av > f.preco)) return f.preco;   // ex.: Residencial Itália (ref 947), preço acima da avaliação: vale o preço
+  return Math.max(f.preco, Math.floor(Math.round(av) / 1000) * 1000);   // redonda para baixo no milhar (403.830 -> 403.000), para a conta não ficar quebrada
+}
+// Parcela do financiamento: estimativa pela faixa de preço do imóvel (tabela do Djhonata, 13/11/2026), não pela renda do cliente.
+const PARCELA_FAIXAS = [[350000, 1700], [400000, 1800], [450000, 2200], [500000, 2600], [600000, 3000]];
+function parcelaEstimada(preco) {
+  const F = PARCELA_FAIXAS, v = Number(preco) || 0; let p;
+  if (v <= F[0][0]) p = F[0][1] - (F[0][0] - v) * (F[1][1] - F[0][1]) / (F[1][0] - F[0][0]);
+  else if (v >= F[F.length - 1][0]) p = F[F.length - 1][1] + (v - F[F.length - 1][0]) * (F[F.length - 1][1] - F[F.length - 2][1]) / (F[F.length - 1][0] - F[F.length - 2][0]);
+  else { const i = F.findIndex(x => v < x[0]); p = F[i - 1][1] + (v - F[i - 1][0]) * (F[i][1] - F[i - 1][1]) / (F[i][0] - F[i - 1][0]); }
+  return Math.max(1000, Math.round(p / 50) * 50);
+}
+function prazoDaObra(f) {   // meses até a entrega e nº de parcelas da entrada (até 3 meses depois da entrega, igual ao CRM)
+  const hoje = agoraSP(); let meses = 0;
+  if (f.entrega) meses = (f.entrega.ano - hoje.getFullYear()) * 12 + (f.entrega.mes - (hoje.getMonth() + 1));
+  const obra = !f.pronto && meses >= 1;   // pronto: não dá para parcelar a entrada antes das chaves
+  return { hoje, meses, obra, n: obra ? meses + MESES_DEPOIS_ENTREGA : 0 };
+}
+// Balões de fim de ano (regra do Djhonata, 13/11/2026): um reforço todo dezembro (padrão R$ 5 mil), enquanto durarem as parcelas da entrada
+// (entrega + 3 meses). O dezembro do próprio ano só entra se a conversa for até julho: depois disso o cliente não tem tempo de se planejar.
+// Devolve os meses (contados de hoje) de cada dezembro que vale.
+const BALAO_PADRAO = 5000, BALAO_MES_LIMITE = 7;
+function dezembrosDoFluxo(hoje, n) {
+  const m0 = hoje.getMonth() + 1, r = [];
+  for (let k = (m0 <= BALAO_MES_LIMITE ? 12 - m0 : 24 - m0); k <= n; k += 12) if (k >= 1) r.push(k);
+  return r;
+}
+// Fluxo padrão de um imóvel na planta: sinal de 10 mil, parcelas de 1.500, balões de 5 mil em dezembro e o que sobra na entrega das chaves.
+function fluxoPadrao(f) {
+  const av = avaliacaoUsada(f), entrada = Math.round(f.preco - Math.min(0.8 * av, f.preco - 10000)), z = prazoDaObra(f);
+  let resto = Math.max(0, entrada - 10000);
+  if (!z.obra) return { entrada, obra: false, meses: z.meses, parcelas: 0, baloes: 0, naEntrega: resto };
+  resto = Math.max(0, resto - 1500 * z.n);
+  let baloes = 0; for (const k of dezembrosDoFluxo(z.hoje, z.n)) if (resto >= BALAO_PADRAO) { resto -= BALAO_PADRAO; baloes++; }
+  return { entrada, obra: true, meses: z.meses, parcelas: z.n, baloes, naEntrega: Math.round(resto) };
+}
+// ---------- oferta certa (regra do Djhonata, 13/11/2026): o melhor imóvel para oferecer não é o mais barato, é o de melhor condição de compra ----------
+// Condição de compra = quanto sobra para pagar na entrega das chaves no fluxo padrão (sinal de 10 mil, parcelas de 1.500 até 3 meses depois
+// da entrega e balões de 5 mil em dezembro). Quanto maior o desconto (avaliação acima do preço) e mais longa a entrega, menor essa sobra.
+function condicaoDeCompra(pasta) {
+  const f = dadosDaFicha(pasta); if (!f.preco || f.terreno) return null;
+  const x = fluxoPadrao(f);
+  const e = geoEnderecoDaFicha(pasta), ib = e && e.bairro >= 0 ? e.bairro : geoBairro(pasta.replace(/\(ref.*$/, '').split(' - ').slice(1).join(' '));   // sem endereço na ficha: o bairro do nome da pasta
+  const bairro = ib >= 0 ? GEOJOI.nomes[ib] : ((geo.imoveis || {})[pasta] || {}).bairro || '';
+  return { pasta, nome: f.nome, ref: geoRef(pasta), tipo: f.tipo, bairro, preco: f.preco, entrada: x.entrada, obra: x.obra, meses: x.meses, parcelas: x.parcelas, baloes: x.baloes, entrega: f.entrega, naEntrega: x.naEntrega };
+}
+const milCurto = (v) => (Math.round(v / 100) / 10).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mil';
+let ofertaCache = { em: 0, chave: '', texto: '' };
+function ofertaTabelaTexto() {
+  const pastas = pastasImoveis(), chave = pastas.length + '|' + agoraSP().toISOString().slice(0, 7);
+  if (ofertaCache.texto && ofertaCache.chave === chave && Date.now() - ofertaCache.em < 10 * 60000) return ofertaCache.texto;
+  const porBairro = {};
+  for (const p of pastas) {
+    let c = null; try { c = condicaoDeCompra(p); } catch (e) { c = null; }
+    if (!c || !c.obra) continue;   // pronto não entra: só se oferece pronto quando o cliente pede
+    (porBairro[c.bairro || 'Outros'] = porBairro[c.bairro || 'Outros'] || []).push(c);
+  }
+  const linhas = Object.keys(porBairro).sort((a, b) => a.localeCompare(b, 'pt-BR')).map(b => {
+    // menor sobra na entrega das chaves primeiro (em faixas de R$ 5 mil: diferença pequena não decide); no empate, menor entrada; depois, entrega mais longa
+    const l = porBairro[b].sort((x, y) => Math.floor(x.naEntrega / 5000) - Math.floor(y.naEntrega / 5000) || x.entrada - y.entrada || y.meses - x.meses || x.preco - y.preco);
+    return `${b}:\n` + l.map((c, i) => `  ${i + 1}. ${c.nome.replace(/\s+–\s+.*$/, '')}${c.ref ? ' (ref ' + c.ref + ')' : ''}${c.tipo ? ', ' + c.tipo : ''}: ${brl(c.preco).replace(/,00$/, '')} · entrega ${String(c.entrega.mes).padStart(2, '0')}/${c.entrega.ano} · entrada ${milCurto(c.entrada)} · sobra na entrega ${c.naEntrega > 0 ? milCurto(c.naEntrega) : 'nada'}`).join('\n');
+  });
+  const texto = linhas.length ? linhas.join('\n') : '';
+  ofertaCache = { em: Date.now(), chave, texto };
+  return texto;
 }
 function simularFluxo(e) {
   const pasta = acharPasta(String(e.imovel || ''));
@@ -372,23 +438,25 @@ function simularFluxo(e) {
   const fgtsHoje = informado(e.fgts) ? Math.max(0, Number(e.fgts)) : 0;
   const carteira = e.carteira === true || /^(true|sim|s)$/i.test(String(e.carteira || ''));
   const av = avaliacaoUsada(f);
-  const financ = Math.max(0, Math.min(Math.floor(0.8 * av / 1000) * 1000, f.preco - sinal));   // 80% da avaliação, arredondado para baixo no milhar
-  const entrada = cent(f.preco - financ);                                                       // o que o cliente paga até a entrega
-  const hoje = agoraSP(); let meses = 0, quando = '';
-  if (f.entrega) { meses = (f.entrega.ano - hoje.getFullYear()) * 12 + (f.entrega.mes - (hoje.getMonth() + 1)); quando = `${MESES_CURTOS[f.entrega.mes - 1]}/${f.entrega.ano}`; }
+  const financ = Math.max(0, Math.min(cent(0.8 * av), f.preco - sinal));   // 80% da avaliação (que já vem redonda no milhar)
+  const entrada = cent(f.preco - financ);                                   // o que o cliente paga fora do financiamento
+  const { hoje, meses, obra, n } = prazoDaObra(f);   // parcelas da entrada: até 3 meses depois da entrega, igual ao CRM (decisão do Djhonata, 13/11/2026)
   const mesRot = (k) => { const d = new Date(hoje.getFullYear(), hoje.getMonth() + k, 1); return `${MESES_CURTOS[d.getMonth()]}/${d.getFullYear()}`; };
-  const obra = !f.pronto && meses >= 2;   // pronto (ou entrega muito perto): não dá para parcelar a entrada durante a obra
   const L = [`📋 *Simulação inicial – ${f.nome}*`, `💰 Valor: ${brl(f.preco)}`, ''];
   L.push(`✅ Sinal: ${brl(sinal)} na assinatura`);
-  let resto = Math.max(0, cent(entrada - sinal)), q = 0, alt = '', parcelaUsada = 0, posTxt = '';
-  const nPos = Math.min(36, Math.max(0, Math.round(num(e.pos_chaves, 0))));
-  // Pós-chaves: quando o cliente disse quanto pode pagar por mês, a parcela pós-chaves respeita esse valor (ele ainda vai ter a parcela da Caixa).
-  // O que não couber nas parcelas fica como reforço (na planta) ou complemento a combinar (no pronto): nunca some da conta.
+  let resto = Math.max(0, cent(entrada - sinal)), q = 0, alt = '', parcelaUsada = 0, posTxt = '', falta = 0, nBal = 0, naEntrega = 0, entregaMin = false;
+  const nPos = Math.min(36, Math.max(0, Math.round(num(e.pos_chaves, 0))));   // máximo de parcelas mensais depois das chaves (a conta usa só as que precisar)
+  const balaoV = informado(e.balao) ? Math.max(0, Number(e.balao)) : BALAO_PADRAO;   // reforço de cada dezembro (0 = cliente não consegue)
+  // Quanto o cliente disse que consegue dar na entrega das chaves. Sem isso, o que sobrar vai para lá; se pediu pós-chaves sem dizer, o pós-chaves vem antes.
+  const entregaCli = informado(e.reforco) ? Math.max(0, Number(e.reforco)) : (nPos ? 0 : null);
+  // Pós-chaves: cada parcela é a parcela que o cliente pode pagar (ele ainda vai ter a parcela da Caixa); usa só as parcelas inteiras que precisar.
   const posChaves = (valor) => {
-    const p = informado(e.parcela) ? Math.min(parcela, acima(valor / nPos)) : acima(valor / nPos), tot = Math.min(valor, cent(p * nPos));
-    L.push(`✅ Pós-chaves: ${nPos}x de ${brl(p)} por mês depois da entrega = ${brl(tot)}`); posTxt = `, pós-chaves ${nPos}x de ${brl(p)}`;
+    const k = Math.min(nPos, Math.floor((valor + 0.005) / parcela)); if (k < 1) return valor;
+    const tot = cent(parcela * k);
+    posLinha = `✅ Pós-chaves: ${k}x de ${brl(parcela)} por mês depois da entrega = ${brl(tot)}`; posTxt = `, pós-chaves ${k}x de ${brl(parcela)}`;
     return cent(valor - tot);
   };
+  let posLinha = '';
   const fgtsMes = obra && carteira && renda > 0 ? renda / 12 : 0;
   const fgtsTotal = cent(fgtsHoje + fgtsMes * (obra ? meses : 0)), fgtsUsado = Math.min(fgtsTotal, resto);
   if (fgtsUsado > 0) {
@@ -397,37 +465,46 @@ function simularFluxo(e) {
     resto = cent(resto - fgtsUsado);
   }
   if (!obra) {
-    if (resto > 0 && nPos) {
-      resto = posChaves(resto);
-      if (resto >= 1) L.push(`✅ Complemento da entrada: ${brl(resto)} (a gente combina como fica: reforços depois das chaves, FGTS, subsídio, ou um carro ou moto no negócio)`);
-    }
-    else if (resto > 0) L.push(`✅ Complemento da entrada: ${brl(resto)} (a gente combina como fica: com subsídio, FGTS, um carro ou moto no negócio, ou parcelado depois das chaves)`);
+    if (resto > 0 && nPos) resto = posChaves(resto);
+    if (posLinha) L.push(posLinha);
+    if (resto >= 1) { L.push(`✅ Complemento da entrada: ${brl(resto)} (a gente combina como fica: ${posTxt ? 'reforços depois das chaves, FGTS, subsídio, ou um carro ou moto no negócio' : 'com subsídio, FGTS, um carro ou moto no negócio, ou parcelado depois das chaves'})`); falta = resto; }
   } else if (resto > 0) {
-    const n = meses;
     parcelaUsada = Math.min(parcela, acima(resto / n));   // não pede por mês mais do que precisa
     const parcelado = Math.min(resto, cent(parcelaUsada * n));
-    L.push(`✅ Entrada parcelada: ${n}x de ${brl(parcelaUsada)} até a entrega (${quando}) = ${brl(parcelado)}`);
+    L.push(`✅ Entrada parcelada: ${n}x de ${brl(parcelaUsada)} por mês (até ${mesRot(n)}) = ${brl(parcelado)}`);
     resto = cent(resto - parcelado);
-    if (resto >= 1 && nPos) resto = posChaves(resto);
-    if (resto >= 1) {
-      const pedidos = num(e.reforcos, 0), padrao = mesesDosReforcos(n, 0);
-      const ms = pedidos ? mesesDosReforcos(n, pedidos) : padrao.slice(-Math.max(1, Math.floor(resto / REFORCO_MIN))); q = ms.length;
-      const datas = ms.map(k => mesRot(k) + (k === n ? ' na entrega das chaves' : ''));
-      const lista = datas.length > 1 ? datas.slice(0, -1).join(', ') + ' e ' + datas[datas.length - 1] : datas[0];
-      L.push(`✅ Reforço: ${q > 1 ? q + 'x de ' : ''}${brl(acima(resto / q))} (${lista})`);
-      alt = `Sem reforço, a parcela mensal até a entrega fica em ${brl(acima((entrada - sinal - fgtsUsado) / n))}.`;
+    const parcSem = acima((entrada - sinal - fgtsUsado) / n), temResto = resto >= 1;
+    // balões de fim de ano: um por dezembro, inteiro (o padrão é R$ 5 mil); o que não fecha um balão fica para a entrega das chaves
+    if (balaoV >= 1) {
+      const dez = dezembrosDoFluxo(hoje, n).filter(() => { if (resto + 0.005 >= balaoV) { resto = cent(resto - balaoV); return true; } return false; });
+      nBal = dez.length;
+      if (nBal) { const dts = dez.map(k => mesRot(k)); L.push(`✅ Reforço de fim de ano: ${nBal > 1 ? nBal + 'x de ' : ''}${brl(balaoV)} (${dts.length > 1 ? dts.slice(0, -1).join(', ') + ' e ' + dts[dts.length - 1] : dts[0]})`); }
     }
+    if (resto >= 1) {
+      if (entregaCli === null) { naEntrega = resto; resto = 0; }                      // padrão: o que sobra vai na entrega das chaves
+      else {
+        const rf = Math.min(entregaCli, resto); naEntrega = rf; resto = cent(resto - rf);
+        if (resto >= 1 && nPos) resto = posChaves(resto);
+        if (resto >= 1 && resto < parcela && posTxt) { naEntrega = cent(naEntrega + resto); resto = 0; entregaMin = true; }   // sobra menor que uma parcela: fica na entrega das chaves, para a conta fechar
+      }
+    }
+    if (naEntrega >= 1) L.push(`✅ Reforço na entrega das chaves: ${brl(naEntrega)} (${mesRot(meses)})`);
+    if (posLinha) L.push(posLinha);   // na ordem em que o cliente paga: entrega das chaves e, depois, as parcelas pós-chaves
+    if (resto >= 1) { L.push(`✅ Falta combinar: ${brl(resto)} (${posTxt ? 'a gente vê junto como fica' : 'dá para parcelar depois das chaves'})`); falta = resto; }
+    q = nBal + (naEntrega >= 1 ? 1 : 0);
+    if (temResto && q && parcSem <= 3000) alt = `Sem reforço, a parcela mensal fica em ${brl(parcSem)}.`;   // só quando é uma opção de verdade (com poucos meses passa de R$ 3 mil e só confunde)
   }
+  const parcFin = parcelaEstimada(f.preco);
   L.push(`🏦 Financiamento pela Caixa: ${brl(financ)}${obra ? ' (começa quando o imóvel ficar pronto)' : ''}`);
-  L.push(`💵 A parcela do financiamento a Caixa calcula pela renda e fica em até 30% dela${renda ? `: com renda de ${brl(renda)}, até ${brl(renda * 0.3)} por mês` : ''}.`);
+  L.push(`💵 Parcela do financiamento: em torno de ${brl(parcFin)} por mês (estimativa; o valor certo sai na aprovação da Caixa).`);
   if (alt) L.push('', alt);
   if (posTxt) L.push('', 'O pós-chaves depende de a construtora aceitar e é formalizado na proposta.');
   L.push('', 'Simulação inicial, sujeita à aprovação do banco.');
   return {
     texto: L.join('\n'),
-    resumo: `${f.nome}, ${brl(f.preco)}, sinal ${brl(sinal)}${parcelaUsada ? ', parcela ' + brl(parcelaUsada) : ''}${fgtsUsado ? ', FGTS ' + brl(fgtsUsado) : ''}${q ? `, ${q} reforço(s)` : ''}${posTxt}, financiamento ${brl(financ)} (avaliação ${brl(av)}${f.aval ? ' da ficha' : ''})`,
-    financ, renda: renda || 0, pasta, nome: f.nome,
-    sinalPadrao: !informado(e.sinal), acimaDoPreco: av > f.preco, semFgts: !informado(e.fgts) && !carteira, perguntarCarteira: obra && fgtsHoje > 0 && e.carteira === undefined, perguntarRenda: obra && carteira && !renda, temReforco: q > 0
+    resumo: `${f.nome}, ${brl(f.preco)}, sinal ${brl(sinal)}${parcelaUsada ? ', parcela ' + brl(parcelaUsada) : ''}${fgtsUsado ? ', FGTS ' + brl(fgtsUsado) : ''}${nBal ? `, ${nBal} reforço(s) de fim de ano de ${brl(balaoV)}` : ''}${naEntrega >= 1 ? ', na entrega das chaves ' + brl(naEntrega) : ''}${posTxt}${falta ? ', falta combinar ' + brl(falta) : ''}, financiamento ${brl(financ)} (avaliação ${brl(av)}${f.aval ? ' da ficha' : ''})`,
+    financ, entrada, renda: renda || 0, pasta, nome: f.nome, parcelas: n, falta, parcFin, baloes: nBal, naEntrega, entregaMin,
+    sinalPadrao: !informado(e.sinal), acimaDoPreco: av > f.preco, temReforco: q > 0, temFgts: fgtsUsado > 0, reforcoDoCliente: informado(e.reforco), semBalao: informado(e.balao) && balaoV < 1, temPos: !!posTxt
   };
 }
 
@@ -651,20 +728,22 @@ async function executar(nome, entrada, ctx) {
       if (r.erro) return r.erro;
       ctx.notas.push('[simulação montada: ' + r.resumo + ']');
       log('simulação', ctx.telefone || ctx.jid, r.resumo);
-      // Memória da simulação nesta conversa (12/11/2026): o bloco completo vai UMA vez por imóvel, e cada pergunta (renda, sinal, FGTS e carteira) uma vez só.
+      // Memória da simulação nesta conversa (12/11/2026): o bloco completo vai UMA vez por imóvel; depois dele, uma pergunta aberta (13/11/2026) e, nos ajustes, uma pergunta por vez.
       estado.sim = estado.sim || {};
       const ms = estado.sim[ctx.jid] || (estado.sim[ctx.jid] = { blocos: {} }); ms.blocos = ms.blocos || {};
       const repetida = !entrada.completo && !!ms.blocos[r.pasta] && Date.now() - ms.blocos[r.pasta] < SIM_BLOCO_VALE;
       const porque = r.acimaDoPreco ? ' Aqui a entrada ficou menor porque o banco financia pela avaliação, que está acima do preço: se ele questionar (ex.: "não tem que dar mais de entrada?"), explique que o banco usa o valor da avaliação do imóvel e que esse imóvel a gente está vendendo abaixo do valor de mercado, por isso consegue o desconto e ele financia mais (condição que a gente tem por ter muitos anos de mercado e ser construtora). Não diga valor de avaliação.' : '';
-      // Renda (escolha do Djhonata em 12/11/2026: "só não promete"): a ferramenta não faz conta de quanto a Caixa libera; só lembra de não afirmar que cabe.
-      const avisoRenda = r.renda > 0 ? ` RENDA: com renda de ${brl(r.renda)} a parcela da Caixa vai até ${brl(r.renda * 0.3)} por mês. NÃO diga que o financiamento "cabe na renda", "fica dentro da renda" nem que "dá para entrar": quanto a Caixa libera só sai na análise, no escritório.${r.renda < 5000 ? ' Como a renda é menor que R$ 5 mil, pergunte se tem alguém para somar renda.' : ''}` : '';
-      // uma pergunta por vez: renda, depois sinal, depois FGTS e carteira (uma vez só por conversa), depois se cabe no bolso
+      // Renda e parcela do financiamento (13/11/2026): a parcela é a estimativa pela faixa de preço; nada de conta pela renda.
+      const avisoRenda = ` PARCELA DO FINANCIAMENTO: a que você fala é a estimativa do bloco (em torno de ${brl(r.parcFin)} por mês, pela faixa de preço do imóvel); não calcule parcela pela renda e não fale "30% da renda". NÃO diga que o financiamento "cabe na renda", "fica dentro da renda" nem que "dá para entrar": quanto a Caixa libera só sai na análise, no escritório.${r.renda > 0 && r.renda < 5000 ? ' Como a renda informada é menor que R$ 5 mil, pode perguntar se tem alguém para somar renda.' : ''}${r.temFgts ? '' : ' FGTS: não fale de FGTS agora; só se o cliente achar o fluxo pesado (aí pergunte UMA vez se ele tem FGTS para abater na entrada) ou se ele mesmo citar.'}`;
+      // Depois do fluxo (decisão do Djhonata, 13/11/2026): UMA pergunta aberta; nos ajustes, mexe só no que o cliente falou, uma pergunta por vez.
+      const comoAjustar = ' Se ele disser que ficou pesado, descubra O QUE pesa (a parcela, o reforço de fim de ano ou o valor na entrega das chaves) e refaça mexendo só nisso: parcela = o que ele consegue por mês; balao = 0 se não consegue reforço no fim do ano; reforco = 0 (ou o valor que consegue) e pos_chaves = 36 se não consegue o valor na entrega das chaves.';
       let depois;
-      if (!r.renda && !ms.renda) { depois = 'pergunte SÓ a renda bruta da família (uma pergunta, mais nada: não pergunte de FGTS, carteira nem sinal agora)'; ms.renda = Date.now(); }
-      else if (r.sinalPadrao && !ms.sinal) { depois = 'diga que o sinal de R$ 10 mil é o padrão e pergunte SÓ quanto ele consegue dar na assinatura (se ficar apertado, você ajusta)'; ms.sinal = Date.now(); }
-      else if (!ms.fgts && (r.semFgts || r.perguntarCarteira)) { depois = (r.semFgts ? 'pergunte se ele tem FGTS (quanto tem hoje) e se trabalha de carteira assinada, porque o FGTS diminui a entrada e vai crescendo até a entrega' : 'pergunte se ele trabalha de carteira assinada (aí o FGTS cresce até a entrega e a entrada diminui)') + '; é a ÚNICA vez que essa pergunta entra nesta conversa'; ms.fgts = Date.now(); }
-      else depois = 'pergunte se assim cabe no bolso' + (r.temReforco ? ' ou se o reforço ficou pesado (dá para diluir em mais reforços: chame simular_fluxo de novo com reforcos maior; ou subir um pouco a parcela)' : '') + '. NÃO pergunte de novo de FGTS, carteira assinada nem renda: isso já foi perguntado nesta conversa; se faltar, vocês acertam no escritório';
-      const fecho = ` Não fale da avaliação do banco por conta própria e não convide para o escritório por causa da simulação: só se ele mostrar interesse em fechar ou ver de perto.${avisoRenda}${porque}`;
+      if (!repetida) depois = 'faça SÓ esta pergunta, com as suas palavras: "O que você achou desse fluxo? Se quiser, eu ajusto o sinal, a parcela ou o reforço pra ficar bom pra você." Não pergunte de renda, FGTS nem carteira assinada';
+      else if (r.falta >= 1 && !r.temPos) depois = `diga que ficam faltando ${brl(r.falta)} e proponha parcelar esse valor depois das chaves (ex.: "Vamos fazer um pós-chaves então?"). Se ele topar, chame simular_fluxo de novo com os mesmos números e pos_chaves = 36 (a ferramenta usa só as parcelas que precisar)`;
+      else if (r.falta >= 1) depois = `diga que ainda ficam ${brl(r.falta)} para combinar e pergunte SÓ como ele prefere acertar esse valor: um pouco mais de sinal, um reforço no fim do ano ou um valor na entrega das chaves`;
+      else if (r.entregaMin) depois = `explique que, para a conta fechar, ficam ${brl(r.naEntrega)} na entrega das chaves (é o mínimo: "pelo menos ${brl(r.naEntrega)} você precisa dar na entrega das chaves") e pergunte SÓ se assim fica bom para ele`;
+      else depois = 'pergunte SÓ se assim fica bom para ele';
+      const fecho = ` Não fale da avaliação do banco por conta própria e não convide para o escritório por causa da simulação: só se ele mostrar interesse em fechar ou ver de perto.${comoAjustar}${avisoRenda}${porque}`;
       ms.em = Date.now(); for (const k of Object.keys(estado.sim)) if (Date.now() - (estado.sim[k].em || 0) > 30 * 864e5) delete estado.sim[k];
       salvarEstado();
       if (repetida) {
@@ -3210,6 +3289,22 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const arq = ARQS_REGRAS.includes(b.jid) ? b.jid : 'REGRAS-ATENDIMENTO.md';
           let em = 0; try { em = fs.statSync(path.join(CATALOGO, arq)).mtimeMs; } catch (e) { }
           return json(res, { arquivo: arq, texto: lerTexto(arq), em, arquivos: ARQS_REGRAS.map(f => ({ arquivo: f, ok: !!lerTexto(f) })) });
+        }
+        else if (ac === 'regras_trocar') {   // troca trechos exatos de um arquivo de regras: texto = JSON { assunto, pares: [[antigo, novo], ...] }; cada trecho precisa aparecer 1 vez. Só grava com on = sim (sem isso, só diz o que trocaria). Guarda cópia antes.
+          const arq = ARQS_REGRAS.includes(b.jid) ? b.jid : 'REGRAS-ATENDIMENTO.md', abs = path.join(CATALOGO, arq);
+          let pares = null, assunto = 'ajuste'; try { const j = JSON.parse(String(b.texto || '')); pares = Array.isArray(j) ? j : j.pares; if (j && j.assunto) assunto = String(j.assunto); } catch (e) { }
+          if (!Array.isArray(pares) || !pares.length || !pares.every(x => Array.isArray(x) && x.length === 2 && typeof x[0] === 'string' && typeof x[1] === 'string' && x[0].length >= 12)) return json(res, { erro: 'mande texto = JSON { assunto, pares: [[antigo, novo], ...] }' }, 400);
+          const cru = lerTexto(arq), antes = cru.replace(/\r/g, ''); if (antes.trim().length < 200) return json(res, { erro: 'arquivo vazio ou não encontrado: ' + arq }, 400);
+          let txt = antes; const feitas = [], faltou = [];
+          pares.forEach(([a, n], i) => { const q = txt.split(a).length - 1; if (q === 1) { txt = txt.replace(a, () => n); feitas.push(i); } else faltou.push({ i, vezes: q, ja: txt.includes(n) }); });
+          let copia = '';
+          if (feitas.length && b.on === true) {
+            copia = arq.replace(/\.md$/, '') + '-backup-' + (assunto.replace(/[^a-z0-9-]/gi, '').slice(0, 30) || 'ajuste') + '-' + agoraSP().toISOString().slice(0, 10) + '.md';
+            fs.writeFileSync(path.join(CATALOGO, copia), cru); try { fs.copyFileSync(abs, abs + '.anterior'); } catch (e) { }
+            fs.writeFileSync(abs, txt);
+            log('regras: trechos trocados em', arq, feitas.length, 'de', pares.length, '| cópia:', copia);
+          }
+          return json(res, { arquivo: arq, gravou: !!copia, feitas, faltou, copia, antes: antes.length, depois: txt.length });
         }
         else if (ac === 'regras_salvar') {
           const arq = ARQS_REGRAS.includes(b.jid) ? b.jid : 'REGRAS-ATENDIMENTO.md';
