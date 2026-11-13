@@ -277,7 +277,7 @@ const FERRAMENTAS = [
   { name: 'ler_ficha', description: 'Lê a ficha de um imóvel do catálogo (descrição pronta do CRM, dados e lista de fotos e vídeo). Use a ref (ex.: "913") ou parte do nome da rua/residencial.', input_schema: { type: 'object', properties: { busca: { type: 'string' } }, required: ['busca'] } },
   { name: 'enviar_arquivo', description: 'Envia ao cliente uma foto, um vídeo ou um PDF (planta ou projeto) do catálogo (caminho relativo à pasta do catálogo) ou uma imagem por link https. A legenda vai junto com a mídia. Só foto, vídeo e PDF: a ficha do imóvel (ficha.md) e os outros arquivos de texto são internos e nunca vão para o cliente.', input_schema: { type: 'object', properties: { caminho: { type: 'string' }, legenda: { type: 'string' } }, required: ['caminho'] } },
   { name: 'simular_fluxo', description: 'Monta a simulação do pagamento de um imóvel e devolve o texto pronto para mandar ao cliente, por texto, do jeito que veio. O financiamento já sai calculado do jeito mais atrativo para o cliente (avaliação do banco ou preço, o que for maior; não fale da avaliação ao cliente) e a parcela do financiamento sai como estimativa pela faixa de preço do imóvel (nunca pela renda). Sem os números dele, monta o FLUXO PADRÃO: sinal de R$ 10 mil, parcelas de R$ 1.500 por mês até 3 meses depois da entrega, reforço de R$ 5 mil em cada dezembro e o que sobrar na entrega das chaves. Chame assim na PRIMEIRA vez (só imovel), sem perguntar nada antes. Depois mude SÓ o que o cliente falar: imovel = ref (ex.: "832") ou parte do nome da rua/residencial. sinal = quanto ele dá na assinatura. parcela = quanto ele consegue pagar por mês (vale para as parcelas da entrada e para o pós-chaves). balao = valor do reforço de cada dezembro (0 quando ele disser que não consegue reforço no fim do ano). reforco = quanto o cliente DISSE que consegue dar na entrega das chaves, em reais (0 quando ele disser que não consegue nada na entrega). pos_chaves = máximo de parcelas mensais DEPOIS da entrega para o que faltar (mande 36; a ferramenta usa só as parcelas que precisar, no valor de parcela dele; se sobrar menos que uma parcela, esse resto fica na entrega das chaves para a conta fechar): o texto já sai avisando que depende de a construtora aceitar e que se formaliza na proposta, no escritório. fgts = saldo de FGTS que ele tem hoje: mande SÓ depois que o cliente falar de FGTS. carteira = true se ele disse que trabalha de carteira assinada e quer usar o FGTS: aí o FGTS cresce até a entrega. renda = renda bruta mensal da família, só se ele informou (serve para o FGTS de quem é de carteira assinada; não muda a parcela do financiamento). completo = true só quando o cliente PEDIR a conta completa de novo (sem isso, da segunda vez em diante a ferramenta devolve só os valores para você dizer o que mudou em 1 a 3 linhas).', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, sinal: { type: 'number' }, parcela: { type: 'number' }, balao: { type: 'number' }, reforco: { type: 'number' }, pos_chaves: { type: 'number' }, fgts: { type: 'number' }, carteira: { type: 'boolean' }, renda: { type: 'number' }, completo: { type: 'boolean' } }, required: ['imovel'] } },
-  { name: 'avisar_djhonata', description: 'Manda um aviso interno no WhatsApp pessoal do Djhonata. O cliente não vê e não fica sabendo desse aviso: com ele você continua falando em primeira pessoa, como o próprio Djhonata (ex.: "vou confirmar isso e já te falo"), nunca "pedi para o Djhonata".', input_schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
+  { name: 'avisar_djhonata', description: 'Avisa o Djhonata, só no que é essencial: visita marcada, desmarcada ou remarcada; cliente que pede para falar com uma pessoa; indicação; permuta de terreno; projeto que NÃO está na pasta do imóvel ("ENVIAR PROJETO"); cliente quente que esfriou. Dúvida de cliente que você não sabe responder também entra aqui, mas fica anotada no CRM para ele responder, sem ir para o celular dele. Não use para contar o que você ofereceu nem como a conversa está indo. O cliente não vê e não fica sabendo desse aviso: com ele você continua falando em primeira pessoa, como o próprio Djhonata (ex.: "vou confirmar isso e já te falo"), nunca "pedi para o Djhonata".', input_schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
   { name: 'agenda_visita', description: 'Agenda do escritório. acao = "consultar" devolve os horários livres de um dia (mande data AAAA-MM-DD); acao = "marcar" marca a visita do cliente atual (mande data AAAA-MM-DD, hora HH:00 e, se o cliente disse, o nome dele). A agenda é de hora em hora. Use sempre que o cliente disser um dia ou um horário para vir: consulte antes de confirmar e, estando livre, marque. Se a ferramenta disser que não está livre, ofereça os horários que ela devolver. Ela já registra a visita no CRM e liga os lembretes: não chame registrar_crm para isso.', input_schema: { type: 'object', properties: { acao: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nome: { type: 'string' } }, required: ['acao'] } },
   { name: 'registrar_crm', description: 'Registra no CRM um evento do cliente atual e move o card dele: novoStatus = atendimento, visita_marcada, remarcar, sem_interesse ou pausado ("em negociação" NÃO é com você: só o Djhonata move para lá, depois que o cliente vem ao escritório; cliente negociando valores pelo WhatsApp continua em atendimento). Em visita_marcada mande data (AAAA-MM-DD) e hora (HH:MM): o sistema usa para os lembretes da visita. Se o cliente cancelar ou pedir para remarcar, use remarcar (os lembretes param). Mande nomeReal quando o cliente disser o nome e imovel quando souber qual imóvel interessa. resultado = frase curta do que aconteceu.', input_schema: { type: 'object', properties: { novoStatus: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nomeReal: { type: 'string' }, imovel: { type: 'string' }, resumo: { type: 'string' }, resultado: { type: 'string' } } } },
   { name: 'agendar_retorno', description: 'Marca para VOCÊ chamar o cliente de volta num dia e horário combinados. Use quando o cliente disser que fala depois e der uma hora ou um dia (ex.: "falo contigo depois das 14h30", "me chama amanhã cedo", "só consigo à noite"). Use TAMBÉM quando ele disser que vai conversar com a esposa, o marido, o namorado ou a família, ou que vai pensar e te retorna, sem dar hora: aí é VOCÊ que propõe o retorno ("Te chamo amanhã no fim da tarde pra saber o que ela achou, pode ser?") e marca na mesma hora para esse dia e horário (amanhã às 17:00; se amanhã for domingo, segunda às 10:00), sem esperar ele confirmar. quando = AAAA-MM-DD HH:MM no horário de Joinville (se ele disse "depois das 14h30", use 14:40; "amanhã cedo" = 09:00; "à noite" = 19:00). assunto = uma linha com o que ficou combinado e de onde retomar (ex.: "ver opções perto do Jardim Paraíso"). Depois de marcar, responda ao cliente em uma linha que você chama nessa hora (ex.: "Combinado, te chamo às 14h40"). Não use para visita ao escritório (isso é agenda_visita).', input_schema: { type: 'object', properties: { quando: { type: 'string' }, assunto: { type: 'string' } }, required: ['quando'] } },
@@ -815,7 +815,12 @@ async function executar(nome, entrada, ctx) {
     }
     if (nome === 'avisar_djhonata') {
       const txt = String(entrada.texto || '').trim(); if (!txt) return 'Aviso vazio: nada enviado.';
-      estado.avisos = [...(estado.avisos || []), { ts: Date.now(), jid: ctx.jid, nome: ctx.nome || '', telefone: ctx.telefone || '', texto: txt.slice(0, 600) }].slice(-30); salvarEstado();
+      // 13/11/2026 (pedido do Djhonata): o WhatsApp pessoal dele só recebe o essencial. Projeto que está na pasta, ela mesma manda; dúvida de cliente fica na lista do CRM; aviso só informativo não sai.
+      if (/projeto|planta/i.test(txt) && !ctx.dono) { const ult = lerEsp(ctx.jid).filter(m => m.oferta).pop(), pj = ult ? projetosDaPasta(ult.oferta) : []; if (pj.length) return `Aviso não enviado: o projeto deste imóvel está na pasta (${pj[0]}). Mande você mesmo agora, com enviar_arquivo e uma legenda curta.` + AVISO_INTERNO; }
+      const tipoAv = tipoDoAviso(txt);
+      estado.avisos = [...(estado.avisos || []), { id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), ts: Date.now(), jid: ctx.jid, nome: ctx.nome || '', telefone: ctx.telefone || '', texto: txt.slice(0, 600), tipo: tipoAv }].slice(-80); salvarEstado();
+      if (tipoAv === 'info') { log('aviso só informativo: não foi para o Djhonata', ctx.jid); return 'Aviso não enviado: o Djhonata só recebe aviso de visita marcada ou desmarcada, cliente que pede para falar com uma pessoa, indicação, permuta, projeto que você não tem para mandar e cliente quente que esfriou. Continue atendendo o cliente normalmente.' + AVISO_INTERNO; }
+      if (tipoAv === 'duvida') { log('dúvida de cliente anotada para o CRM', ctx.jid); return 'Dúvida anotada para o Djhonata responder pelo CRM (não foi para o celular dele). Diga ao cliente UMA vez que vai confirmar e já fala, e continue a conversa.' + AVISO_INTERNO; }
       if (estado.teste && estado.teste.ativo) {   // no teste o "cliente" é o próprio Djhonata: o aviso fica só no CRM
         registrarEspelho(ctx.jid, { id: 'av' + Date.now().toString(36), autor: 'aviso', tipo: 'text', texto: '🔔 Aviso ao Djhonata (não enviado, modo teste): ' + txt, ts: Date.now() });
         log('teste: aviso ao Djhonata ficou só no CRM');
@@ -2090,6 +2095,10 @@ setTimeout(() => verificarSaldos().catch(e => log('saldos', e.message)), 5 * 60e
 
 // Identidade (12/11/2026): para o cliente, quem fala é o Djhonata. Resposta que fala dele como outra pessoa ("já pedi para o Djhonata verificar",
 // "vou levar para o Djhonata e ele fala com você") não sai: a IA reescreve em primeira pessoa (uma vez por resposta).
+// Aviso ao WhatsApp pessoal: o que é essencial, o que é dúvida de cliente (vai para o CRM) e o que é só informação (não sai)
+const AVISO_ESSENCIAL = /(visita|hor[áa]rio)[^.\n]{0,60}(marcad|agendad|desmarc|remarc|cancel)|(marcou|agendou|desmarcou|remarcou|cancelou|confirmou)[^.\n]{0,40}(visita|hor[áa]rio)|falar com (uma |um |o |a )?(pessoa|atendente|corretor|humano)|n[úu]mero pessoal|pediu (o |seu |meu )?n[úu]mero|indica[çc][ãa]o|indicou|permuta|projeto|planta|esfriou|urgente/i;
+const AVISO_DUVIDA = /\?|d[úu]vida|pergunt|confirm|n[ãa]o sei|n[ãa]o tenho|n[ãa]o consta|qual |quant|medida|metragem|responder|resposta/i;
+const tipoDoAviso = (t) => AVISO_ESSENCIAL.test(t) ? 'essencial' : AVISO_DUVIDA.test(t) ? 'duvida' : 'info';
 const AVISO_INTERNO = ' O cliente não sabe desse aviso: para ele, quem está falando é você, o Djhonata. Se for dizer que vai conferir algo, diga em primeira pessoa ("vou confirmar isso e já te falo"); nunca escreva "pedi para o Djhonata", "o Djhonata vai ver" nem "assim que ele responder".';
 // Onde "Djhonata" é ela mesma se apresentando (não conta como terceira pessoa): "Aqui é o Djhonata", "sou eu, o Djhonata", assinatura numa linha só.
 const RE_EU_DJHONATA = /\b(?:aqui\s+(?:é|quem\s+fala\s+é)|(?:eu\s+)?sou(?:\s+eu,?)?|me\s+chamo|meu\s+nome\s+é|pode\s+me\s+chamar\s+de|quem\s+(?:fala|est[áa]\s+falando|te\s+atende|est[áa]\s+te\s+atendendo)(?:\s+aqui|\s+com\s+voc[êe]s?)?\s+é)\s+(?:mesmo,?\s+)?(?:o\s+)?(?:pr[óo]prio\s+)?Djhonata(?:\s+Vargas)?\b|(?:^|[\s,;:.!?])é\s+o\s+(?:pr[óo]prio\s+)?Djhonata\s+(?:falando|mesmo|aqui)\b|\bDjhonata\s+aqui\b|(?:^|\n)\s*Djhonata(?:\s+Vargas)?\s*(?:[,|–-][^\n]{0,60})?(?=\n|$)/gi;
@@ -2708,6 +2717,85 @@ async function claudeTexto(system, texto, maxTokens = 3000, temperatura) {
   }
   throw new Error('API indisponível');
 }
+// ===== FICHA DE ATENDIMENTO (pedido do Djhonata, 13/11/2026) =====
+// Quando o cliente marca visita, o servidor lê a conversa e monta a ficha que o Djhonata abre no card do CRM (e imprime) antes de atender:
+// imóvel de interesse, fluxo de pagamento que o cliente recebeu, o que ele quer, objeções, pendências. Refaz sozinha quando o cliente volta a falar,
+// até o card entrar em negociação (veio ao escritório).
+const FICHAS_DIR = path.join(DADOS, 'fichas');
+try { fs.mkdirSync(FICHAS_DIR, { recursive: true }); } catch (e) { }
+const arqFichaAt = (jid) => path.join(FICHAS_DIR, String(jid).replace(/[^0-9a-zA-Z@._-]/g, '_') + '.json');
+const lerFichaAt = (jid) => lerJson(arqFichaAt(jid), null);
+const fichaAt = { gerando: {}, erros: {}, fila: [], ativos: 0, varrendo: false };
+const SIS_FICHA = `Você monta a FICHA DE ATENDIMENTO de um cliente para o corretor Djhonata (Euro Consultoria Imobiliária, Joinville) ler antes de receber o cliente no escritório. Leia a conversa do WhatsApp e devolva SOMENTE um JSON, sem texto antes nem depois, exatamente neste formato:
+{"imovel":{"pasta":"pasta exata de um dos imóveis enviados, ou vazio","unidade":"unidade tratada com o cliente e se é de ponta ou de meio, ou vazio","medidas":"medidas ditas ao cliente (frente, fundos, abertura), ou vazio"},"fluxo":{"enviado":true,"quando":"DD/MM às HHhMM","linhas":[{"item":"Sinal na assinatura","valor":"R$ 10.000,00"}],"total":"R$ 380.000,00 ou vazio","dito":"condição ou ressalva dita ao cliente, ou vazio","resposta":"o que o cliente respondeu sobre o fluxo"},"quer":["Rótulo: o que ele quer"],"informou":["FGTS: ...","Carteira assinada: ...","Renda: ...","Sinal: ...","Quem compra junto: ..."],"objecoes":[{"ponto":"a dúvida ou objeção, com as palavras dele quando ajudar","status":"Em aberto | Resolvida | Explicada | Respondida","nota":"como ficou, em uma frase"}],"pendencias":["o que foi prometido ao cliente e ainda não foi entregue"],"comecar":["até 3 passos, em ordem, para abrir o atendimento no escritório"]}
+Regras:
+- Use só o que está na conversa e nos dados dos imóveis. Não invente. O que o cliente não disse fica como "não informou".
+- Imóvel de interesse: o que o cliente escolheu, ou o último que ele não recusou. Imóvel que ele recusou não entra; se a recusa mostra uma preferência (ex.: não quer pronto, quer mais terreno), escreva a preferência em "quer".
+- "fluxo": o fluxo de pagamento na ÚLTIMA versão que o cliente recebeu para o imóvel de interesse, item por item, com os valores como foram ditos (inclua FGTS e financiamento se foram ditos). Se nenhum fluxo foi enviado: "enviado": false e "linhas": [].
+- "quer": bairro, valor, tipo, exigências (casa de ponta, terreno, vagas, prazo). "informou": o que ele contou de renda, FGTS, carteira, sinal, quem compra junto.
+- "objecoes": toda dúvida ou objeção que apareceu, com o status. "pendencias": promessas em aberto (planta, resposta, retorno).
+- "comecar": comece pelo que está em aberto e pode derrubar a venda.
+- Mensagens [ia] e [voce] foram enviadas em nome do Djhonata. Frases curtas, português simples, sem emoji. Valores no formato R$ 10.000,00.`;
+function fichaQuando(q) { const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(q || ''); if (!m) return ''; const d = new Date(+m[1], +m[2] - 1, +m[3]); return ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'][d.getDay()] + `, ${m[3]}/${m[2]}/${m[1]}` + (m[4] ? `, às ${+m[4]}h${m[5] !== '00' ? m[5] : ''}` : ''); }
+function fichaLinha(m) { const d = new Date((m.ts || 0) - 3 * 3600e3).toISOString(); return d.slice(8, 10) + '/' + d.slice(5, 7) + ' ' + d.slice(11, 16) + ' [' + m.autor + (m.tipo && m.tipo !== 'text' ? ':' + m.tipo : '') + '] ' + String(m.texto || '').replace(/\s*\n+\s*/g, ' / ').slice(0, 1500); }
+function fichaImovel(pasta) {   // dados do imóvel como estão no cadastro (ficha.md), mais o fluxo padrão de hoje
+  const t = lerTexto(path.join(pasta, 'ficha.md')).replace(/\r/g, ''), g = (re) => ((re.exec(t) || [])[1] || '').trim(), f = dadosDaFicha(pasta);
+  let padrao = []; try { const x = simularFluxo({ imovel: pasta }); if (x && x.texto) padrao = x.texto.split('\n').filter(l => /^(✅|💵)/.test(l)).map(l => l.replace(/^(✅|💵)\s*/, '').trim()); } catch (e) { }
+  return { pasta, ref: geoRef(pasta), nome: f.nome, endereco: g(/^-\s*Endere[çc]o:\s*([^\n]+)/mi), tipo: g(/^-\s*Tipo de constru[çc][ãa]o:\s*([^\n]+)/mi) || g(/^-\s*Tipo:\s*([^\n]+)/mi), area: g(/^-\s*[ÁA]rea:\s*([^\n]+)/mi), comodos: g(/^-\s*C[ôo]modos:\s*([^\n]+)/mi), vagas: g(/^-\s*Vagas:\s*([^\n]+)/mi),
+    preco: f.preco ? brl(f.preco) : '', entrega: g(/^-\s*Entrega:\s*([^\n]+)/mi), unidades: g(/^-\s*Unidades dispon[íi]veis:\s*([^\n]+)/mi).slice(0, 300), projeto: projetosDaPasta(pasta).length ? 'Projeto na pasta do imóvel' : 'Sem projeto na pasta do imóvel', temFoto: !!midiaDaOferta(pasta).foto1, padrao };
+}
+async function fichaGerar(jid, motivo) {
+  if (fichaAt.gerando[jid]) return null; fichaAt.gerando[jid] = Date.now();
+  try {
+    const todas = lerEsp(jid), l = todas.filter(m => m.autor !== 'aviso' && (String(m.texto || '').trim() || (m.tipo && m.tipo !== 'text'))); if (!l.length) return null;
+    const c = chatPublico(jid) || {}, cc = chats[jid] || {}, st = (estado.crmStatus || {})[tel8Chat(jid)] || '';
+    const ims = [...new Set(l.map(m => m.oferta).filter(Boolean))].filter(p => lerTexto(path.join(p, 'ficha.md'))).slice(-4).map(fichaImovel);
+    const vis = (estado.visitas || {})[jid], visTxt = vis && vis.q ? fichaQuando(vis.q) : '';
+    const origem = cc.anuncio ? 'Anúncio' + (cc.anuncio.titulo ? ' "' + cc.anuncio.titulo + '"' : '') : 'Chamou no WhatsApp';
+    const dados = `CLIENTE: ${c.nome || 'sem nome'} | telefone ${c.telefone || ''} | origem: ${origem} | etapa no CRM: ${st || 'sem card'}${visTxt ? ' | visita marcada: ' + visTxt : ''}\n\nIMÓVEIS ENVIADOS NA CONVERSA (dados do cadastro):\n`
+      + (ims.map(i => `- pasta: ${i.pasta} | ${i.nome} | ${i.endereco} | ${i.tipo} | ${i.area} | ${i.comodos} | ${i.vagas} | ${i.preco} | entrega: ${i.entrega} | unidades: ${i.unidades || 'não informado'}`).join('\n') || '(nenhum imóvel do catálogo foi enviado)')
+      + '\n\nCONVERSA (horário de Joinville):\n' + l.slice(-220).map(fichaLinha).join('\n');
+    const bruto = await claudeTexto(SIS_FICHA, dados, 1800, 0);
+    const mj = /\{[\s\S]*\}/.exec(bruto || ''); let j = null; try { j = mj ? JSON.parse(mj[0]) : null; } catch (e) { }
+    if (!j || typeof j !== 'object') throw new Error('resposta sem JSON');
+    const tx = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n), lista = (v, n) => (Array.isArray(v) ? v : []).map(x => tx(x, 220)).filter(Boolean).slice(0, n);
+    const ji = j.imovel || {}, fl = j.fluxo || {}, im = ims.find(i => i.pasta === ji.pasta) || (ims.length === 1 ? ims[0] : null);
+    const linhas = (Array.isArray(fl.linhas) ? fl.linhas : []).map(x => ({ item: tx((x || {}).item, 120), valor: tx((x || {}).valor, 40) })).filter(x => x.item).slice(0, 10);
+    const ficha = { v: 1, jid, nome: c.nome || '', telefone: c.telefone || '', origem, crm: st, visita: visTxt,
+      imovel: im ? Object.assign({}, im, { unidade: tx(ji.unidade, 160), medidas: tx(ji.medidas, 160) }) : null,
+      fluxo: { enviado: !!fl.enviado && linhas.length > 0, quando: tx(fl.quando, 40), linhas, total: tx(fl.total, 40), dito: tx(fl.dito, 300), resposta: tx(fl.resposta, 300) },
+      quer: lista(j.quer, 7), informou: lista(j.informou, 7),
+      objecoes: (Array.isArray(j.objecoes) ? j.objecoes : []).map(o => ({ ponto: tx((o || {}).ponto, 140), status: tx((o || {}).status, 20), nota: tx((o || {}).nota, 200) })).filter(o => o.ponto).slice(0, 7),
+      pendencias: lista(j.pendencias, 5), comecar: lista(j.comecar, 3), geradaEm: Date.now(), ateTs: todas[todas.length - 1].ts || 0, deTs: l[0].ts || 0, msgs: l.length, motivo };
+    gravarJson(arqFichaAt(jid), ficha); delete fichaAt.erros[jid];
+    log('ficha de atendimento:', motivo, jid, im ? im.nome : 'sem imóvel');
+    return ficha;
+  } catch (e) { fichaAt.erros[jid] = { em: Date.now(), msg: e.message }; log('ficha: falhou', jid, e.message); return null; }
+  finally { delete fichaAt.gerando[jid]; }
+}
+function fichaRodar() { while (fichaAt.ativos < 2 && fichaAt.fila.length) { const x = fichaAt.fila.shift(); fichaAt.ativos++; fichaGerar(x.jid, x.motivo).catch(() => { }).finally(() => { fichaAt.ativos--; fichaRodar(); }); } }
+function fichaPedir(jid, motivo) { if (!jid || fichaAt.gerando[jid] || fichaAt.fila.some(x => x.jid === jid)) return; fichaAt.fila.push({ jid, motivo }); fichaRodar(); }
+const fichaNaFila = (jid) => !!fichaAt.gerando[jid] || fichaAt.fila.some(x => x.jid === jid);
+function fichaAlvo(v) { v = String(v || ''); if (v.includes('@')) return acharJid(v); const t8 = v.replace(/\D/g, '').slice(-8); if (t8.length < 8) return ''; return Object.keys(chats).find(j => jidValido(j) && !j.endsWith('@g.us') && tel8Chat(j) === t8) || ''; }
+// Varredura (a cada 2 min): quem tem visita guardada e ainda não tem ficha ganha a ficha; quem tem ficha e voltou a conversar tem a ficha refeita
+// depois de 8 min sem mensagem nova. Card em negociação ou fechado: o cliente já veio ao escritório e a ficha para de mudar.
+function fichaVarrer() {
+  if (!API_KEY || fichaAt.varrendo) return; fichaAt.varrendo = true;
+  try {
+    const cand = new Set(Object.keys(estado.visitas || {}));
+    try { for (const f of fs.readdirSync(FICHAS_DIR)) if (f.endsWith('.json')) { const x = lerJson(path.join(FICHAS_DIR, f), null); if (x && x.jid) cand.add(x.jid); } } catch (e) { }
+    for (const jid of cand) {
+      if (fichaNaFila(jid)) continue;
+      const fx = lerFichaAt(jid), l = lerEsp(jid); if (!l.length) continue;
+      const ult = l[l.length - 1].ts || 0, st = (estado.crmStatus || {})[tel8Chat(jid)] || '', er = fichaAt.erros[jid];
+      if (er && Date.now() - er.em < 30 * 60e3) continue;
+      if (fx && /^(negociacao|fechado)$/.test(st)) continue;
+      if (fx && (ult <= (fx.ateTs || 0) || Date.now() - ult < 8 * 60e3)) continue;
+      fichaPedir(jid, fx ? 'conversa nova' : 'visita marcada');
+    }
+  } catch (e) { log('ficha: varredura', e.message); } finally { fichaAt.varrendo = false; }
+}
+setInterval(fichaVarrer, 2 * 60e3);
 const classif = { rodando: false, feitos: 0, total: 0, erro: '' };
 const SIS_CLASSE = `Você organiza o WhatsApp de Djhonata, corretor de imóveis da Euro Consultoria (Joinville/SC), que vende casas geminadas e apartamentos na planta.
 Para cada conversa, escolha UMA categoria:
@@ -3369,6 +3457,33 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const lids = Object.keys(chats).filter(j => j.endsWith('@lid'));
           let bl = ''; try { bl = fs.readFileSync(path.join(DADOS, 'baileys.log'), 'utf8').split('\n').slice(-25).map(l => { try { const o = JSON.parse(l); return (o.msg || '') + ' ' + JSON.stringify(o.err ? o.err.message : (o.error || '')).slice(0, 200); } catch (e) { return l.slice(0, 200); } }).join('\n'); } catch (e) { }
           return json(res, { baileys: bl, etiquetas: etq.labels, etiquetando, temAddLabel: !!(sock && typeof sock.addLabel === 'function'), chats: Object.keys(chats).length, lids: lids.length, lidsComTelefone: lids.filter(j => lidPn[j] || chats[j].telefone).length, mapa: Object.keys(lidPn).length, contatos: Object.keys(contatos).length, temLidMapping: !!(sock && sock.signalRepository && sock.signalRepository.lidMapping) });
+        }
+        else if (ac === 'avisos') {   // dúvidas de clientes que a assistente anotou para o Djhonata responder (não foram para o celular dele)
+          return json(res, { ok: true, avisos: (estado.avisos || []).filter(a => a.tipo === 'duvida' && !a.feito).slice(-40).reverse() });
+        }
+        else if (ac === 'aviso_feito') {   // texto = id do aviso: sai da lista
+          const a = (estado.avisos || []).find(x => x.id && x.id === String(b.texto || '')); if (!a) return json(res, { erro: 'aviso não encontrado' }, 404);
+          a.feito = Date.now(); salvarEstado(); return json(res, { ok: true });
+        }
+        else if (ac === 'ficha') {   // ficha de atendimento de um cliente (jid = conversa ou telefone). Monta se não existe, refaz se a conversa andou; on = sim refaz agora
+          const j = fichaAlvo(b.jid); if (!j) return json(res, { erro: 'conversa não encontrada' }, 404);
+          const fx = lerFichaAt(j), l = lerEsp(j), ult = l.length ? l[l.length - 1].ts || 0 : 0, velha = !!fx && ult > (fx.ateTs || 0);
+          if ((b.on === true || !fx || velha) && l.length) fichaPedir(j, b.on === true ? 'pedido no CRM' : fx ? 'conversa nova' : 'primeira vez');
+          return json(res, { ok: true, jid: j, ficha: fx, gerando: fichaNaFila(j), desatualizada: velha, erro: fichaAt.erros[j] ? fichaAt.erros[j].msg : '' });
+        }
+        else if (ac === 'ficha_foto') {   // foto 1 do imóvel (texto = pasta ou ref), em base64, para a ficha de atendimento
+          const pasta = acharPasta(String(b.texto || '')); if (!pasta) return json(res, { erro: 'imóvel não encontrado' }, 404);
+          const f1 = midiaDaOferta(pasta).foto1; let buf = null;
+          try {
+            if (/^https?:/i.test(f1)) { const r = await fetch(f1, { signal: AbortSignal.timeout(20000) }); if (r.ok) buf = Buffer.from(await r.arrayBuffer()); }
+            else if (f1) { const abs = path.resolve(CATALOGO, f1); if (abs.startsWith(CATALOGO + path.sep) && fs.existsSync(abs)) buf = fs.readFileSync(abs); }
+          } catch (e) { log('ficha: foto', pasta, e.message); }
+          if (buf && buf.length > 3e6) buf = null;
+          return json(res, { ok: true, pasta, tipo: /\.png(\?|$)/i.test(f1) ? 'image/png' : /\.webp(\?|$)/i.test(f1) ? 'image/webp' : 'image/jpeg', b64: buf ? buf.toString('base64') : '' });
+        }
+        else if (ac === 'fichas') {   // quais clientes já têm ficha de atendimento
+          const lista = []; try { for (const f of fs.readdirSync(FICHAS_DIR)) if (f.endsWith('.json')) { const x = lerJson(path.join(FICHAS_DIR, f), null); if (x && x.jid) lista.push({ jid: x.jid, nome: x.nome, telefone: x.telefone, geradaEm: x.geradaEm, imovel: x.imovel ? x.imovel.nome : '' }); } } catch (e) { }
+          return json(res, { ok: true, fichas: lista, fila: fichaAt.fila.length, gerando: Object.keys(fichaAt.gerando).length });
         }
         else if (ac === 'ultimas') {   // {final do telefone: hora da última mensagem, de qualquer lado}; o CRM mostra "última interação" em cada card
           const m = {};
