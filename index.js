@@ -3124,7 +3124,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
             const t8 = String(x.p.telefone).replace(/\D/g, '').slice(-8), c = chats[x.j] || {};
             const ms = lerEsp(x.j).slice(-nMsgs);
             partes.push('===== ' + (x.p.nome || 'sem nome') + ' | ' + x.p.telefone + ' | CRM: ' + ((estado.crmStatus || {})[t8] || 'sem card') + (c.anuncio ? ' | anúncio: ' + (c.anuncio.titulo || 'sim') + (c.anuncio.anuncioId ? ' [' + c.anuncio.anuncioId + ((adsMapa[c.anuncio.anuncioId] || {}).pasta ? ' = ' + adsMapa[c.anuncio.anuncioId].pasta : (adsMapa[c.anuncio.anuncioId] || {}).generico ? ' = genérico' : '') + ']' : '') : '') + (x.p.iaOff ? ' | IA desligada neste chat' : '') + '\n'
-              + ms.map(m => hm(m.ts) + ' [' + m.autor + (m.rotina ? ':' + m.rotina : '') + (m.followup ? ':followup' : '') + (m.tipo && m.tipo !== 'text' ? ':' + m.tipo : '') + '] ' + String(m.texto || '').replace(/\s*\n+\s*/g, ' / ').slice(0, 420)).join('\n'));
+              + ms.map(m => hm(m.ts) + ' [' + m.autor + (m.rotina ? ':' + m.rotina : '') + (m.followup ? ':followup' : '') + (m.tipo && m.tipo !== 'text' ? ':' + m.tipo : '') + '] ' + String(m.texto || '').replace(/\s*\n+\s*/g, ' / ').slice(0, m.tipo === 'audio' ? 2500 : 420)).join('\n'));   // áudio vai inteiro (13/11/2026): cortado em 420, o fim do áudio longo ficava fora da avaliação
             await new Promise(r => setTimeout(r, 2));
           }
           return json(res, { ok: true, conversas: lista.length, texto: partes.join('\n\n') });
