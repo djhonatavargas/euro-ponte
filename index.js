@@ -2735,7 +2735,8 @@ Regras:
 - "quer": bairro, valor, tipo, exigências (casa de ponta, terreno, vagas, prazo). "informou": o que ele contou de renda, FGTS, carteira, sinal, quem compra junto.
 - "objecoes": toda dúvida ou objeção que apareceu, com o status. "pendencias": promessas em aberto (planta, resposta, retorno).
 - "comecar": comece pelo que está em aberto e pode derrubar a venda.
-- Mensagens [ia] e [voce] foram enviadas em nome do Djhonata. Frases curtas, português simples, sem emoji. Valores no formato R$ 10.000,00.`;
+- Mensagens [ia] e [voce] foram enviadas em nome do Djhonata. Frases curtas, português simples, sem emoji. Valores no formato R$ 10.000,00.
+- O JSON tem de ser válido: dentro dos textos nunca use aspas duplas nem quebra de linha. Para citar o cliente use aspas simples ('assim').`;
 function fichaQuando(q) { const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(q || ''); if (!m) return ''; const d = new Date(+m[1], +m[2] - 1, +m[3]); return ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'][d.getDay()] + `, ${m[3]}/${m[2]}/${m[1]}` + (m[4] ? `, às ${+m[4]}h${m[5] !== '00' ? m[5] : ''}` : ''); }
 function fichaLinha(m) { const d = new Date((m.ts || 0) - 3 * 3600e3).toISOString(); return d.slice(8, 10) + '/' + d.slice(5, 7) + ' ' + d.slice(11, 16) + ' [' + m.autor + (m.tipo && m.tipo !== 'text' ? ':' + m.tipo : '') + '] ' + String(m.texto || '').replace(/\s*\n+\s*/g, ' / ').slice(0, 1500); }
 function fichaImovel(pasta) {   // dados do imóvel como estão no cadastro (ficha.md), mais o fluxo padrão de hoje
@@ -2755,8 +2756,12 @@ async function fichaGerar(jid, motivo) {
     const dados = `CLIENTE: ${c.nome || 'sem nome'} | telefone ${c.telefone || ''} | origem: ${origem} | etapa no CRM: ${st || 'sem card'}${visTxt ? ' | visita marcada: ' + visTxt : ''}\n\nIMÓVEIS ENVIADOS NA CONVERSA (dados do cadastro):\n`
       + (ims.map(i => `- pasta: ${i.pasta} | ${i.nome} | ${i.endereco} | ${i.tipo} | ${i.area} | ${i.comodos} | ${i.vagas} | ${i.preco} | entrega: ${i.entrega} | unidades: ${i.unidades || 'não informado'}`).join('\n') || '(nenhum imóvel do catálogo foi enviado)')
       + '\n\nCONVERSA (horário de Joinville):\n' + l.slice(-220).map(fichaLinha).join('\n');
-    const bruto = await claudeTexto(SIS_FICHA, dados, 1800);   // sem temperatura: o modelo atual não aceita esse parâmetro
-    const mj = /\{[\s\S]*\}/.exec(bruto || ''); let j = null; try { j = mj ? JSON.parse(mj[0]) : null; } catch (e) { }
+    const tentar = async (extra) => {   // sem temperatura: o modelo atual não aceita esse parâmetro
+      const bruto = await claudeTexto(SIS_FICHA, dados + extra, 2500), mj = /\{[\s\S]*\}/.exec(bruto || '');
+      try { return mj ? JSON.parse(mj[0]) : null; } catch (e) { log('ficha: resposta que não é JSON', jid, String(bruto || '').replace(/\s+/g, ' ').slice(0, 200)); return null; }
+    };
+    let j = await tentar('');
+    if (!j || typeof j !== 'object') j = await tentar('\n\nATENÇÃO: a resposta anterior não era um JSON válido. Devolva só o JSON pedido, sem texto antes nem depois, sem aspas duplas dentro dos textos.');
     if (!j || typeof j !== 'object') throw new Error('resposta sem JSON');
     const tx = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n), lista = (v, n) => (Array.isArray(v) ? v : []).map(x => tx(x, 220)).filter(Boolean).slice(0, n);
     const ji = j.imovel || {}, fl = j.fluxo || {}, im = ims.find(i => i.pasta === ji.pasta) || (ims.length === 1 ? ims[0] : null);
