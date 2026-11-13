@@ -2750,14 +2750,15 @@ async function fichaGerar(jid, motivo) {
   try {
     const todas = lerEsp(jid), l = todas.filter(m => m.autor !== 'aviso' && (String(m.texto || '').trim() || (m.tipo && m.tipo !== 'text'))); if (!l.length) return null;
     const c = chatPublico(jid) || {}, cc = chats[jid] || {}, st = (estado.crmStatus || {})[tel8Chat(jid)] || '';
-    const ims = [...new Set(l.map(m => m.oferta).filter(Boolean))].filter(p => lerTexto(path.join(p, 'ficha.md'))).slice(-4).map(fichaImovel);
+    const ims = [...new Set(l.map(m => m.oferta || (m.arquivo && m.autor !== 'cliente' ? pastaDoCaminho(String(m.arquivo).replace(/^c\//, '')) : '')).filter(Boolean))].filter(p => lerTexto(path.join(p, 'ficha.md'))).slice(-4).map(fichaImovel);   // imóvel enviado: pela marca da oferta ou pelo arquivo (vídeo, foto) que saiu
     const vis = (estado.visitas || {})[jid], visTxt = vis && vis.q ? fichaQuando(vis.q) : '';
     const origem = cc.anuncio ? 'Anúncio' + (cc.anuncio.titulo ? ' "' + cc.anuncio.titulo + '"' : '') : 'Chamou no WhatsApp';
     const dados = `CLIENTE: ${c.nome || 'sem nome'} | telefone ${c.telefone || ''} | origem: ${origem} | etapa no CRM: ${st || 'sem card'}${visTxt ? ' | visita marcada: ' + visTxt : ''}\n\nIMÓVEIS ENVIADOS NA CONVERSA (dados do cadastro):\n`
       + (ims.map(i => `- pasta: ${i.pasta} | ${i.nome} | ${i.endereco} | ${i.tipo} | ${i.area} | ${i.comodos} | ${i.vagas} | ${i.preco} | entrega: ${i.entrega} | unidades: ${i.unidades || 'não informado'}`).join('\n') || '(nenhum imóvel do catálogo foi enviado)')
       + '\n\nCONVERSA (horário de Joinville):\n' + l.slice(-220).map(fichaLinha).join('\n');
     const tentar = async (extra) => {   // sem temperatura: o modelo atual não aceita esse parâmetro
-      const bruto = await claudeTexto(SIS_FICHA, dados + extra, 2500), mj = /\{[\s\S]*\}/.exec(bruto || '');
+      const bruto = await claudeTexto(SIS_FICHA, dados + extra, 14000), mj =   // limite folgado: em conversa longa a resposta era cortada no meio
+        /\{[\s\S]*\}/.exec(bruto || '');
       try { return mj ? JSON.parse(mj[0]) : null; } catch (e) { log('ficha: resposta que não é JSON', jid, String(bruto || '').replace(/\s+/g, ' ').slice(0, 200)); return null; }
     };
     let j = await tentar('');
