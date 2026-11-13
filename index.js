@@ -3177,6 +3177,17 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const id = await enviarTexto(jid, texto, 'voce');
           if (!id) return json(res, { erro: 'WhatsApp desconectado' }, 409);
           anotar(jid, 'assistant', `(Djhonata escreveu) ${texto}`);
+        } else if (ac === 'enviar_arquivo') {   // 13/11/2026: o Djhonata manda pelo painel o vídeo, a foto ou o projeto de um imóvel do catálogo. texto = JSON { ref ou caminho, legenda }; com ref vai o vídeo da oferta (ou a foto da fachada)
+          let pa = null; try { pa = JSON.parse(String(b.texto || '')); } catch (e) { }
+          if (!pa || typeof pa !== 'object') return json(res, { erro: 'mande texto = JSON { ref ou caminho, legenda }' }, 400);
+          if (jid && !chats[jid] && jid.endsWith('@s.whatsapp.net') && sock && conectado) { try { const [r] = await sock.onWhatsApp(jid.split('@')[0]); if (r && r.exists && r.jid) jid = r.jid; } catch (e) { } }
+          if (!jidValido(jid)) return json(res, { erro: 'conversa inválida' }, 400);
+          let caminho = String(pa.caminho || '').replace(/^[a-z]:[\\/]+users[\\/]+public[\\/]+catalogo[\\/]+/i, ''), pastaA = '';
+          if (!caminho) { pastaA = pa.ref ? acharPasta(String(pa.ref)) || '' : ''; if (!pastaA) return json(res, { erro: 'imóvel não encontrado' }, 404); const mi = midiaDaOferta(pastaA); caminho = mi.video || mi.foto1 || ''; if (!caminho) return json(res, { erro: 'esse imóvel não tem vídeo nem foto na pasta' }, 404); }
+          const legendaA = String(pa.legenda || '').slice(0, 3000), rA = await enviarArquivo(jid, caminho, legendaA, 'voce', pastaA ? { oferta: pastaA } : undefined);
+          if (rA !== 'Enviado.') return json(res, { erro: rA }, /desconectado/i.test(rA) ? 409 : 400);
+          anotar(jid, 'assistant', `(Djhonata enviou ${caminho}${legendaA ? ' com a legenda: ' + legendaA.slice(0, 300) : ''})`);
+          return json(res, { ok: true, caminho });
         } else if (ac === 'saldos') {   // aba Pagamentos do CRM
           await lerEleven(!!b.on);
           return json(res, { saldos: dadosSaldos(), baixos: saldosBaixos() });
