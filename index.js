@@ -278,7 +278,7 @@ const FERRAMENTAS = [
   { name: 'enviar_arquivo', description: 'Envia ao cliente uma foto, um vídeo ou um PDF (planta ou projeto) do catálogo (caminho relativo à pasta do catálogo) ou uma imagem por link https. A legenda vai junto com a mídia. Só foto, vídeo e PDF: a ficha do imóvel (ficha.md) e os outros arquivos de texto são internos e nunca vão para o cliente.', input_schema: { type: 'object', properties: { caminho: { type: 'string' }, legenda: { type: 'string' } }, required: ['caminho'] } },
   { name: 'simular_fluxo', description: 'Monta a simulação do pagamento de um imóvel e devolve o texto pronto para mandar ao cliente, por texto, do jeito que veio. O financiamento já sai calculado do jeito mais atrativo para o cliente (avaliação do banco ou preço, o que for maior; não fale da avaliação ao cliente) e a parcela do financiamento sai como estimativa pela faixa de preço do imóvel (nunca pela renda). Sem os números dele, monta o FLUXO PADRÃO: sinal de R$ 10 mil, parcelas de R$ 1.500 por mês até 3 meses depois da entrega, reforço de R$ 5 mil em cada dezembro e o que sobrar na entrega das chaves. Chame assim na PRIMEIRA vez (só imovel), sem perguntar nada antes. Depois mude SÓ o que o cliente falar: imovel = ref (ex.: "832") ou parte do nome da rua/residencial. sinal = quanto ele dá na assinatura. parcela = quanto ele consegue pagar por mês (vale para as parcelas da entrada e para o pós-chaves). balao = valor do reforço de cada dezembro (0 quando ele disser que não consegue reforço no fim do ano). reforco = quanto o cliente DISSE que consegue dar na entrega das chaves, em reais (0 quando ele disser que não consegue nada na entrega). pos_chaves = máximo de parcelas mensais DEPOIS da entrega para o que faltar (mande 36; a ferramenta usa só as parcelas que precisar, no valor de parcela dele; se sobrar menos que uma parcela, esse resto fica na entrega das chaves para a conta fechar): o texto já sai avisando que depende de a construtora aceitar e que se formaliza na proposta, no escritório. fgts = saldo de FGTS que ele tem hoje: mande SÓ depois que o cliente falar de FGTS. carteira = true se ele disse que trabalha de carteira assinada e quer usar o FGTS: aí o FGTS cresce até a entrega. renda = renda bruta mensal da família, só se ele informou (serve para o FGTS de quem é de carteira assinada; não muda a parcela do financiamento). completo = true só quando o cliente PEDIR a conta completa de novo (sem isso, da segunda vez em diante a ferramenta devolve só os valores para você dizer o que mudou em 1 a 3 linhas).', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, sinal: { type: 'number' }, parcela: { type: 'number' }, balao: { type: 'number' }, reforco: { type: 'number' }, pos_chaves: { type: 'number' }, fgts: { type: 'number' }, carteira: { type: 'boolean' }, renda: { type: 'number' }, completo: { type: 'boolean' } }, required: ['imovel'] } },
   { name: 'avisar_djhonata', description: 'Avisa o Djhonata, só no que é essencial: visita marcada, desmarcada ou remarcada; cliente que pede para falar com uma pessoa; indicação; permuta de terreno; projeto que NÃO está na pasta do imóvel ("ENVIAR PROJETO"); cliente quente que esfriou. Dúvida de cliente que você não sabe responder também entra aqui, mas fica anotada no CRM para ele responder, sem ir para o celular dele. Não use para contar o que você ofereceu nem como a conversa está indo. O cliente não vê e não fica sabendo desse aviso: com ele você continua falando em primeira pessoa, como o próprio Djhonata (ex.: "vou confirmar isso e já te falo"), nunca "pedi para o Djhonata".', input_schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
-  { name: 'agenda_visita', description: 'Agenda do escritório. acao = "consultar" devolve os horários livres de um dia (mande data AAAA-MM-DD); acao = "marcar" marca a visita do cliente atual (mande data AAAA-MM-DD, hora HH:00 e, se o cliente disse, o nome dele). A agenda é de hora em hora. Use sempre que o cliente disser um dia ou um horário para vir: consulte antes de confirmar e, estando livre, marque. Se a ferramenta disser que não está livre, ofereça os horários que ela devolver. Ela já registra a visita no CRM e liga os lembretes: não chame registrar_crm para isso.', input_schema: { type: 'object', properties: { acao: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nome: { type: 'string' } }, required: ['acao'] } },
+  { name: 'agenda_visita', description: 'Agenda do escritório. acao = "consultar" devolve os horários livres de um dia (mande data AAAA-MM-DD); acao = "marcar" marca a visita do cliente atual (mande data AAAA-MM-DD, hora HH:00 e, se o cliente disse, o nome dele). A agenda é de hora em hora. Use sempre que o cliente disser um dia ou um horário para vir: consulte antes de confirmar e, estando livre, marque. Se a ferramenta disser que não está livre, ofereça os horários que ela devolver. Ela já registra a visita no CRM e liga os lembretes: não chame registrar_crm para isso. Para convidar, consulte o próximo dia útil; só consulte um dia distante quando foi o cliente quem pediu esse dia, e aí mande pedido = "sim".', input_schema: { type: 'object', properties: { acao: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nome: { type: 'string' }, pedido: { type: 'string' } }, required: ['acao'] } },
   { name: 'registrar_crm', description: 'Registra no CRM um evento do cliente atual e move o card dele: novoStatus = atendimento, visita_marcada, remarcar, sem_interesse ou pausado ("em negociação" NÃO é com você: só o Djhonata move para lá, depois que o cliente vem ao escritório; cliente negociando valores pelo WhatsApp continua em atendimento). Em visita_marcada mande data (AAAA-MM-DD) e hora (HH:MM): o sistema usa para os lembretes da visita. Se o cliente cancelar ou pedir para remarcar, use remarcar (os lembretes param). Mande nomeReal quando o cliente disser o nome e imovel quando souber qual imóvel interessa. resultado = frase curta do que aconteceu.', input_schema: { type: 'object', properties: { novoStatus: { type: 'string' }, data: { type: 'string' }, hora: { type: 'string' }, nomeReal: { type: 'string' }, imovel: { type: 'string' }, resumo: { type: 'string' }, resultado: { type: 'string' } } } },
   { name: 'agendar_retorno', description: 'Marca para VOCÊ chamar o cliente de volta num dia e horário combinados. Use quando o cliente disser que fala depois e der uma hora ou um dia (ex.: "falo contigo depois das 14h30", "me chama amanhã cedo", "só consigo à noite"). Use TAMBÉM quando ele disser que vai conversar com a esposa, o marido, o namorado ou a família, ou que vai pensar e te retorna, sem dar hora: aí é VOCÊ que propõe o retorno ("Te chamo amanhã no fim da tarde pra saber o que ela achou, pode ser?") e marca na mesma hora para esse dia e horário (amanhã às 17:00; se amanhã for domingo, segunda às 10:00), sem esperar ele confirmar. quando = AAAA-MM-DD HH:MM no horário de Joinville (se ele disse "depois das 14h30", use 14:40; "amanhã cedo" = 09:00; "à noite" = 19:00). assunto = uma linha com o que ficou combinado e de onde retomar (ex.: "ver opções perto do Jardim Paraíso"). Depois de marcar, responda ao cliente em uma linha que você chama nessa hora (ex.: "Combinado, te chamo às 14h40"). Não use para visita ao escritório (isso é agenda_visita).', input_schema: { type: 'object', properties: { quando: { type: 'string' }, assunto: { type: 'string' } }, required: ['quando'] } },
   { name: 'distancia', description: 'Tempo de carro e distância entre um imóvel do catálogo e um lugar de Joinville que o cliente citou (trabalho, escola, casa atual, outro bairro). Use SEMPRE antes de dizer que um imóvel fica perto ou longe de algum lugar. imovel = ref (ex.: "913") ou parte do nome da rua/residencial. lugar = o nome do lugar ou do bairro, como o cliente falou (ex.: "Hospital Regional", "Tupy", "Aventureiro").', input_schema: { type: 'object', properties: { imovel: { type: 'string' }, lugar: { type: 'string' } }, required: ['imovel', 'lugar'] } },
@@ -776,7 +776,8 @@ async function executar(nome, entrada, ctx) {
       const projTxt = projs.length
         ? `\nPROJETO NA PASTA: ${projs.join(' | ')}. Se o cliente pedir a planta ou o projeto, mande este arquivo com enviar_arquivo, com uma legenda curta, e depois convide com dois horários. Não mande sem ele pedir.`
         : `\nPROJETO: não há arquivo de projeto na pasta deste imóvel. Se o cliente pedir a planta ou o projeto, diga uma vez "Vou separar o projeto e já te mando aqui" e use avisar_djhonata com "ENVIAR PROJETO", o nome do cliente e o imóvel.`;
-      const unid = /^- Unidades dispon[íi]veis:.*\d/mi.test(ficha) ? `\nPONTA OU MEIO: de ponta são a casa 1 e a de maior número do conjunto (some as disponíveis e as vendidas das anotações); as outras são de meio. Se perguntarem, responda com o número da casa e o valor.` : '';
+      const nConj = (estado.conjuntos || {})[geoRef(p)];   // 13/11/2026: quantas casas tem o geminado, informado no CRM (campo "Casas no conjunto")
+      const unid = nConj ? `\nPONTA OU MEIO: este conjunto tem ${nConj} casas (informado pelo Djhonata no CRM). De ponta são a casa 1 e a casa ${nConj}; as outras são de meio. Se perguntarem, responda na hora com o número da casa e o valor, sem pedir confirmação.` : /^- Unidades dispon[íi]veis:.*\d/mi.test(ficha) ? `\nPONTA OU MEIO: de ponta são a casa 1 e a de maior número do conjunto (some as disponíveis e as vendidas das anotações); as outras são de meio. Se perguntarem, responda com o número da casa e o valor.` : '';
       const fichaTxt = ficha.replace(/Se o cliente pedir, diga que vai pedir para o Djhonata enviar e mande o aviso\.?/g, 'Se o cliente pedir, siga a linha PROJETO acima.');
       return `Pasta: ${p}\n${guia}${local}${projTxt}${unid}\nArquivos de mídia na pasta: ${arqs.map(a => `${p}/${a}`).join(' | ') || 'nenhum (as fotos são os links da ficha)'}\n\n${fichaTxt}`;
     }
@@ -792,6 +793,8 @@ async function executar(nome, entrada, ctx) {
         const ehVideo = EXT_VID.test(caminho.split('?')[0]);
         ctx.ofertas = ctx.ofertas || {};
         const pediuFotos = clientePediuFotos(ctx.jid);
+        const vidAnt = ehVideo ? lerEsp(ctx.jid).filter(m => m.tipo === 'video' && m.autor !== 'cliente' && (m.oferta === pasta || pastaDoCaminho(String(m.arquivo || '').replace(/^c\//, '')) === pasta)).pop() : null;
+        if (vidAnt && (Date.now() - (vidAnt.ts || 0) < 3 * 60e3 || !/de novo|novamente|reenvi|outra vez/i.test(textoRecenteCliente(ctx.jid)))) return 'Não enviado: o vídeo deste imóvel já saiu nesta conversa. Não reenvie e não fale do envio; continue a conversa.';
         if (ctx.ofertas[pasta] && !ehVideo && !pediuFotos) return `Não enviado: a oferta deste imóvel já foi agora (${ctx.ofertas[pasta]} com a descrição). Mais fotos só se o cliente pedir.`;
         if (!ctx.ofertas[pasta] && !lerEsp(ctx.jid).some(m => m.oferta === pasta)) {   // primeira vez deste imóvel na conversa
           const { video, foto1 } = midiaDaOferta(pasta);
@@ -859,13 +862,18 @@ async function executar(nome, entrada, ctx) {
         const meus = estado.ofertasCli = estado.ofertasCli || {}; for (const k of Object.keys(meus)) if (Date.now() - (meus[k].ts || 0) > 6 * 3600e3) delete meus[k];
         const ant = ctx.jid ? meus[ctx.jid] : null;
         // 13/11/2026 (final 4424): em duas respostas seguidas ela ofereceu horários diferentes ao mesmo cliente. Enquanto ele não responde, valem os mesmos.
-        if (ant && ant.sug.length === 2 && ant.sug.some(([dia]) => dia === data || data <= ant.sug[0][0]) && ant.sug.every(([dia, h]) => agendaLivres(ocup, dia).includes(h)))
+        // 13/11/2026 (Keyla): cliente quente ouviu "quinta ou sexta" da outra semana com vaga no dia seguinte. Se o dia consultado fica depois dos dois
+        // próximos dias com vaga e não foi o cliente quem pediu esse dia, a sugestão sai dos dias mais próximos.
+        const pedido = /^(s|true|1)/i.test(String(entrada.pedido || '')), perto = [], [yh, mh, dh] = iso(agoraSP()).split('-').map(Number);
+        for (let i = 0; i < 14 && perto.length < 2; i++) { const dia = iso(new Date(yh, mh - 1, dh + i)); if (agendaLivres(ocup, dia).length) perto.push(dia); }
+        const longe = !pedido && perto.length === 2 && data > perto[1], base = longe ? perto[0] : data, livresB = longe ? agendaLivres(ocup, base) : livres;
+        if (ant && ant.sug.length === 2 && (longe || ant.sug.some(([dia]) => dia === data || data <= ant.sug[0][0])) && ant.sug.every(([dia, h]) => agendaLivres(ocup, dia).includes(h)))
           return opcoes + ` Você JÁ ofereceu a este cliente ${ant.sug.map(([dia, h]) => `${diaTxt(dia)} às ${hh(h)}`).join(' ou ')} há ${Math.max(1, Math.round((Date.now() - ant.ts) / 60e3))} min: se for citar horário, use ESSES MESMOS, não ofereça outros. Se ele ainda não respondeu a esse convite, não repita a pergunta. Se o cliente pediu outro dia ou horário e ele está livre, vale o que ele pediu. Quando o cliente escolher, chame agenda_visita com acao "marcar".`;
-        const sug = [], [y0, mo0, d0] = data.split('-').map(Number);
-        if (livres.length) sug.push([data, menos(data, livres)]);
+        const sug = [], [y0, mo0, d0] = base.split('-').map(Number);
+        if (livresB.length) sug.push([base, menos(base, livresB)]);
         for (let i = 1; i < 14 && sug.length < 2; i++) { const dia = iso(new Date(y0, mo0 - 1, d0 + i)), l = agendaLivres(ocup, dia); if (l.length) sug.push([dia, menos(dia, l)]); }
         if (sug.length) { sug.forEach(([dia, h]) => { const k = dia + ' ' + h; of[k] = { n: ((of[k] || {}).n || 0) + 1, ts: Date.now() }; }); if (ctx.jid && sug.length === 2) meus[ctx.jid] = { sug, ts: Date.now() }; salvarEstado(); }
-        const dica = sug.length === 2 ? ` Para não oferecer o mesmo horário a todos os clientes, ofereça AGORA estes dois: ${sug.map(([dia, h]) => `${diaTxt(dia)} às ${hh(h)}`).join(' ou ')}. Se o cliente pediu outro dia ou horário e ele está livre, vale o que ele pediu.` : '';
+        const dica = sug.length === 2 ? (longe ? ` O dia consultado fica longe e há vaga antes. Se o cliente NÃO pediu ${diaTxt(data)},` : ' Para não oferecer o mesmo horário a todos os clientes,') + ` ofereça AGORA estes dois: ${sug.map(([dia, h]) => `${diaTxt(dia)} às ${hh(h)}`).join(' ou ')}. Se o cliente pediu outro dia ou horário e ele está livre, vale o que ele pediu.` : '';
         return opcoes + dica + ' Quando o cliente escolher, chame agenda_visita com acao "marcar".';
       }
       const hm = /^(\d{1,2})(?:\s*(?:[:h]|horas?)\s*(\d{2})?)?/i.exec(String(entrada.hora || '').trim()), h = hm ? Number(hm[1]) : NaN;
@@ -2311,7 +2319,8 @@ async function verificarRotinas() {
         const p = conversaParada(jid); if (!p || p.jaRetomou) continue;
         if (agora - p.ultCli > 22 * 3600e3) continue;          // fora das 24h do cliente: não puxa conversa
         if (agora - p.ultIa < (p.agenda ? 2 : 3) * 3600e3) continue;
-        const r = (estado.retomadas || {})[jid]; if (r && r.base === p.ultCli) continue;   // já retomou desde a última mensagem dele
+        const r = (estado.retomadas || {})[jid], diaDe = (ms) => new Date(ms - 3 * 3600e3).toISOString().slice(0, 10);
+        if (r && (r.base === p.ultCli || diaDe(r.em || 0) === diaDe(agora))) continue;   // já retomou desde a última mensagem dele, ou já retomou hoje (13/11/2026: o Ge recebeu duas na mesma manhã)
         if (!rotinaPermitida(jid, 'retomada')) continue;
         fila.push({ jid, tipo: 'retomada', p });
       }
@@ -2758,8 +2767,8 @@ function fichaIndice() {
     let nome = ''; try { nome = dadosDaFicha(p).nome || ''; } catch (e) { }
     const base = semAcento(String(nome).split(/\s[–—-]\s/)[0]).replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
     const rua = (/^(?:casas?|sobrados?|geminados?)\s+((?:rua|avenida|av|servidao|estrada)\s.+)$/.exec(base) || [])[1] || '';
-    const chave = rua || base;
-    itens.push({ pasta: p, ref: String(geoRef(p) || ''), chave: chave.length >= 10 ? chave : '' });
+    const daPasta = semAcento(p.replace(/\s*\(ref \d+\)\s*$/, '').split(/\s-\s/)[0]).replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();   // a pasta leva a rua: "rua lapa - boa vista"
+    itens.push({ pasta: p, ref: String(geoRef(p) || ''), chaves: [...new Set([rua || base, daPasta])].filter(c => c.length >= 8 && /\s/.test(c)) });
   }
   fichaIdx = { em: Date.now(), itens }; return itens;
 }
@@ -2768,7 +2777,7 @@ function fichaCitados(l) {   // pastas citadas na conversa, da citação mais an
   l.forEach((m, n) => {
     const t = semAcento(m.texto).replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' '); if (t.length < 6) return;
     const refs = new Set(), re = /\b(?:ref|referencia|cod|codigo)\s*(?:n|no|numero)?\s*(\d{2,4})\b/g; let r; while ((r = re.exec(t))) refs.add(r[1]);
-    for (const i of idx) if ((i.ref && refs.has(i.ref)) || (i.chave && (' ' + t + ' ').includes(' ' + i.chave + ' '))) visto.set(i.pasta, n);
+    for (const i of idx) if ((i.ref && refs.has(i.ref)) || i.chaves.some(c => (' ' + t + ' ').includes(' ' + c + ' '))) visto.set(i.pasta, n);
   });
   return [...visto.entries()].sort((a, b) => a[1] - b[1]).map(x => x[0]);
 }
@@ -3516,6 +3525,13 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           } catch (e) { log('ficha: foto', pasta, e.message); }
           if (buf && buf.length > 3e6) buf = null;
           return json(res, { ok: true, pasta, tipo: /\.png(\?|$)/i.test(f1) ? 'image/png' : /\.webp(\?|$)/i.test(f1) ? 'image/webp' : 'image/jpeg', b64: buf ? buf.toString('base64') : '' });
+        }
+        else if (ac === 'conjuntos_salvar') {   // texto = JSON { ref: casas no conjunto }: o CRM manda quantas casas tem cada geminado, para a assistente saber qual é a de ponta
+          let m = null; try { m = JSON.parse(String(b.texto || '')); } catch (e) { }
+          if (!m || typeof m !== 'object' || Array.isArray(m)) return json(res, { erro: 'mande texto = JSON { "ref": casas }' }, 400);
+          const novo = {}; for (const [k, v] of Object.entries(m)) { const n = Math.round(Number(v)), r = String(k).replace(/\D/g, ''); if (r && n >= 2 && n <= 60) novo[r] = n; }
+          estado.conjuntos = novo; salvarEstado(); log('conjuntos: o CRM mandou', Object.keys(novo).length, 'imóveis');
+          return json(res, { ok: true, total: Object.keys(novo).length });
         }
         else if (ac === 'fichas_gerar') {   // texto = telefones separados por vírgula: põe na fila quem tem conversa e ainda não tem ficha
           const tels = String(b.texto || '').split(/[,;\s]+/).filter(Boolean); let naFila = 0, jaTem = 0, semConversa = 0;
