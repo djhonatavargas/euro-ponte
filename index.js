@@ -2727,10 +2727,11 @@ const arqFichaAt = (jid) => path.join(FICHAS_DIR, String(jid).replace(/[^0-9a-zA
 const lerFichaAt = (jid) => lerJson(arqFichaAt(jid), null);
 const fichaAt = { gerando: {}, erros: {}, fila: [], ativos: 0, varrendo: false };
 const SIS_FICHA = `Você monta a FICHA DE ATENDIMENTO de um cliente para o corretor Djhonata (Euro Consultoria Imobiliária, Joinville) ler antes de receber o cliente no escritório. Leia a conversa do WhatsApp e devolva SOMENTE um JSON, sem texto antes nem depois, exatamente neste formato:
-{"imovel":{"pasta":"pasta exata de um dos imóveis enviados, ou vazio","unidade":"unidade tratada com o cliente e se é de ponta ou de meio, ou vazio","medidas":"medidas ditas ao cliente (frente, fundos, abertura), ou vazio"},"fluxo":{"enviado":true,"quando":"DD/MM às HHhMM","linhas":[{"item":"Sinal na assinatura","valor":"R$ 10.000,00"}],"total":"R$ 380.000,00 ou vazio","dito":"condição ou ressalva dita ao cliente, ou vazio","resposta":"o que o cliente respondeu sobre o fluxo"},"quer":["Rótulo: o que ele quer"],"informou":["FGTS: ...","Carteira assinada: ...","Renda: ...","Sinal: ...","Quem compra junto: ..."],"objecoes":[{"ponto":"a dúvida ou objeção, com as palavras dele quando ajudar","status":"Em aberto | Resolvida | Explicada | Respondida","nota":"como ficou, em uma frase"}],"pendencias":["o que foi prometido ao cliente e ainda não foi entregue"],"comecar":["até 3 passos, em ordem, para abrir o atendimento no escritório"]}
+{"imovel":{"pasta":"pasta exata de um dos imóveis enviados ou citados, ou vazio","unidade":"unidade tratada com o cliente e se é de ponta ou de meio, ou vazio","medidas":"medidas ditas ao cliente (frente, fundos, abertura), ou vazio"},"fluxo":{"enviado":true,"quando":"DD/MM às HHhMM","linhas":[{"item":"Sinal na assinatura","valor":"R$ 10.000,00"}],"total":"R$ 380.000,00 ou vazio","dito":"condição ou ressalva dita ao cliente, ou vazio","resposta":"o que o cliente respondeu sobre o fluxo"},"quer":["Rótulo: o que ele quer"],"informou":["FGTS: ...","Carteira assinada: ...","Renda: ...","Sinal: ...","Quem compra junto: ..."],"objecoes":[{"ponto":"a dúvida ou objeção, com as palavras dele quando ajudar","status":"Em aberto | Resolvida | Explicada | Respondida","nota":"como ficou, em uma frase"}],"pendencias":["o que foi prometido ao cliente e ainda não foi entregue"],"comecar":["até 3 passos, em ordem, para abrir o atendimento no escritório"]}
 Regras:
 - Use só o que está na conversa e nos dados dos imóveis. Não invente. O que o cliente não disse fica como "não informou".
 - Imóvel de interesse: o que o cliente escolheu, ou o último que ele não recusou. Imóvel que ele recusou não entra; se a recusa mostra uma preferência (ex.: não quer pronto, quer mais terreno), escreva a preferência em "quer".
+- Se o imóvel de interesse só aparece em IMÓVEIS CITADOS, confira pela conversa (nome, rua, valor) que é o mesmo e use a pasta dele. Na dúvida, deixe a pasta vazia.
 - "fluxo": o fluxo de pagamento na ÚLTIMA versão que o cliente recebeu para o imóvel de interesse, item por item, com os valores como foram ditos (inclua FGTS e financiamento se foram ditos). Se nenhum fluxo foi enviado: "enviado": false e "linhas": [].
 - "quer": bairro, valor, tipo, exigências (casa de ponta, terreno, vagas, prazo). "informou": o que ele contou de renda, FGTS, carteira, sinal, quem compra junto.
 - "objecoes": toda dúvida ou objeção que apareceu, com o status. "pendencias": promessas em aberto (planta, resposta, retorno).
@@ -2740,11 +2741,36 @@ Regras:
 - Cada texto com no máximo 180 caracteres, em frase completa.`;
 function fichaQuando(q) { const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(q || ''); if (!m) return ''; const d = new Date(+m[1], +m[2] - 1, +m[3]); return ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'][d.getDay()] + `, ${m[3]}/${m[2]}/${m[1]}` + (m[4] ? `, às ${+m[4]}h${m[5] !== '00' ? m[5] : ''}` : ''); }
 function fichaLinha(m) { const d = new Date((m.ts || 0) - 3 * 3600e3).toISOString(); return d.slice(8, 10) + '/' + d.slice(5, 7) + ' ' + d.slice(11, 16) + ' [' + m.autor + (m.tipo && m.tipo !== 'text' ? ':' + m.tipo : '') + '] ' + String(m.texto || '').replace(/\s*\n+\s*/g, ' / ').slice(0, 1500); }
+const fichaDado = (i) => `- pasta: ${i.pasta} | ${i.nome} | ${i.endereco} | ${i.tipo} | ${i.area} | ${i.comodos} | ${i.vagas} | ${i.preco} | entrega: ${i.entrega} | unidades: ${i.unidades || 'não informado'}`;
 function fichaImovel(pasta) {   // dados do imóvel como estão no cadastro (ficha.md), mais o fluxo padrão de hoje
   const t = lerTexto(path.join(pasta, 'ficha.md')).replace(/\r/g, ''), g = (re) => ((re.exec(t) || [])[1] || '').trim(), f = dadosDaFicha(pasta);
   let padrao = []; try { const x = simularFluxo({ imovel: pasta }); if (x && x.texto) padrao = x.texto.split('\n').filter(l => /^(✅|💵)/.test(l)).map(l => l.replace(/^(✅|💵)\s*/, '').trim()); } catch (e) { }
   return { pasta, ref: geoRef(pasta), nome: f.nome, endereco: g(/^-\s*Endere[çc]o:\s*([^\n]+)/mi), tipo: g(/^-\s*Tipo de constru[çc][ãa]o:\s*([^\n]+)/mi) || g(/^-\s*Tipo:\s*([^\n]+)/mi), area: g(/^-\s*[ÁA]rea:\s*([^\n]+)/mi), comodos: g(/^-\s*C[ôo]modos:\s*([^\n]+)/mi), vagas: g(/^-\s*Vagas:\s*([^\n]+)/mi),
     preco: f.preco ? brl(f.preco) : '', entrega: g(/^-\s*Entrega:\s*([^\n]+)/mi), unidades: g(/^-\s*Unidades dispon[íi]veis:\s*([^\n]+)/mi).slice(0, 300), projeto: projetosDaPasta(pasta).length ? 'Projeto na pasta do imóvel' : 'Sem projeto na pasta do imóvel', temFoto: !!midiaDaOferta(pasta).foto1, padrao };
+}
+// Conversa feita pelo próprio Djhonata não leva a marca da oferta: aí o imóvel é achado pelo texto (referência ou nome do cadastro).
+let fichaIdx = { em: 0, itens: [] };
+function fichaIndice() {
+  if (fichaIdx.itens.length && Date.now() - fichaIdx.em < 10 * 60e3) return fichaIdx.itens;
+  const itens = [];
+  for (const p of pastasImoveis()) {
+    if (!lerTexto(path.join(p, 'ficha.md'))) continue;
+    let nome = ''; try { nome = dadosDaFicha(p).nome || ''; } catch (e) { }
+    const base = semAcento(String(nome).split(/\s[–—-]\s/)[0]).replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+    const rua = (/^(?:casas?|sobrados?|geminados?)\s+((?:rua|avenida|av|servidao|estrada)\s.+)$/.exec(base) || [])[1] || '';
+    const chave = rua || base;
+    itens.push({ pasta: p, ref: String(geoRef(p) || ''), chave: chave.length >= 10 ? chave : '' });
+  }
+  fichaIdx = { em: Date.now(), itens }; return itens;
+}
+function fichaCitados(l) {   // pastas citadas na conversa, da citação mais antiga para a mais nova
+  const idx = fichaIndice(), visto = new Map();
+  l.forEach((m, n) => {
+    const t = semAcento(m.texto).replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' '); if (t.length < 6) return;
+    const refs = new Set(), re = /\b(?:ref|referencia|cod|codigo)\s*(?:n|no|numero)?\s*(\d{2,4})\b/g; let r; while ((r = re.exec(t))) refs.add(r[1]);
+    for (const i of idx) if ((i.ref && refs.has(i.ref)) || (i.chave && (' ' + t + ' ').includes(' ' + i.chave + ' '))) visto.set(i.pasta, n);
+  });
+  return [...visto.entries()].sort((a, b) => a[1] - b[1]).map(x => x[0]);
 }
 async function fichaGerar(jid, motivo) {
   if (fichaAt.gerando[jid]) return null; fichaAt.gerando[jid] = Date.now();
@@ -2752,10 +2778,12 @@ async function fichaGerar(jid, motivo) {
     const todas = lerEsp(jid), l = todas.filter(m => m.autor !== 'aviso' && (String(m.texto || '').trim() || (m.tipo && m.tipo !== 'text'))); if (!l.length) return null;
     const c = chatPublico(jid) || {}, cc = chats[jid] || {}, st = (estado.crmStatus || {})[tel8Chat(jid)] || '';
     const ims = [...new Set(l.map(m => m.oferta || (m.arquivo && m.autor !== 'cliente' ? pastaDoCaminho(String(m.arquivo).replace(/^c\//, '')) : '')).filter(Boolean))].filter(p => lerTexto(path.join(p, 'ficha.md'))).slice(-4).map(fichaImovel);   // imóvel enviado: pela marca da oferta ou pelo arquivo (vídeo, foto) que saiu
+    const cits = fichaCitados(l).filter(p => !ims.some(i => i.pasta === p)).slice(-3).map(fichaImovel);   // imóvel só citado no texto
     const vis = (estado.visitas || {})[jid], visTxt = vis && vis.q ? fichaQuando(vis.q) : '';
     const origem = cc.anuncio ? 'Anúncio' + (cc.anuncio.titulo ? ' "' + cc.anuncio.titulo + '"' : '') : 'Chamou no WhatsApp';
     const dados = `CLIENTE: ${c.nome || 'sem nome'} | telefone ${c.telefone || ''} | origem: ${origem} | etapa no CRM: ${st || 'sem card'}${visTxt ? ' | visita marcada: ' + visTxt : ''}\n\nIMÓVEIS ENVIADOS NA CONVERSA (dados do cadastro):\n`
-      + (ims.map(i => `- pasta: ${i.pasta} | ${i.nome} | ${i.endereco} | ${i.tipo} | ${i.area} | ${i.comodos} | ${i.vagas} | ${i.preco} | entrega: ${i.entrega} | unidades: ${i.unidades || 'não informado'}`).join('\n') || '(nenhum imóvel do catálogo foi enviado)')
+      + (ims.map(fichaDado).join('\n') || '(nenhum imóvel do catálogo foi enviado)')
+      + (cits.length ? '\n\nIMÓVEIS CITADOS NA CONVERSA (achados pelo nome ou pela referência; dados do cadastro):\n' + cits.map(fichaDado).join('\n') : '')
       + '\n\nCONVERSA (horário de Joinville):\n' + l.slice(-220).map(fichaLinha).join('\n');
     const tentar = async (extra) => {   // sem temperatura: o modelo atual não aceita esse parâmetro
       const bruto = await claudeTexto(SIS_FICHA, dados + extra, 14000), mj =   // limite folgado: em conversa longa a resposta era cortada no meio
@@ -2765,12 +2793,12 @@ async function fichaGerar(jid, motivo) {
     let j = await tentar('');
     if (!j || typeof j !== 'object') j = await tentar('\n\nATENÇÃO: a resposta anterior não era um JSON válido. Devolva só o JSON pedido, sem texto antes nem depois, sem aspas duplas dentro dos textos.');
     if (!j || typeof j !== 'object') throw new Error('resposta sem JSON');
-    const tx = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n), lista = (v, n) => (Array.isArray(v) ? v : []).map(x => tx(x, 340)).filter(Boolean).slice(0, n);
-    const ji = j.imovel || {}, fl = j.fluxo || {}, im = ims.find(i => i.pasta === ji.pasta) || (ims.length === 1 ? ims[0] : null);
+    const tx = (v, n) => { const s = String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); if (s.length <= n) return s; const c = s.slice(0, n), f = Math.max(c.lastIndexOf('. '), c.lastIndexOf('; ')), e = c.lastIndexOf(' '); return f > n * 0.6 ? c.slice(0, f + 1).replace(/;$/, '.') : c.slice(0, e > n * 0.5 ? e : n).replace(/[\s,;:(]+$/, '') + '...'; }, lista = (v, n) => (Array.isArray(v) ? v : []).map(x => tx(x, 340)).filter(Boolean).slice(0, n);
+    const ji = j.imovel || {}, fl = j.fluxo || {}, im = ims.find(i => i.pasta === ji.pasta) || cits.find(i => i.pasta === ji.pasta) || (ims.length === 1 ? ims[0] : null);   // imóvel só citado entra quando o modelo confirma pela conversa
     const linhas = (Array.isArray(fl.linhas) ? fl.linhas : []).map(x => ({ item: tx((x || {}).item, 120), valor: tx((x || {}).valor, 40) })).filter(x => x.item).slice(0, 10);
-    const ficha = { v: 1, jid, nome: c.nome || '', telefone: c.telefone || '', origem, crm: st, visita: visTxt,
-      imovel: im ? Object.assign({}, im, { unidade: tx(ji.unidade, 160), medidas: tx(ji.medidas, 160) }) : null,
-      fluxo: { enviado: !!fl.enviado && linhas.length > 0, quando: tx(fl.quando, 40), linhas, total: tx(fl.total, 40), dito: tx(fl.dito, 300), resposta: tx(fl.resposta, 300) },
+    const ficha = { v: 2, jid, nome: c.nome || '', telefone: c.telefone || '', origem, crm: st, visita: visTxt,
+      imovel: im ? Object.assign({}, im, { unidade: tx(ji.unidade, 240), medidas: tx(ji.medidas, 240) }) : null,
+      fluxo: { enviado: !!fl.enviado && linhas.length > 0, quando: tx(fl.quando, 40), linhas, total: tx(fl.total, 40), dito: tx(fl.dito, 340), resposta: tx(fl.resposta, 340) },
       quer: lista(j.quer, 7), informou: lista(j.informou, 7),
       objecoes: (Array.isArray(j.objecoes) ? j.objecoes : []).map(o => ({ ponto: tx((o || {}).ponto, 220), status: tx((o || {}).status, 20), nota: tx((o || {}).nota, 340) })).filter(o => o.ponto).slice(0, 7),
       pendencias: lista(j.pendencias, 5), comecar: lista(j.comecar, 3), geradaEm: Date.now(), ateTs: todas[todas.length - 1].ts || 0, deTs: l[0].ts || 0, msgs: l.length, motivo };
@@ -2796,6 +2824,7 @@ function fichaVarrer() {
       const fx = lerFichaAt(jid), l = lerEsp(jid); if (!l.length) continue;
       const ult = l[l.length - 1].ts || 0, st = (estado.crmStatus || {})[tel8Chat(jid)] || '', er = fichaAt.erros[jid];
       if (er && Date.now() - er.em < 30 * 60e3) continue;
+      if (fx && (fx.v || 1) < 2 && !fx.imovel) { fichaPedir(jid, 'procurar o imóvel citado'); continue; }   // ficha da primeira versão, sem imóvel: refaz uma vez
       if (fx && /^(negociacao|fechado)$/.test(st)) continue;
       if (fx && (ult <= (fx.ateTs || 0) || Date.now() - ult < 8 * 60e3)) continue;
       fichaPedir(jid, fx ? 'conversa nova' : 'visita marcada');
