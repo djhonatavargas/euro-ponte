@@ -2319,9 +2319,11 @@ function guardarVisita(jid, data, hora, origem) {
   salvarEstado(); log('visita guardada para lembretes', jid, q, origem);
 }
 // 16/11/2026 (Djhonata): cliente que não veio nem avisou. Quando ele move o card para "Remarcar visita" depois da hora da visita,
-// a assistente manda UMA mensagem pedindo para remarcar. A visita que já passou fica guardada 48 horas para isso.
+// a assistente manda UMA mensagem pedindo para remarcar. A visita que já passou fica guardada 6 dias para isso, porque o CRM
+// move sozinho para "Remarcar visita" quem ficou 3 dias em "Visita marcada" depois da hora da visita.
+const NAO_VEIO_DIAS = 6;
 function guardarPassada(jid, v) {
-  const T = v && quandoMs(v.q); if (!jid || !T || T > Date.now() || Date.now() - T > 48 * 3600e3) return;
+  const T = v && quandoMs(v.q); if (!jid || !T || T > Date.now() || Date.now() - T > NAO_VEIO_DIAS * 864e5) return;
   estado.visitasPassadas = estado.visitasPassadas || {};
   if (!estado.visitasPassadas[jid] || estado.visitasPassadas[jid].q !== v.q) estado.visitasPassadas[jid] = { q: v.q, em: Date.now() };
 }
@@ -2400,7 +2402,7 @@ async function verificarRotinas() {
     for (const [jid, v] of Object.entries(estado.visitas || {})) { const T = quandoMs(v.q); if (T && agora > T + 45 * 60e3) { const t8 = tel8Chat(jid); if (t8 && (estado.crmStatus || {})[t8] === 'novo') { guardarPassada(jid, v); delete estado.visitas[jid]; salvarEstado(); } } }
     for (const [jid, n] of Object.entries(estado.visitasPassadas || {})) {
       const T = quandoMs(n.q), t8 = tel8Chat(jid), st = t8 ? (estado.crmStatus || {})[t8] || '' : '';
-      if (!T || agora > T + 48 * 3600e3 || n.feito || ['negociacao', 'fechado', 'desistiu', 'perdido'].includes(st) || ((estado.visitas || {})[jid] && estado.visitas[jid].q !== n.q) || ultCli(jid) > T - 30 * 60e3) { delete estado.visitasPassadas[jid]; salvarEstado(); continue; }   // já falou depois da visita, veio, remarcou ou saiu do funil
+      if (!T || agora > T + NAO_VEIO_DIAS * 864e5 || n.feito || ['negociacao', 'fechado', 'desistiu', 'perdido'].includes(st) || ((estado.visitas || {})[jid] && estado.visitas[jid].q !== n.q) || ultCli(jid) > T - 30 * 60e3) { delete estado.visitasPassadas[jid]; salvarEstado(); continue; }   // já falou depois da visita, veio, remarcou ou saiu do funil
       if (st !== 'novo' || agora < T + 45 * 60e3 || !janela || !rotinaPermitida(jid, 'retomada')) continue;
       fila.push({ jid, tipo: 'naoveio', n });
     }
@@ -2446,7 +2448,7 @@ async function rodarRotina(it) {
     for (const [k, r] of Object.entries(estado.retomadas)) if (Date.now() - (r.em || 0) > 7 * 864e5) delete estado.retomadas[k];
     salvarEstado();
   } else if (it.tipo === 'naoveio') {
-    instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Não compareceu: o cliente tinha visita marcada para ${descreverQuando(it.n.q)}, no escritório, e não veio nem avisou. O Djhonata colocou o card em "Remarcar visita". Releia a conversa e mande UMA mensagem curta, leve e sem cobrança: diga que ficou esperando ele hoje, que imprevisto acontece, e pergunte qual dia e horário fica melhor para remarcar (pode sugerir dois horários livres, consultando agenda_visita). Não mande o link, não repita a apresentação do imóvel e não diga que ele faltou ou que desmarcou. Se ele responder com dia e hora, marque com agenda_visita.`;
+    instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Não compareceu: o cliente tinha visita marcada para ${descreverQuando(it.n.q)}, no escritório, e não veio nem avisou. O Djhonata colocou o card em "Remarcar visita". Releia a conversa e mande UMA mensagem curta, leve e sem cobrança: diga que ficou esperando ele no dia da visita (se a visita foi hoje, diga "hoje"), que imprevisto acontece, e pergunte qual dia e horário fica melhor para remarcar (pode sugerir dois horários livres, consultando agenda_visita). Não mande o link, não repita a apresentação do imóvel e não diga que ele faltou ou que desmarcou. Se ele responder com dia e hora, marque com agenda_visita.`;
     extra = { rotina: 'retomada' };
     it.n.feito = Date.now(); estado.retomadas = estado.retomadas || {}; estado.retomadas[jid] = { base: c.ultCliente || 0, em: Date.now() }; salvarEstado();
     liberado24h.add(jid);
