@@ -2662,6 +2662,8 @@ async function fuEnviar(x) {   // devolve 'enviado', 'cancelado' ou 'erro'
   { const ultInter = Math.max(chats[jid] ? ultCli(jid) : 0, ((estado.reacoesCli || {})[jid]) || 0); if (ultInter && Date.now() - ultInter < 7 * 864e5) return fim('cancelado', 'o cliente interagiu nos últimos 7 dias'); }
   // Você (ou a assistente) já falou com o cliente depois que este texto foi preparado: o follow-up pronto ficou velho e sairia como mensagem repetida (pedido do Djhonata, 13/11/2026).
   try { const t0 = x.geradoEm || x.criadoEm || 0; if (t0 && chats[jid] && lerEsp(jid).some(m => m.autor !== 'cliente' && m.autor !== 'aviso' && !m.followup && (m.ts || 0) > t0)) return fim('cancelado', 'você já falou com o cliente depois que este follow-up foi preparado'); } catch (e) { }
+  // 16/11/2026 (Djhonata): a NOSSA mensagem também conta. Quem recebeu qualquer mensagem deste WhatsApp (sua, da assistente ou outro follow-up) há menos de 7 dias não recebe follow-up agora.
+  try { let un = 0; if (chats[jid]) for (const m of lerEsp(jid)) if (m.autor !== 'cliente' && m.autor !== 'aviso' && m.tipo !== 'reacao' && (m.ts || 0) > un) un = m.ts; if (un && Date.now() - un < 7 * 864e5) return fim('cancelado', 'já recebeu mensagem nossa nos últimos 7 dias'); } catch (e) { }
   const st = (estado.crmStatus || {})[x.tel8]; if (st && st !== 'perdido') return fim('cancelado', 'saiu de Perdido no CRM');
   if (lerBloqueados().has(num) || (estado.equipe || []).includes(x.tel8) || ehDono(num)) return fim('cancelado', 'número bloqueado para a assistente');
   const texto = String(x.mensagem || '').trim(); if (!texto) return fim('erro', 'mensagem vazia');
@@ -3534,8 +3536,11 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
             const num = fuNumero(c.telefone), t8 = num.slice(-8);
             if (num.length < 12 || t8.length !== 8 || ehDono(num)) { ignorados++; continue; }
             const v = fu[t8];
-            if (v && (['enviado', 'respondeu', 'aprovado', 'gerando'].includes(v.status) || (!p.refazer && v.status !== 'erro'))) { ignorados++; continue; }   // já tem (ou já foi): não refaz
+            // quem recebeu follow-up há 7 dias ou mais e não respondeu pode receber outro (16/11/2026); antes disso, não refaz
+            const deNovo = v && v.status === 'enviado' && Date.now() - (v.enviadoEm || 0) >= 7 * 864e5;
+            if (v && !deNovo && (['enviado', 'respondeu', 'aprovado', 'gerando'].includes(v.status) || (!p.refazer && v.status !== 'erro'))) { ignorados++; continue; }   // já tem (ou já foi): não refaz
             fu[t8] = { tel8: t8, tel: num, id: String(c.id || ''), nome: String(c.nome || '').slice(0, 80), status: 'fila', criadoEm: Date.now(), tent: 0,
+              rodada: deNovo ? (v.rodada || 1) + 1 : 1, anteriorEm: deNovo ? v.enviadoEm : 0,
               crm: { nome: String(c.nome || '').slice(0, 80), nomeProvisorio: !!c.nomeProvisorio, bairro: String(c.bairro || '').slice(0, 80), imovel: String(c.imovel || '').slice(0, 160), proximo: String(c.proximo || '').slice(0, 300), resumo: String(c.resumo || '').slice(0, 1500), historico: String(c.historico || '').slice(0, 1800), obs: String(c.obs || '').slice(-900) } };
             novos++;
           }
@@ -3546,7 +3551,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           let p = {}; try { p = JSON.parse(b.texto || '{}'); } catch (e) { }
           const prev = fuPrevisoes(), out = fuResumo();
           if (p.tel) { const x = fu[fuT8(p.tel)]; out.item = x ? fuPublico(x, prev) : null; }
-          if (p.mapa) { out.mapa = {}; for (const v of Object.values(fu)) out.mapa[v.tel8] = v.status; }
+          if (p.mapa) { out.mapa = {}; for (const v of Object.values(fu)) if (!(v.status === 'enviado' && Date.now() - (v.enviadoEm || 0) >= 7 * 864e5)) out.mapa[v.tel8] = v.status; }   // enviado há 7 dias ou mais sem resposta volta a poder ser preparado
           if (Array.isArray(p.status) && p.status.length) {
             const ord = { aprovado: (a, z) => (prev[a.tel8] || 0) - (prev[z.tel8] || 0), enviado: (a, z) => (z.enviadoEm || 0) - (a.enviadoEm || 0), respondeu: (a, z) => (z.respondeuEm || 0) - (a.respondeuEm || 0) };
             const sel = Object.values(fu).filter(v => p.status.includes(v.status)).sort(ord[p.status[0]] || ((a, z) => (z.prioridade || 0) - (a.prioridade || 0) || (z.geradoEm || 0) - (a.geradoEm || 0)));
