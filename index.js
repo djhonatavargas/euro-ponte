@@ -2330,7 +2330,7 @@ async function fipeConsultar({ tipo, marca, modelo, ano }) {
 }
 // ---------- Agenda do escritório: a assistente consulta e marca (pedido do Djhonata, 11/11/2026). Mesmas regras do link do cliente. ----------
 const AGENDA_HOOK = ENV.AGENDA_HOOK || 'https://hook.us2.make.com/ifgf6ai79h57nseenakwqw18kvjj9u41';
-const AG_SEMANA = [8, 9, 10, 13, 14, 15, 16, 17, 18], AG_SABADO = [8, 9, 10, 11, 12, 13, 14, 15], AG_ANTECEDENCIA_H = 4;
+const AG_SEMANA = [8, 9, 10, 13, 14, 15, 16, 17, 18, 19], AG_SABADO = [8, 9, 10, 11, 12, 13, 14, 15], AG_ANTECEDENCIA_H = 4;
 async function agendaOcupados() {   // chaves ocupadas ou fechadas: "AAAA-MM-DD" (dia inteiro) ou "AAAA-MM-DDTHH:00"
   const r = await fetch(AGENDA_HOOK + '?acao=horarios&t=' + Date.now(), { signal: AbortSignal.timeout(20000) });
   if (!r.ok) throw new Error('agenda respondeu ' + r.status);
@@ -2340,7 +2340,7 @@ function agendaLivres(ocup, data) {   // horas livres (números) de um dia AAAA-
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(data || ''); if (!m) return [];
   const w = new Date(+m[1], +m[2] - 1, +m[3]).getDay(); if (w === 0 || ocup.has(data)) return [];
   const lim = agoraSP().getTime() + AG_ANTECEDENCIA_H * 3600e3;
-  return (w === 6 ? AG_SABADO : AG_SEMANA).filter(h => new Date(+m[1], +m[2] - 1, +m[3], h, 0).getTime() >= lim && !ocup.has(`${data}T${String(h).padStart(2, '0')}:00`));
+  return (w === 6 ? AG_SABADO : w === 3 ? AG_SEMANA.filter(h => h < 19) : AG_SEMANA).filter(h => new Date(+m[1], +m[2] - 1, +m[3], h, 0).getTime() >= lim && !ocup.has(`${data}T${String(h).padStart(2, '0')}:00`));
 }
 function guardarVisita(jid, data, hora, origem) {
   if (!jid || !/^\d{4}-\d{2}-\d{2}$/.test(data || '')) return;
