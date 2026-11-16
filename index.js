@@ -1678,6 +1678,8 @@ async function aoReceber(m, tipoUpsert) {
   if (!jidValido(jid)) return;
   const cifrada = !m.message && m.messageStubType === 2;   // chegou cifrada e ainda não foi decifrada
   const x = desembrulhar(m);
+  // 16/11/2026 (Djhonata): cliente que reagiu a uma mensagem também interagiu: o follow-up pronto dele não sai (e o enviado conta como respondido)
+  if (x.reactionMessage && !m.key.fromMe && x.reactionMessage.text) { try { const tel = String((chats[jid] || {}).telefone || '').replace(/\D/g, ''); fuClienteFalou(jid, tel, Math.floor(tsDe(m) / 1000) * 1000); estado.reacoesCli = estado.reacoesCli || {}; estado.reacoesCli[jid] = tsDe(m); salvarEstado(); } catch (e) { } }
   if (x.protocolMessage || x.reactionMessage || (x.senderKeyDistributionMessage && Object.keys(x).length === 1)) return;
   const texto = cifrada ? '🔒 (mensagem ainda não decifrada — veja no celular)' : textoDe(x);
   const tipo = tipoDe(x);
@@ -2635,6 +2637,8 @@ async function fuEnviar(x) {   // devolve 'enviado', 'cancelado' ou 'erro'
   const num = fuNumero(x.tel); if (num.length < 12) return fim('erro', 'telefone inválido');
   let jid = acharJid(num + '@s.whatsapp.net');
   if (chats[jid] && ultCli(jid) > (x.geradoEm || x.criadoEm || 0)) return fim('cancelado', 'o cliente voltou a escrever antes do envio');
+  // follow-up em massa é só para quem está há 7 dias ou mais sem interagir (mensagem ou reação) — regra do Djhonata, 16/11/2026
+  { const ultInter = Math.max(chats[jid] ? ultCli(jid) : 0, ((estado.reacoesCli || {})[jid]) || 0); if (ultInter && Date.now() - ultInter < 7 * 864e5) return fim('cancelado', 'o cliente interagiu nos últimos 7 dias'); }
   // Você (ou a assistente) já falou com o cliente depois que este texto foi preparado: o follow-up pronto ficou velho e sairia como mensagem repetida (pedido do Djhonata, 13/11/2026).
   try { const t0 = x.geradoEm || x.criadoEm || 0; if (t0 && chats[jid] && lerEsp(jid).some(m => m.autor !== 'cliente' && m.autor !== 'aviso' && !m.followup && (m.ts || 0) > t0)) return fim('cancelado', 'você já falou com o cliente depois que este follow-up foi preparado'); } catch (e) { }
   const st = (estado.crmStatus || {})[x.tel8]; if (st && st !== 'perdido') return fim('cancelado', 'saiu de Perdido no CRM');
