@@ -1545,8 +1545,25 @@ async function pacoteEscritorio(jid, autor, extra) {   // foto e endereço só n
   if (!mandouHaPouco(jid, m => ehEnderecoEscritorio(m.texto), AGENDA_VALE) && await enviarTexto(jid, ENDERECO_ESCRITORIO, autor, extra)) feitos.push(ENDERECO_ESCRITORIO);
   return feitos;
 }
+// Reações (pedido do Djhonata, 16/11/2026): ele reage às mensagens dos clientes com 🙏🏼 e ✅ e a assistente faz igual.
+// A IA escreve [[reagir:🙏🏼]] ou [[reagir:✅]] e o servidor reage à última mensagem do cliente (só esses dois emojis; nunca joinha).
+const RE_REAGIR = /\[\[\s*reag(?:ir|e|ão|ao)\s*:\s*([^\]]*?)\s*\]\]/gi;
+const emojiReacao = (e) => /🙏|bencao|benção|obrigad/i.test(String(e)) ? '🙏🏼' : /✅|✔|☑|👍|ok/i.test(String(e)) ? '✅' : '';
+async function reagir(jid, emoji) {
+  const e = emojiReacao(emoji); if (!e || !sock) return false;
+  const ult = lerEsp(jid).filter(m => m.autor === 'cliente' && m.id && m.tipo !== 'reacao').pop();
+  if (!ult || Date.now() - (ult.ts || 0) > 24 * 3600e3) return false;
+  estado.reagidos = estado.reagidos || {}; if (estado.reagidos[jid] === ult.id) return false;   // uma reação por mensagem
+  try { await sock.sendMessage(jid, { react: { text: e, key: { remoteJid: jid, fromMe: false, id: ult.id } } }); }
+  catch (err) { log('reação não saiu', jid, err.message); return false; }
+  estado.reagidos[jid] = ult.id; salvarEstado(); log('reagiu', e, jid);
+  return e;
+}
 async function enviarSaida(jid, texto, autor = 'ia', extra) {   // devolve o que saiu (para a memória da conversa)
   const feitos = [];
+  { let pedida = null; texto = String(texto || '').replace(RE_REAGIR, (m, e) => { if (!pedida) pedida = e; return ''; }).replace(/\n{3,}/g, '\n\n');
+    if (pedida && autor === 'ia') { const r = await reagir(jid, pedida); if (r) feitos.push('[[reagir:' + r + ']]'); }
+    if (!String(texto).trim()) return feitos; }
   if (autor === 'ia') texto = generoDoDono(texto);
   const proprio = String(texto || '').split('\n').filter(l => !RE_LINK_AGENDA.test(l) && !linhaDaAgenda(l)).join('\n');   // o texto da IA sem o bloco da agenda
   for (const p of partesResposta(String(texto || ''))) {
