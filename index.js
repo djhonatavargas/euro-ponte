@@ -219,11 +219,30 @@ function crmContexto(ctx, jaFalou) {
   if (jaFalou) s += `\nJÁ SE APRESENTOU: este cliente já recebeu ${jaFalou.n} mensagem(ns) deste WhatsApp; a última foi em ${quandoFoi(jaFalou.ts)}${jaFalou.texto ? `: "${jaFalou.texto}"` : ''}. NÃO se apresente de novo ("Aqui é o Djhonata...") e não pergunte o nome nem o bairro como se fosse o primeiro contato: ele está respondendo a essa conversa, continue a partir dela${jaFalou.followup ? ' (a última mensagem foi um follow-up seu: é sobre ela que ele está falando)' : ''}.`;
   return s;
 }
+function enxugarAgents(t, regras, base) {
+  t = String(t || '');
+  if (String(base || '').length > 5000) {
+    const i = t.indexOf('## BASE DE CONHECIMENTO'), j = t.indexOf('**Horário de atendimento pelo WhatsApp**');
+    if (i >= 0 && j > i) t = t.slice(0, i) + 'As respostas sobre financiamento, renda, documentação, obra e contrato estão na BASE-RESPOSTAS.md.\n\n' + t.slice(j);
+  }
+  const k = t.indexOf('## 13. Orientações do Djhonata');
+  if (k >= 0 && /## 13\. Orientações do Djhonata/.test(regras || '') && /## 19\. Gastar o mínimo/.test(regras || '')) t = t.slice(0, k).trimEnd() + '\n';
+  return t;
+}
+// Na tabela do catálogo a coluna da ficha vira só a ref (ou o nome da pasta, quando não tem ref): é o que a ferramenta ler_ficha usa.
+function enxugarCatalogo(t) {
+  return String(t || '').replace(/C:\\Users\\Public\\catalogo\\([^|\n]*?)\\ficha\.md/g, (m, pasta) => { const r = /\(ref (\d+)\)/.exec(pasta); return r ? 'ref ' + r[1] : pasta; })
+    .replace('| Ficha |', '| Ref ou pasta (use em ler_ficha) |');
+}
 function sistema(ctx) {
   const partes = [ADAPTADOR];
   for (const f of ARQS_REGRAS) {
     let t = lerTexto(f);
     if (f === 'AGENTS.md') t = t.replace(/<!--\s*REGRAS-FIM\s*-->[\s\S]*$/, '');   // a lista de números "não atender" já é bloqueada pelo servidor
+    // Economia (pedido do Djhonata, 16/11/2026): acima de 100 mil tokens de entrada o Haiku cobra 5x. Não vai para a IA o que está repetido:
+    // as 51 perguntas do AGENTS.md (estão na BASE-RESPOSTAS.md, que vale mais), os gatilhos do sistema antigo e as seções 13 a 19, que são cópia mais velha das do REGRAS-ATENDIMENTO.md.
+    if (f === 'AGENTS.md') t = enxugarAgents(t, lerTexto('REGRAS-ATENDIMENTO.md'), lerTexto('BASE-RESPOSTAS.md'));
+    if (f === 'CATALOGO.md') t = enxugarCatalogo(t);
     if (t) partes.push(`\n\n===== ${f} =====\n${t}`);
   }
   partes.push('\n\n===== BAIRROS PERTO (Joinville; só estes pares podem ser chamados de "perto") =====\n' + geoTabelaTexto() + '\nSe dois bairros não aparecem juntos numa linha, NÃO são perto: use a ferramenta distancia e diga o tempo.');
@@ -244,7 +263,7 @@ function sistema(ctx) {
   }
   if (ctx.dono) {
     din += `\nATENÇÃO: quem está escrevendo é o próprio Djhonata (dono), pelo WhatsApp pessoal dele. Ele NÃO é cliente: não se apresente, não mande agenda, material nem endereço para ele.
-Siga a seção 13 do AGENTS.md: quando ele der uma orientação sobre um cliente (ex.: "fala pra ele que aposentado também pode"), descubra de qual cliente é (o nome/número que ele citou ou, se não citou, o último aviso abaixo; na dúvida, pergunte curto: "É o Emerson (+55 47 9991-5821)?"), use a ferramenta mandar_ao_cliente para mandar a mensagem ao cliente falando como o Djhonata (primeira pessoa, frases naturais, sem copiar o texto dele ao pé da letra; pode usar [[tts:...]] e ---), e depois responda a ele curto: "Feito! Mandei pro Emerson: [resumo]". Se a mensagem dele não for sobre cliente (ex.: "quem marcou hoje?"), responda direto e curto, com os dados abaixo.
+Siga a seção 13 das regras (Orientações do Djhonata pelo WhatsApp pessoal): quando ele der uma orientação sobre um cliente (ex.: "fala pra ele que aposentado também pode"), descubra de qual cliente é (o nome/número que ele citou ou, se não citou, o último aviso abaixo; na dúvida, pergunte curto: "É o Emerson (+55 47 9991-5821)?"), use a ferramenta mandar_ao_cliente para mandar a mensagem ao cliente falando como o Djhonata (primeira pessoa, frases naturais, sem copiar o texto dele ao pé da letra; pode usar [[tts:...]] e ---), e depois responda a ele curto: "Feito! Mandei pro Emerson: [resumo]". Se a mensagem dele não for sobre cliente (ex.: "quem marcou hoje?"), responda direto e curto, com os dados abaixo.
 Se ele mandar só um link, arquivo, contato ou nome, sem dizer o que fazer (ex.: o link de um contrato com o nome do cliente), não mande nada a cliente nenhum e não responda como se ele fosse cliente: pergunte curto o que ele quer (ex.: "Quer que eu mande esse link para o João Carlos Teixeira?") e só mande depois que ele confirmar.
 Esta conversa pode ter mensagens antigas de quando ele testou a assistente fingindo ser cliente: ignore essas mensagens, ele não está esperando resposta delas. Nunca fale com o Djhonata como se ele fosse cliente.`;
     const av = (estado.avisos || []).slice(-8).reverse().map(a => `- ${new Date(a.ts).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}: ${a.nome || 'sem nome'} (${a.telefone ? formatoBR(a.telefone) : 'sem número'}) — ${String(a.texto || '').slice(0, 220)}`).join('\n');
@@ -2062,6 +2081,8 @@ function registrarUso(u) {
   const d = t[dia] || { entrada: 0, cache_escrita: 0, cache_lida: 0, saida: 0, chamadas: 0 };
   d.entrada += u.input_tokens || 0; d.cache_escrita += u.cache_creation_input_tokens || 0; d.cache_lida += u.cache_read_input_tokens || 0; d.saida += u.output_tokens || 0; d.chamadas++;
   const custo = custoUso(u); d.custo = Math.round(((d.custo || 0) + custo) * 1e6) / 1e6;
+  // chamadas que passaram de 100 mil tokens de entrada (pagam 5x) e a maior entrada do dia: para ver no status se as instruções voltaram a estourar
+  { const ent = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0); if (ent > PRECO_IA.limite) d.acima100k = (d.acima100k || 0) + 1; d.maiorEntrada = Math.max(d.maiorEntrada || 0, ent); d.ultimaEntrada = ent; }
   t[dia] = d; gravarJson(f, t);
   const s = estado.saldos || (estado.saldos = {}); s.claudeGasto = (s.claudeGasto || 0) + custo;   // gasto desde o último saldo informado
 }
