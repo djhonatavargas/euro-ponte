@@ -594,6 +594,16 @@ async function geoImovel(pasta, forcar) {   // ponto do imóvel no mapa (fica gu
     x = (await geoNominatim('street=' + encodeURIComponent((e.numero ? e.numero + ' ' : '') + e.rua) + '&city=Joinville&state=' + encodeURIComponent('Santa Catarina'))).find(serve);
     if (!x) x = (await geoNominatim('q=' + encodeURIComponent(e.rua + (nomeB ? ', ' + nomeB : '') + ', Joinville'))).find(serve);
   } catch (err) { geoErro = 'endereço: ' + err.message; falhou = true; }
+  // 16/11/2026: 23 imóveis ficaram sem o ponto exato (rua com grafia diferente no mapa, "Rua Servidão…", "Rua Estr. Geral…", Araquari e São Francisco do Sul).
+  // Segunda tentativa na busca que tolera erro de grafia, com a rua limpa e a cidade da ficha; o ponto tem que cair perto do bairro.
+  if (!x) {
+    const cid = /araquari/i.test(e.texto) ? 'Araquari' : /s[ãa]o francisco do sul/i.test(e.texto) ? 'São Francisco do Sul' : 'Joinville';
+    const rua = e.rua.replace(/^rua\s+(?=(servid[aã]o|estr\.?|estrada|rodovia|avenida|travessa)\b)/i, '').replace(/^estr\.?\s/i, 'Estrada ');
+    for (const q of [(rua + ' ' + (e.numero || '')).trim(), rua]) {
+      const y = await geoPhoton(q, cid, nomeB);
+      if (y && (!centro || geoHav(y.lat, y.lon, centro[0], centro[1]) <= 5000)) { x = { lat: y.lat, lon: y.lon }; break; }
+    }
+  }
   if (!x && !centro) return null;
   const novo = Object.assign({}, g || {}, x ? { lat: Number(x.lat), lon: Number(x.lon), aprox: false } : { lat: centro[0], lon: centro[1], aprox: true }, { bairro: nomeB, endereco: e.texto, em: Date.now() });
   if (!falhou || !g) { geo.imoveis[pasta] = novo; geoSalvar(); }   // se o mapa falhou e já havia algo guardado, não troca
@@ -656,12 +666,13 @@ function geoLimparEndereco(s) {   // "R. Tuiuti, 4157 - Aventureiro, Joinville -
   t = t.replace(/^\s*r\.?\s+/i, 'Rua ').replace(/^\s*av\.?\s+/i, 'Avenida ').replace(/^\s*rod\.?\s+/i, 'Rodovia ').replace(/^\s*estr\.?\s+/i, 'Estrada ');
   return t.replace(/\s+[-–]\s+.*$/, ' ').replace(/[,\s]+/g, ' ').trim();
 }
-async function geoPhoton(q) {   // segunda busca, tolerante a erro de grafia; só vale resultado dentro de Joinville
+async function geoPhoton(q, cidade, bairro) {   // segunda busca, tolerante a erro de grafia; só vale resultado na região de Joinville (com Araquari e São Francisco do Sul)
   try {
-    const j = await geoBuscar('https://photon.komoot.io/api/?q=' + encodeURIComponent(q + ' Joinville') + '&limit=5&bbox=-49.2,-26.5,-48.65,-26.05');
+    const j = await geoBuscar('https://photon.komoot.io/api/?q=' + encodeURIComponent(q + (bairro ? ' ' + bairro : '') + ' ' + (cidade || 'Joinville')) + '&limit=5&bbox=-49.2,-26.5,-48.45,-26.05');
     for (const f of (j && j.features) || []) {
       const c = (f.geometry || {}).coordinates || [], pr = f.properties || {}, lat = Number(c[1]), lon = Number(c[0]);
-      if (!(lat < -26.05 && lat > -26.5 && lon > -49.2 && lon < -48.65)) continue;
+      if (!(lat < -26.05 && lat > -26.5 && lon > -49.2 && lon < (cidade && cidade !== 'Joinville' ? -48.45 : -48.65))) continue;
+      if (cidade && cidade !== 'Joinville' && pr.city && !semAcento(pr.city).includes(semAcento(cidade).split(' ')[0])) continue;
       const b = geoBairro([pr.district, pr.suburb, pr.locality, pr.neighbourhood].filter(Boolean).join(' '));
       return { nome: [pr.name, pr.street].filter(Boolean).slice(0, 2).join(', ') || q, lat, lon, bairro: b >= 0 ? GEOJOI.nomes[b] : '' };
     }
@@ -3564,7 +3575,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           return json(res, { ok: true, mapa: adsMapa, mudou: n, recusados });
         }
         else if (ac === 'geo') {   // CRM: o que o mapa achou perto de cada imóvel, para o Djhonata revisar e aprovar. texto = "atualizar" adianta a busca
-          if (b.texto === 'atualizar') geoRotina(30).catch(e => log('geo', e.message));
+          if (b.texto === 'atualizar') { for (const g of Object.values(geo.imoveis)) if (g && (!g.lat || g.aprox)) delete g.tentativa; geoRotina(30).catch(e => log('geo', e.message)); }   // o botão "Buscar no mapa agora" tenta de novo os que não foram achados
           const lista = pastasImoveis().filter(p => lerTexto(path.join(p, 'ficha.md'))).map(p => { const g = geo.imoveis[p] || {}, d = dadosDaFicha(p); return { pasta: p, nome: d.nome, ref: geoRef(p), bairro: g.bairro || '', localizado: !!(g.lat && !g.aprox), aprox: !!g.aprox, auto: geoItensTexto(g.entorno), texto: g.revisado || '', aprovado: !!g.aprovado, em: g.entornoEm || 0 }; });
           return json(res, { ok: true, imoveis: lista, rodando: geoRodando, erro: geoErro, pertoMin: GEO_PERTO_MIN, tabela: geoTabelaTexto() });
         }
