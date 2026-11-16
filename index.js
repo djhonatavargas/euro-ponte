@@ -2318,7 +2318,14 @@ function guardarVisita(jid, data, hora, origem) {
   estado.visitas[jid] = { q, origem, criado: Date.now(), enviados: {}, crm: origem === 'crm' };
   salvarEstado(); log('visita guardada para lembretes', jid, q, origem);
 }
-function cancelarVisita(jid, motivo) { if (estado.visitas && estado.visitas[jid]) { delete estado.visitas[jid]; salvarEstado(); log('lembretes cancelados', jid, motivo || ''); } }
+// 16/11/2026 (Djhonata): cliente que não veio nem avisou. Quando ele move o card para "Remarcar visita" depois da hora da visita,
+// a assistente manda UMA mensagem pedindo para remarcar. A visita que já passou fica guardada 48 horas para isso.
+function guardarPassada(jid, v) {
+  const T = v && quandoMs(v.q); if (!jid || !T || T > Date.now() || Date.now() - T > 48 * 3600e3) return;
+  estado.visitasPassadas = estado.visitasPassadas || {};
+  if (!estado.visitasPassadas[jid] || estado.visitasPassadas[jid].q !== v.q) estado.visitasPassadas[jid] = { q: v.q, em: Date.now() };
+}
+function cancelarVisita(jid, motivo) { if (estado.visitas && estado.visitas[jid]) { guardarPassada(jid, estado.visitas[jid]); delete estado.visitas[jid]; salvarEstado(); log('lembretes cancelados', jid, motivo || ''); } }
 function atualizarVisitasCrm(mapa) {   // o CRM manda {telefone8: 'AAAA-MM-DD HH:MM'} de quem está em "Visita marcada"
   estado.visitas = estado.visitas || {};
   const vistos = new Set();
@@ -2331,7 +2338,7 @@ function atualizarVisitasCrm(mapa) {   // o CRM manda {telefone8: 'AAAA-MM-DD HH
   for (const [jid, v] of Object.entries(estado.visitas)) {
     if (vistos.has(jid)) continue;
     const t8 = tel8Chat(jid), st = t8 ? (estado.crmStatus || {})[t8] : '';
-    if (v.crm || (st && st !== 'visita' && Date.now() - (v.criado || 0) > 20 * 60e3)) { delete estado.visitas[jid]; log('lembretes cancelados (CRM)', jid); }
+    if (v.crm || (st && st !== 'visita' && Date.now() - (v.criado || 0) > 20 * 60e3)) { guardarPassada(jid, v); delete estado.visitas[jid]; log('lembretes cancelados (CRM)', jid); }
   }
   salvarEstado();
 }
@@ -2383,11 +2390,19 @@ async function verificarRotinas() {
     const agora = Date.now(), fila = [], janela = dentroRotina();
     for (const [jid, v] of Object.entries(estado.visitas || {})) {
       const T = quandoMs(v.q); if (!T) continue;
-      if (agora > T + 3 * 3600e3) { delete estado.visitas[jid]; salvarEstado(); continue; }
+      if (agora > T + 3 * 3600e3) { guardarPassada(jid, v); delete estado.visitas[jid]; salvarEstado(); continue; }
       if (!janela || !rotinaPermitida(jid, 'lembrete')) continue;
       v.enviados = v.enviados || {};
       if (!v.enviados.l24 && agora >= T - 24 * 3600e3 && agora <= T - 12 * 3600e3 && (v.criado || 0) <= T - 22 * 3600e3) fila.push({ jid, tipo: 'l24', v });
       else if (v.q.includes('T') && !v.enviados.l2 && agora >= T - 3 * 3600e3 && agora <= T - 50 * 60e3) fila.push({ jid, tipo: 'l2', v });
+    }
+    // Não veio: a visita já passou, o card está em "Remarcar visita" e o cliente não falou mais nada. Uma mensagem só, pedindo para remarcar.
+    for (const [jid, v] of Object.entries(estado.visitas || {})) { const T = quandoMs(v.q); if (T && agora > T + 45 * 60e3) { const t8 = tel8Chat(jid); if (t8 && (estado.crmStatus || {})[t8] === 'novo') { guardarPassada(jid, v); delete estado.visitas[jid]; salvarEstado(); } } }
+    for (const [jid, n] of Object.entries(estado.visitasPassadas || {})) {
+      const T = quandoMs(n.q), t8 = tel8Chat(jid), st = t8 ? (estado.crmStatus || {})[t8] || '' : '';
+      if (!T || agora > T + 48 * 3600e3 || n.feito || ['negociacao', 'fechado', 'desistiu', 'perdido'].includes(st) || ((estado.visitas || {})[jid] && estado.visitas[jid].q !== n.q) || ultCli(jid) > T - 30 * 60e3) { delete estado.visitasPassadas[jid]; salvarEstado(); continue; }   // já falou depois da visita, veio, remarcou ou saiu do funil
+      if (st !== 'novo' || agora < T + 45 * 60e3 || !janela || !rotinaPermitida(jid, 'retomada')) continue;
+      fila.push({ jid, tipo: 'naoveio', n });
     }
     for (const [jid, r] of Object.entries(estado.retornos || {})) {   // retorno combinado com o cliente ("falo depois das 14h30")
       const T = quandoMs(r.q), uc = ultCli(jid);
@@ -2430,6 +2445,11 @@ async function rodarRotina(it) {
     estado.retomadas = estado.retomadas || {}; estado.retomadas[jid] = { base: it.p.ultCli, em: Date.now() };
     for (const [k, r] of Object.entries(estado.retomadas)) if (Date.now() - (r.em || 0) > 7 * 864e5) delete estado.retomadas[k];
     salvarEstado();
+  } else if (it.tipo === 'naoveio') {
+    instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Não compareceu: o cliente tinha visita marcada para ${descreverQuando(it.n.q)}, no escritório, e não veio nem avisou. O Djhonata colocou o card em "Remarcar visita". Releia a conversa e mande UMA mensagem curta, leve e sem cobrança: diga que ficou esperando ele hoje, que imprevisto acontece, e pergunte qual dia e horário fica melhor para remarcar (pode sugerir dois horários livres, consultando agenda_visita). Não mande o link, não repita a apresentação do imóvel e não diga que ele faltou ou que desmarcou. Se ele responder com dia e hora, marque com agenda_visita.`;
+    extra = { rotina: 'retomada' };
+    it.n.feito = Date.now(); estado.retomadas = estado.retomadas || {}; estado.retomadas[jid] = { base: c.ultCliente || 0, em: Date.now() }; salvarEstado();
+    liberado24h.add(jid);
   } else if (it.tipo === 'retorno') {
     instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Retorno combinado: o cliente pediu para você chamar agora${it.r.assunto ? ` (ficou combinado: ${it.r.assunto})` : ''}. Releia a conversa e mande UMA mensagem curta e natural chamando ele de volta, retomando de onde pararam e já trazendo o próximo passo (a opção de imóvel, a conta ou a pergunta que ficou pendente). Não se apresente de novo, não diga que é uma rotina e não peça desculpa pelo horário.`;
     extra = { rotina: 'retomada' };
@@ -2449,7 +2469,7 @@ async function rodarRotina(it) {
   ocupado.add(jid); emitir('digitando', { jid, on: true });
   try {
     await responder({ jid, telefone: c.telefone || '', nome: c.nome || '', dono: false, imagens: [], rotina: instr, extra });
-    if (it.tipo === 'retomada' || it.tipo === 'ordem' || it.tipo === 'retorno') rotinas.retomadas++; else rotinas.lembretes++;
+    if (it.tipo === 'retomada' || it.tipo === 'ordem' || it.tipo === 'retorno' || it.tipo === 'naoveio') rotinas.retomadas++; else rotinas.lembretes++;
     rotinas.ultima = new Date().toISOString();
     log('rotina', it.tipo, c.telefone || jid);
   } catch (e) { log('rotina com erro', it.tipo, e.message); }
