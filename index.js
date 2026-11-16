@@ -2506,7 +2506,7 @@ async function verificarRotinas() {
       if (agora > T + 3 * 3600e3) { guardarPassada(jid, v); delete estado.visitas[jid]; salvarEstado(); continue; }
       if (!janela || !rotinaPermitida(jid, 'lembrete')) continue;
       v.enviados = v.enviados || {};
-      if (!v.enviados.l24 && agora >= T - 24 * 3600e3 && agora <= T - 12 * 3600e3 && (v.criado || 0) <= T - 22 * 3600e3) fila.push({ jid, tipo: 'l24', v });
+      if (!v.enviados.l24 && agora >= T - 24 * 3600e3 && agora <= T - 12 * 3600e3 && (v.criado || 0) <= T - 22 * 3600e3 && agora - (v.criado || 0) >= 6 * 3600e3) fila.push({ jid, tipo: 'l24', v });   // 16/11/2026: visita marcada há menos de 6 horas não recebe o lembrete da véspera (o Salomão marcou às 18h15 e recebeu o lembrete às 18h16); fica só o do dia
       else if (v.q.includes('T') && !v.enviados.l2 && agora >= T - 3 * 3600e3 && agora <= T - 50 * 60e3) fila.push({ jid, tipo: 'l2', v });
     }
     // Não veio: a visita já passou, o card está em "Remarcar visita" e o cliente não falou mais nada. Uma mensagem só, pedindo para remarcar.
