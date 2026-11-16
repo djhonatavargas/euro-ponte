@@ -1578,6 +1578,38 @@ async function reagir(jid, emoji) {
   estado.reagidos[jid] = ult.id; salvarEstado(); log('reagiu', e, jid);
   return e;
 }
+// ===== REVISOR ANTES DE ENVIAR (pedido do Djhonata, 16/11/2026) =====
+// Os erros que mais tiram nota já têm regra escrita e continuam saindo: abrir com "Entendi"/"Faz sentido", cumprimentar de novo no meio da conversa
+// e fazer duas ou três perguntas na mesma mensagem. O servidor confere a resposta pronta e conserta antes de ela ir para o cliente.
+const RV_MAIUSC = (t) => t.replace(/^(\s*)(\p{Ll})/u, (m, e, c) => e + c.toUpperCase());
+const RV_ABRE = /^(\s*)(?:entendi|entendo|compreendo|faz sentido(?: sim)?|certo,? entendi|perfeito,? entendi|ah,? entendi)(?:,?\s+\p{Lu}[\p{L}]{1,20})?\s*(?:[.!]+\s+|,\s+|\s*\n+)/iu;
+const RV_OI = /^(\s*)(?:oi+|ol[áa]|opa|bom dia|boa tarde|boa noite)(?:,?\s+\p{Lu}[\p{L}]{1,20})?\s*[!,.]+\s*(?:tudo bem\??\s*)?/iu;
+function revisorFixo(t, jaConversando) {   // consertos que não precisam da IA; devolve { texto, feitos }
+  const feitos = [];
+  const emPartes = (fn) => { t = t.replace(/(\[\[tts:)([\s\S]*?)(\]\])/g, (m, a, meio, z) => a + fn(meio) + z); if (!/^\s*\[\[tts:/.test(t)) t = fn(t); };
+  const tira = (re, nome) => emPartes((x) => { const y = x.replace(re, '$1'); if (y !== x && y.trim().length >= 8) { if (!feitos.includes(nome)) feitos.push(nome); return RV_MAIUSC(y); } return x; });
+  if (jaConversando) tira(RV_OI, 'cumprimento repetido');
+  tira(RV_ABRE, 'abertura "entendi"');
+  return { texto: t, feitos };
+}
+const rvPerguntas = (t) => (String(t).split('\n').filter(l => !RE_LINK_AGENDA.test(l) && !linhaDaAgenda(l)).join('\n').match(/\?/g) || []).length;
+async function revisarSaida(f, t) {
+  try {
+    if (!t || f.dono || /📋/.test(t)) return t;
+    const ja = jaFalouCom(f.jid), conversando = !!(ja && Date.now() - (ja.ts || 0) < 6 * 3600e3);
+    const r = revisorFixo(t, conversando); let novo = r.texto; const feitos = r.feitos.slice();
+    if (rvPerguntas(novo) >= 2) {
+      try {
+        const sis = 'Você revisa uma mensagem de WhatsApp escrita por um corretor de imóveis para um cliente. Reescreva a mensagem mantendo o mesmo conteúdo, o mesmo tom, as mesmas palavras sempre que possível e todas as marcações exatamente como estão ([[tts:...]], linhas com ---, links, emojis, quebras de linha). A única mudança: ela tem de terminar com UMA única pergunta, a que mais faz a conversa andar (normalmente a última). As outras perguntas saem ou viram uma afirmação curta. Não acrescente informação, não explique nada e não use aspas. Responda só com a mensagem reescrita.';
+        const rr = String(await claudeTexto(sis, novo, 1500, 0) || '').trim();
+        const mesmasMarcas = (a, b) => ['[[tts:', '---', 'http'].every(m => (a.split(m).length === b.split(m).length));
+        if (rr && rvPerguntas(rr) === 1 && rr.length > novo.length * 0.55 && rr.length < novo.length * 1.15 && mesmasMarcas(novo, rr) && !/^NO_REPLY/.test(rr)) { novo = rr; feitos.push('uma pergunta só'); }
+      } catch (e) { log('revisor: não deu para reescrever as perguntas', e.message); }
+    }
+    if (feitos.length) { log('revisor consertou', f.telefone || f.jid, feitos.join(' + ')); estado.revisor = estado.revisor || {}; const dia = agoraSP().toISOString().slice(0, 10); const d = estado.revisor[dia] = estado.revisor[dia] || {}; for (const k of feitos) d[k] = (d[k] || 0) + 1; for (const k of Object.keys(estado.revisor)) if (k < new Date(Date.now() - 15 * 864e5).toISOString().slice(0, 10)) delete estado.revisor[k]; salvarEstado(); }
+    return novo;
+  } catch (e) { log('revisor', e.message); return t; }
+}
 async function enviarSaida(jid, texto, autor = 'ia', extra) {   // devolve o que saiu (para a memória da conversa)
   const feitos = [];
   { let pedida = null; texto = String(texto || '').replace(RE_REAGIR, (m, e) => { if (!pedida) pedida = e; return ''; }).replace(/\n{3,}/g, '\n\n');
@@ -2225,7 +2257,7 @@ async function responder(f) {
         if (segura3p) continue;
         // o Djhonata pode ter desligado a assistente nessa conversa enquanto ela pensava
         if (!podeResponder(f.jid, f.telefone)) { log('resposta descartada (pausada no meio)', f.jid); return; }
-        saida.push(...await enviarSaida(f.jid, t, 'ia', f.extra));
+        saida.push(...await enviarSaida(f.jid, await revisarSaida(f, t), 'ia', f.extra));
       } else if (bloco.type === 'tool_use') {
         usouFerramenta = true;
         const r = await executar(bloco.name, bloco.input || {}, ctx);
@@ -2713,7 +2745,7 @@ function estadoPublico() {
     conectado, numero: meuNumero, qr: !!ultimoQR, whatsDesligado: !!estado.whatsDesligado, iniciando,
     assistente: !!estado.ativo, horario: ATENDE_24H ? '24 horas' : `${HORA_INI}–${HORA_FIM}`, dentroDoHorario: dentroDoHorario(), versao: VERSAO, noArDesde: NO_AR_DESDE,
     regras: ARQS_REGRAS.map(f => ({ arquivo: f, ok: !!lerTexto(f) })), imoveis: pastasImoveis().length, bloqueados: lerBloqueados().size,
-    usoHoje: hoje, modelo: MODELO, teste: estado.teste && estado.teste.ativo ? (estado.teste.numeros || []) : [],
+    usoHoje: hoje, revisorHoje: (estado.revisor || {})[agoraSP().toISOString().slice(0, 10)] || null, modelo: MODELO, teste: estado.teste && estado.teste.ativo ? (estado.teste.numeros || []) : [],
     voz: !!ELEVEN_KEY, transcricao: ELEVEN_KEY ? 'ElevenLabs' : GEMINI_KEY ? 'Gemini' : '',
     audio: { transcritos: ouvido.feitas, falados: voz.feitas, erros: ouvido.erros + voz.erros, ultimoErro: (voz.ultimoErro || ouvido.ultimoErro || '').slice(0, 160) },
     rotinas: ROTINAS ? { visitas: Object.keys(estado.visitas || {}).length, lembretesHoje: rotinas.lembretes, retomadasHoje: rotinas.retomadas, horario: `${ROT_INI}–${ROT_FIM}`, retomada: `${RET_INI}–${RET_FIM}`, retornos: Object.keys(estado.retornos || {}).length } : null,
