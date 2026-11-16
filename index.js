@@ -234,6 +234,22 @@ function enxugarCatalogo(t) {
   return String(t || '').replace(/C:\\Users\\Public\\catalogo\\([^|\n]*?)\\ficha\.md/g, (m, pasta) => { const r = /\(ref (\d+)\)/.exec(pasta); return r ? 'ref ' + r[1] : pasta; })
     .replace('| Ficha |', '| Ref ou pasta (use em ler_ficha) |');
 }
+// Hora do convite (16/11/2026): o cliente já recebeu a conta e está discutindo os valores, ou disse que fechou/gostou, e ainda não tem visita nem recebeu horário.
+// O servidor lembra a assistente de oferecer dois horários agora. É o critério que mais pesa na nota (Leva ao escritório).
+function horaDoConvite(jid) {
+  try {
+    const v = (estado.visitas || {})[jid]; if (v && quandoMs(v.q) > Date.now() - 3600e3) return '';
+    const l = lerEsp(jid).filter(m => m.autor !== 'aviso'); let i = -1; for (let k = l.length - 1; k >= 0; k--) if (l[k].autor !== 'cliente' && /📋/.test(String(l[k].texto || ''))) { i = k; break; }
+    const depois = i >= 0 ? l.slice(i + 1) : [], cli = depois.filter(m => m.autor === 'cliente' && String(m.texto || '').trim());
+    const ult = l.filter(m => m.autor === 'cliente' && String(m.texto || '').trim()).pop(), tu = semAcento(String((ult || {}).texto || ''));
+    const fechou = /\b(fechou|fechado|combinado|gostei|adorei|quero (esse|essa|fechar|ver|conhecer)|vamos fechar|como (faco|fazemos) (pra|para) (comprar|fechar)|tenho interesse|me interessei)\b/.test(tu);
+    const jaOfereceu = depois.concat(i < 0 ? l.slice(-6) : []).some(m => m.autor !== 'cliente' && Date.now() - (m.ts || 0) < 24 * 3600e3 && /\b\d{1,2}h(\d{2})?\b|\bàs \d{1,2}/.test(String(m.texto || '')));
+    if (jaOfereceu) return '';
+    if ((i >= 0 && cli.length >= 2 && Date.now() - (l[i].ts || 0) < 3 * 864e5) || (fechou && ult && Date.now() - (ult.ts || 0) < 3600e3))
+      return '\nHORA DO CONVITE: este cliente ' + (fechou ? 'acabou de mostrar que gostou ou que quer fechar' : 'já recebeu a conta e está discutindo os valores') + ', e ainda não tem visita marcada nem recebeu horário. Nesta resposta, depois de responder o que ele perguntou em 1 ou 2 linhas, consulte a agenda (agenda_visita) e ofereça DOIS horários concretos para ele vir ao escritório fechar a conta com você ("consigo te atender amanhã às 9h ou às 14h, qual fica melhor?"). Não pergunte "qual dia fica bom" sem horário. Se ele já disse que só pode em certo dia ou turno, ofereça dentro disso.';
+  } catch (e) { }
+  return '';
+}
 function sistema(ctx) {
   const partes = [ADAPTADOR];
   for (const f of ARQS_REGRAS) {
@@ -280,6 +296,7 @@ Esta conversa pode ter mensagens antigas de quando ele testou a assistente fingi
     const pa = !ctx.rotina && !ctx.dono ? perguntaAberta(ctx.jid) : null;
     if (pa) din += `\nPERGUNTA EM ABERTO: há ${pa.min} min você mandou "${pa.frase}". Se a mensagem nova do cliente responde a ela, siga em frente. Se NÃO responde (ele só continuou o assunto, desabafou ou completou o que estava dizendo), NÃO faça outra pergunta e NÃO ofereça horários de novo: responda só o ponto novo, em 1 ou 2 linhas. A pergunta que já está lá continua valendo.`;
     if (!ctx.dono) din += `\nNão comece a resposta repetindo ou resumindo o que o cliente acabou de dizer ("Entendo, vocês querem sair do aluguel..."): vá direto ao que é novo. E não explique de novo, com outras palavras, o que você já explicou na mensagem anterior.`;
+    { const hc = !ctx.rotina ? horaDoConvite(ctx.jid) : ''; if (hc) din += hc; }
     const rt = (estado.retornos || {})[ctx.jid];
     if (rt && quandoMs(rt.q) > Date.now()) din += `\nRETORNO COMBINADO: você marcou de chamar este cliente ${descreverQuando(rt.q)}${rt.assunto ? ` (${rt.assunto})` : ''}. Se ele escrever antes, atenda normalmente.`;
     const v = (estado.visitas || {})[ctx.jid];
@@ -1595,7 +1612,15 @@ function revisorFixo(t, jaConversando) {   // consertos que não precisam da IA;
 const rvPerguntas = (t) => (String(t).split('\n').filter(l => !RE_LINK_AGENDA.test(l) && !linhaDaAgenda(l)).join('\n').match(/\?/g) || []).length;
 async function revisarSaida(f, t) {
   try {
-    if (!t || f.dono || /📋/.test(t)) return t;
+    if (!t || f.dono) return t;
+    // Mensagem em dobro (16/11/2026): a mesma resposta, ou quase, que já saiu para este cliente nos últimos 4 minutos não sai de novo.
+    try { const pal = (x) => new Set(semAcento(String(x)).replace(/\[\[tts:|\]\]/g, ' ').split(/[^a-z0-9]+/).filter(w => w.length >= 4));
+      const A = pal(t); if (A.size >= 8 && !f.rotina) for (const m of lerEsp(f.jid).filter(m => m.autor === 'ia' && Date.now() - (m.ts || 0) < 4 * 60e3 && String(m.texto || '').length > 40).slice(-4)) { const B = pal(m.texto); let c = 0; for (const w of A) if (B.has(w)) c++; if (c / Math.max(1, Math.min(A.size, B.size)) >= 0.75) { log('revisor: mensagem em dobro segurada', f.telefone || f.jid); estado.revisor = estado.revisor || {}; const dia = agoraSP().toISOString().slice(0, 10); const d = estado.revisor[dia] = estado.revisor[dia] || {}; d['mensagem em dobro'] = (d['mensagem em dobro'] || 0) + 1; salvarEstado(); return ''; } } } catch (e) { }
+    // Prometeu confirmar (16/11/2026): se ela disse "vou confirmar" e não registrou a dúvida, o servidor registra, para a pergunta aparecer na lista do CRM e ter resposta no dia.
+    try { const pm = /[^.!?\n]*\b(?:vou|deixa eu|preciso) (?:confirmar|verificar|checar|conferir|ver (?:isso|certinho|com))[^.!?\n]*|[^.!?\n]*\bj[áa] te (?:falo|retorno|confirmo|aviso)\b[^.!?\n]*/i.exec(t);
+      if (pm && !f.rotina && !(estado.avisos || []).some(a => a.jid === f.jid && a.tipo === 'duvida' && !a.feito && Date.now() - (a.ts || 0) < 6 * 3600e3)) { const uc = lerEsp(f.jid).filter(m => m.autor === 'cliente' && String(m.texto || '').trim()).pop();
+        estado.avisos = [...(estado.avisos || []), { id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), ts: Date.now(), jid: f.jid, nome: f.nome || '', telefone: f.telefone || '', texto: ('Ela prometeu confirmar e não anotou a dúvida. O que ela disse: "' + pm[0].trim().slice(0, 220) + '". Última mensagem do cliente: "' + String((uc || {}).texto || '').replace(/\s+/g, ' ').slice(0, 220) + '"').slice(0, 600), tipo: 'duvida', auto: true }].slice(-80); salvarEstado(); log('revisor: promessa de confirmar anotada para o CRM', f.telefone || f.jid); } } catch (e) { }
+    if (/📋/.test(t)) return t;
     const ja = jaFalouCom(f.jid), conversando = !!(ja && Date.now() - (ja.ts || 0) < 6 * 3600e3);
     const r = revisorFixo(t, conversando); let novo = r.texto; const feitos = r.feitos.slice();
     if (rvPerguntas(novo) >= 2) {
