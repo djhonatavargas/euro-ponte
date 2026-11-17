@@ -2575,6 +2575,10 @@ async function rodarRotina(it) {
     liberado24h.add(jid);
   } else {
     instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Lembrete de visita (${it.tipo === 'l24' ? '1 de 2, cerca de 24 horas antes' : '2 de 2, no dia, algumas horas antes'}). A visita está marcada para ${descreverQuando(it.v.q)}, no escritório da Euro (Rua Dona Francisca, 1222 - Saguaçu). Releia a conversa. Se o cliente cancelou, desmarcou, disse que não vai ou pediu para remarcar, NÃO mande lembrete: use registrar_crm com novoStatus remarcar e responda NO_REPLY. Se não, mande um lembrete curto e simpático com o dia, o horário e o endereço, sem valores, sem material novo e sem a agenda. Pode pedir para ele confirmar.`;
+    // Nome antes da visita (pedido do Djhonata, 17/11/2026): quem está na agenda sem nome de verdade ("Sem nome" no CRM, perfil que não é nome de gente) recebe a pergunta do nome junto com o lembrete.
+    { const t8n = tel8Chat(it.jid), cn = t8n ? String((estado.crmNomes || {})[t8n] || '') : '';
+      if (/^sem nome/i.test(cn.trim()) || (!nomeDoCrm(it.jid) && !/^\p{Lu}?\p{Ll}{2,}( \p{L}+)*$/u.test(String((chats[it.jid] || {}).nome || '').trim())))
+        instr += ' ATENÇÃO: o Djhonata ainda NÃO sabe o nome de verdade deste cliente (o perfil dele não é nome de gente). Se ele ainda não disse o nome nesta conversa, NÃO o chame pelo apelido do perfil e, nesta mesma mensagem, logo depois do lembrete, peça o nome: "Pra eu deixar certinho na agenda, como é o teu nome?". Essa é a única pergunta da mensagem (não peça para confirmar junto). Quando ele responder, use registrar_crm com nomeReal.'; }
     extra = { rotina: 'lembrete' };
     it.v.enviados = it.v.enviados || {}; it.v.enviados[it.tipo] = Date.now(); salvarEstado();
     liberado24h.add(jid);
