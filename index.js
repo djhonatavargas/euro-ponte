@@ -2534,6 +2534,15 @@ function rotinaPermitida(jid, tipo) {
   return true;
 }
 const RE_SO_OK = /^(certo|ok+|okay|blz|beleza|ta|ta bom|ta certo|tudo bem|entendi|hum+|uhum|aham|show|top|legal|sim|isso|\p{Extended_Pictographic}+)[\s.!]*$/iu;   // resposta de uma palavra que não pede nada
+// O cliente confirmou a visita? Vale o que ele escreveu DEPOIS do último lembrete: "sim", "confirmo", "combinado" = confirmou; "não vou conseguir", "desmarcar", "imprevisto" = disse que não vem.
+const RE_VIS_NAO = /\b(nao (vou|vamos|consigo|conseguimos|posso|podemos|vai dar|da pra|poderei)|desmarc|remarc|cancel|imprevisto|outro dia|deixa pra)\b/, RE_VIS_SIM = /\b(confirm\w*|sim|ok+|okay|certo|combinado|blz|beleza|estarei|estaremos|vou sim|vamos sim|pode deixar|fechado|ta bom|to indo|estou indo|ate la|show|perfeito|com certeza|pode ser)\b|\u{1F44D}|\u{2705}|\u{1F64F}/u;
+function visitaConfirmacao(jid, v) {
+  const base = Math.max((v.enviados || {}).l24 || 0, (v.enviados || {}).l2 || 0); if (!base) return { conf: '', em: 0, texto: '' };
+  let r = { conf: '', em: 0, texto: '' };
+  for (const m of lerEsp(jid)) { if (m.autor !== 'cliente' || (m.ts || 0) <= base) continue; const t = semAcento(String(m.texto || '')); if (!t.trim()) continue;
+    if (RE_VIS_NAO.test(t)) r = { conf: 'nao', em: m.ts, texto: String(m.texto).slice(0, 80) }; else if (RE_VIS_SIM.test(t)) r = { conf: 'sim', em: m.ts, texto: String(m.texto).slice(0, 80) }; }
+  return r;
+}
 function conversaParada(jid) {   // última mensagem (sem contar avisos internos) foi da assistente e o cliente não respondeu
   const l = lerEsp(jid); let ult = null, ultCli = 0, agenda = false, ack = 0;
   for (let i = l.length - 1; i >= 0; i--) {
@@ -3805,6 +3814,11 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
         else if (ac === 'crm_status') { let m = {}; try { m = JSON.parse(b.texto || '{}'); } catch (e) { } atualizarStatusCrm(m).catch(e => log('crm_status', e.message)); return json(res, { ok: true }); }
         else if (ac === 'crm_nomes') { let m = {}; try { m = JSON.parse(b.texto || '{}'); } catch (e) { } const nv = {}; for (const [k, v] of Object.entries(m || {})) { const t8 = String(k).replace(/\D/g, '').slice(-8); if (t8.length === 8 && v) nv[t8] = String(v).slice(0, 60); } if (Object.keys(nv).length) { estado.crmNomes = nv; salvarEstado(); } return json(res, { ok: true, nomes: Object.keys(nv).length }); }
         else if (ac === 'crm_visitas') { let m = {}; try { m = JSON.parse(b.texto || '{}'); } catch (e) { } atualizarVisitasCrm(m); return json(res, { ok: true, visitas: Object.keys(estado.visitas || {}).length }); }
+        else if (ac === 'visitas_status') {   // 17/11/2026 (Djhonata): a agenda do CRM mostra se o lembrete saiu e se o cliente confirmou a visita
+          const out = [];
+          for (const [j, v] of Object.entries(estado.visitas || {})) { try { const c = visitaConfirmacao(j, v); out.push({ tel8: tel8Chat(j), q: v.q, criado: v.criado || 0, l1: (v.enviados || {}).l24 || 0, l2: (v.enviados || {}).l2 || 0, conf: c.conf, confEm: c.em, confTexto: c.texto }); } catch (e) { } }
+          return json(res, { ok: true, em: Date.now(), visitas: out });
+        }
         else if (ac === 'rotinas') {   // o que o sistema sabe das visitas e das rotinas (para conferir)
           return json(res, { rotinas, visitas: Object.entries(estado.visitas || {}).map(([j, v]) => ({ nome: chatPublico(j).nome, telefone: chatPublico(j).telefone, quando: descreverQuando(v.q), origem: v.origem, enviados: v.enviados })), retomadas: Object.keys(estado.retomadas || {}).length, voz, ouvido, ffmpeg: temFfmpeg(), iaVazia: lerJson(path.join(DADOS, 'ia-vazia.json'), null) });
         }
