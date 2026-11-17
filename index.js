@@ -2540,8 +2540,22 @@ function visitaConfirmacao(jid, v) {
   const base = Math.max((v.enviados || {}).l24 || 0, (v.enviados || {}).l2 || 0); if (!base) return { conf: '', em: 0, texto: '' };
   let r = { conf: '', em: 0, texto: '' };
   for (const m of lerEsp(jid)) { if (m.autor !== 'cliente' || (m.ts || 0) <= base) continue; const t = semAcento(String(m.texto || '')); if (!t.trim()) continue;
-    if (RE_VIS_NAO.test(t)) r = { conf: 'nao', em: m.ts, texto: String(m.texto).slice(0, 80) }; else if (RE_VIS_SIM.test(t)) r = { conf: 'sim', em: m.ts, texto: String(m.texto).slice(0, 80) }; }
+    if (RE_VIS_NAO.test(t)) r = { conf: 'nao', em: m.ts, texto: String(m.texto).slice(0, 80) }; else if (RE_VIS_SIM.test(t) && (r.conf !== 'nao' || /\b(confirm\w*|estarei|estaremos|vou sim|vamos sim|to indo|estou indo|consigo sim|vou conseguir)\b/.test(t))) r = { conf: 'sim', em: m.ts, texto: String(m.texto).slice(0, 80) }; }   // 17/11/2026: depois de um "não vou conseguir", um "ok/show, obrigado" é só educação e não vira confirmação
   return r;
+}
+// 17/11/2026 (Djhonata): a agenda precisa mostrar a justificativa do cliente ("tive um imprevisto, não sei que horas saio"), não só confirmou/não confirmou.
+function visitaResposta(jid, base) {   // tudo que o cliente escreveu depois do último lembrete, em uma linha
+  if (!base) return { resp: '', respEm: 0 };
+  const p = []; let em = 0;
+  for (const m of lerEsp(jid)) { if (m.autor !== 'cliente' || (m.ts || 0) <= base) continue; const t = String(m.transc || m.texto || '').replace(/\s+/g, ' ').trim(); if (!t || m.tipo === 'image' && !m.transc && t.length < 3) continue; p.push(t); em = m.ts; }
+  return { resp: p.slice(-4).join(' · ').slice(0, 220), respEm: em };
+}
+function visitaSolta(t8) {   // cliente que está na agenda mas já não tem lembrete ativo aqui (a assistente liberou depois da resposta dele): acha o último lembrete dos últimos 2 dias
+  const jid = jidPorTel8(t8); if (!jid || (estado.visitas || {})[jid]) return null;
+  let base = 0; for (const m of lerEsp(jid)) if (m.autor === 'ia' && m.rotina === 'lembrete' && (m.ts || 0) > Date.now() - 2 * 864e5) base = m.ts;
+  if (!base) return null;
+  const c = visitaConfirmacao(jid, { enviados: { l2: base } }), r = visitaResposta(jid, base);
+  return { tel8: t8, q: '', solta: true, criado: 0, l1: 0, l2: base, conf: c.conf, confEm: c.em, confTexto: c.texto, resp: r.resp, respEm: r.respEm };
 }
 function conversaParada(jid) {   // última mensagem (sem contar avisos internos) foi da assistente e o cliente não respondeu
   const l = lerEsp(jid); let ult = null, ultCli = 0, agenda = false, ack = 0;
@@ -3816,7 +3830,9 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
         else if (ac === 'crm_visitas') { let m = {}; try { m = JSON.parse(b.texto || '{}'); } catch (e) { } atualizarVisitasCrm(m); return json(res, { ok: true, visitas: Object.keys(estado.visitas || {}).length }); }
         else if (ac === 'visitas_status') {   // 17/11/2026 (Djhonata): a agenda do CRM mostra se o lembrete saiu e se o cliente confirmou a visita
           const out = [];
-          for (const [j, v] of Object.entries(estado.visitas || {})) { try { const c = visitaConfirmacao(j, v); out.push({ tel8: tel8Chat(j), q: v.q, criado: v.criado || 0, l1: (v.enviados || {}).l24 || 0, l2: (v.enviados || {}).l2 || 0, conf: c.conf, confEm: c.em, confTexto: c.texto }); } catch (e) { } }
+          for (const [j, v] of Object.entries(estado.visitas || {})) { try { const c = visitaConfirmacao(j, v); const r = visitaResposta(j, Math.max((v.enviados || {}).l24 || 0, (v.enviados || {}).l2 || 0)); out.push({ tel8: tel8Chat(j), q: v.q, criado: v.criado || 0, l1: (v.enviados || {}).l24 || 0, l2: (v.enviados || {}).l2 || 0, conf: c.conf, confEm: c.em, confTexto: c.texto, resp: r.resp, respEm: r.respEm }); } catch (e) { } }
+          let pedido = []; try { pedido = (JSON.parse(String(b.texto || '{}')).tels || []).map(x => String(x).replace(/\D/g, '').slice(-8)).filter(x => x.length === 8).slice(0, 40); } catch (e) { }
+          for (const t8 of pedido) { if (out.some(o => o.tel8 === t8)) continue; try { const o = visitaSolta(t8); if (o) out.push(o); } catch (e) { } }
           return json(res, { ok: true, em: Date.now(), visitas: out });
         }
         else if (ac === 'rotinas') {   // o que o sistema sabe das visitas e das rotinas (para conferir)
