@@ -1167,7 +1167,28 @@ async function guardarMidia(m, x, tipo) {
 // ---------- WhatsApp ----------
 let sock = null, ultimoQR = null, conectado = false, meuNumero = '', iniciando = false;
 const enviados = new Set();
-function lembrarEnvio(r) { const id = r && r.key && r.key.id; if (id) { enviados.add(id); if (enviados.size > 5000) enviados.delete(enviados.values().next().value); } return id; }
+function lembrarEnvio(r) { const id = r && r.key && r.key.id; if (id) { try { entregaAnotar(id, r.key.remoteJid); } catch (e) { } enviados.add(id); if (enviados.size > 5000) enviados.delete(enviados.values().next().value); } return id; }
+
+// ---------- mensagem entregue ou não (17/11/2026) ----------
+// Cada mensagem que sai fica anotada até o WhatsApp avisar que foi entregue (dois tiques). Se as mensagens para um número ficam 2 dias ou mais sem entrega,
+// o número pode ter bloqueado, trocado de chip ou saído do WhatsApp. O WhatsApp não diz qual dos três; o que dá para saber é que não está chegando.
+function entregaAnotar(id, jid) {
+  if (!id || !jid || String(jid).endsWith('@g.us')) return;
+  const P = estado.entregaPend = estado.entregaPend || {}; P[id] = { j: acharJid(jid), t: Date.now() };
+  const ks = Object.keys(P); if (ks.length > 4000) for (const k of ks.sort((a, b) => P[a].t - P[b].t).slice(0, ks.length - 3500)) delete P[k];
+}
+function entregaConfirmar(id) {
+  const P = estado.entregaPend || {}, p = P[id]; if (!p) return;
+  const c = chats[p.j] || chats[acharJid(p.j)]; if (c) c.ultEntregue = Date.now();
+  delete P[id]; for (const k of Object.keys(P)) if (P[k].j === p.j && P[k].t <= p.t) delete P[k];   // entregou esta: as mais antigas para o mesmo número não contam mais
+  salvarEstado();
+}
+function semEntregaDias(jid) {
+  try { const j = acharJid(jid), P = estado.entregaPend || {}, ue = (chats[j] || {}).ultEntregue || 0; let t0 = 0;
+    for (const k of Object.keys(P)) if (P[k].j === j && P[k].t > ue && (!t0 || P[k].t < t0)) t0 = P[k].t;
+    if ((chats[j] || {}).ultCliente > t0) return 0;   // ele escreveu depois: está recebendo
+    const d = t0 ? Math.floor((Date.now() - t0) / 864e5) : 0; return d >= 2 ? d : 0; } catch (e) { return 0; }
+}
 
 // ---------- proteção contra banimento ----------
 const LIM_MIN = Number(ENV.LIMITE_POR_MINUTO || 12), LIM_HORA = Number(ENV.LIMITE_POR_HORA || 180);
@@ -2646,7 +2667,7 @@ function fuUltimoEnvio() { let t = 0; for (const v of Object.values(fu)) if ((v.
 function fuEnviadosHoje() { const h = fuDia(Date.now()); return Object.values(fu).filter(v => v.enviadoEm && fuDia(v.enviadoEm) === h).length; }
 // Quem está em "Remarcar visita" no CRM sai antes dos perdidos (pedido do Djhonata, 17/11/2026: já agendaram uma vez, estão mais quentes).
 const fuQuente = (v) => ((estado.crmStatus || {})[String(v.tel8 || v.tel || '').replace(/\D/g, '').slice(-8)] === 'novo' ? 1 : 0);
-function fuFilaAprovada() { return Object.values(fu).filter(v => v.status === 'aprovado').sort((a, b) => (b.prioridade || 0) - (a.prioridade || 0) || fuQuente(b) - fuQuente(a) || (a.aprovadoEm || 0) - (b.aprovadoEm || 0)); }
+function fuFilaAprovada() { return Object.values(fu).filter(v => v.status === 'aprovado').sort((a, b) => fuQuente(b) - fuQuente(a) || (b.prioridade || 0) - (a.prioridade || 0) || (a.aprovadoEm || 0) - (b.aprovadoEm || 0)); }
 function fuNaJanela(ms) { const d = spDe(ms), m = d.getUTCHours() * 60 + d.getUTCMinutes(); return m >= minutos(FU_INI) && m <= fuFimDoDia(d.getUTCDay()); }
 function fuProximaAbertura(ms) {   // próximo 9h (segunda a sábado) depois de ms
   const d = spDe(ms); let t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 9 + 3, 0);
@@ -2750,13 +2771,17 @@ async function fuEnviar(x) {   // devolve 'enviado', 'cancelado' ou 'erro'
   const num = fuNumero(x.tel); if (num.length < 12) return fim('erro', 'telefone inválido');
   let jid = acharJid(num + '@s.whatsapp.net');
   if (chats[jid] && ultCli(jid) > (x.geradoEm || x.criadoEm || 0)) return fim('cancelado', 'o cliente voltou a escrever antes do envio');
+  // Remarcar visita (17/11/2026, Djhonata): já agendou uma vez, está mais quente. Aprovou, sai: fica fora das duas regras dos 7 dias e sai antes dos perdidos.
+  const remarcar = (estado.crmStatus || {})[x.tel8] === 'novo';
   // follow-up em massa é só para quem está há 7 dias ou mais sem interagir (mensagem ou reação) — regra do Djhonata, 16/11/2026
-  { const ultInter = Math.max(chats[jid] ? ultCli(jid) : 0, ((estado.reacoesCli || {})[jid]) || 0); if (ultInter && Date.now() - ultInter < 7 * 864e5) return fim('cancelado', 'o cliente interagiu nos últimos 7 dias'); }
+  if (!remarcar) { const ultInter = Math.max(chats[jid] ? ultCli(jid) : 0, ((estado.reacoesCli || {})[jid]) || 0); if (ultInter && Date.now() - ultInter < 7 * 864e5) return fim('cancelado', 'o cliente interagiu nos últimos 7 dias'); }
   // Você (ou a assistente) já falou com o cliente depois que este texto foi preparado: o follow-up pronto ficou velho e sairia como mensagem repetida (pedido do Djhonata, 13/11/2026).
   try { const t0 = x.geradoEm || x.criadoEm || 0; if (t0 && chats[jid] && lerEsp(jid).some(m => m.autor !== 'cliente' && m.autor !== 'aviso' && !m.followup && (m.ts || 0) > t0)) return fim('cancelado', 'você já falou com o cliente depois que este follow-up foi preparado'); } catch (e) { }
   // 16/11/2026 (Djhonata): a NOSSA mensagem também conta. Quem recebeu qualquer mensagem deste WhatsApp (sua, da assistente ou outro follow-up) há menos de 7 dias não recebe follow-up agora.
-  try { let un = 0; if (chats[jid]) for (const m of lerEsp(jid)) if (m.autor !== 'cliente' && m.autor !== 'aviso' && m.tipo !== 'reacao' && (m.ts || 0) > un) un = m.ts; if (un && Date.now() - un < 7 * 864e5) return fim('cancelado', 'já recebeu mensagem nossa nos últimos 7 dias'); } catch (e) { }
-  const st = (estado.crmStatus || {})[x.tel8]; if (st && st !== 'perdido') return fim('cancelado', 'saiu de Perdido no CRM');
+  if (!remarcar) try { let un = 0; if (chats[jid]) for (const m of lerEsp(jid)) if (m.autor !== 'cliente' && m.autor !== 'aviso' && m.tipo !== 'reacao' && (m.ts || 0) > un) un = m.ts; if (un && Date.now() - un < 7 * 864e5) return fim('cancelado', 'já recebeu mensagem nossa nos últimos 7 dias'); } catch (e) { }
+  const st = (estado.crmStatus || {})[x.tel8]; if (st && st !== 'perdido' && st !== 'novo') return fim('cancelado', 'saiu de Perdido no CRM');
+  // Mensagem não entregue (17/11/2026): as últimas mensagens para este número ficaram só com um tique por 2 dias ou mais. Pode ter bloqueado, trocado de número ou estar sem WhatsApp: não gasta envio.
+  { const dse = semEntregaDias(jid); if (dse) return fim('cancelado', 'as últimas mensagens não foram entregues há ' + dse + ' dias (pode ter bloqueado ou trocado de número)'); }
   if (lerBloqueados().has(num) || (estado.equipe || []).includes(x.tel8) || ehDono(num)) return fim('cancelado', 'número bloqueado para a assistente');
   const texto = String(x.mensagem || '').trim(); if (!texto) return fim('erro', 'mensagem vazia');
   if (!chats[jid]) {   // nunca conversou neste WhatsApp: confere se o número tem WhatsApp
@@ -2856,6 +2881,8 @@ async function iniciarWhatsApp() {
         if (!estado.whatsDesligado) timerReconectar = setTimeout(() => iniciarWhatsApp().catch(e => log('erro reconectar', e.message)), espera);
       }
     });
+    s.ev.on('messages.update', (ups) => { for (const u of ups || []) { try { if (u && u.key && u.key.fromMe && u.update && Number(u.update.status) >= 3) entregaConfirmar(u.key.id); } catch (e) { } } });
+    s.ev.on('message-receipt.update', (ups) => { for (const u of ups || []) { try { if (u && u.key && u.key.fromMe) entregaConfirmar(u.key.id); } catch (e) { } } });
     s.ev.on('messages.upsert', async ({ messages, type }) => {
       for (const m of messages) { try { await aoReceber(m, type); } catch (e) { log('erro mensagem', e.message); } }
     });
