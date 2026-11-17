@@ -1610,6 +1610,32 @@ function revisorFixo(t, jaConversando) {   // consertos que não precisam da IA;
   return { texto: t, feitos };
 }
 const rvPerguntas = (t) => (String(t).split('\n').filter(l => !RE_LINK_AGENDA.test(l) && !linhaDaAgenda(l)).join('\n').match(/\?/g) || []).length;
+// Lê na resposta dela uma promessa de chamar depois ("te chamo no fim da tarde", "amanhã às 10h eu te chamo") ou um adiamento deixado na mão do cliente ("quando puder, me chama") e devolve quando chamar ('AAAA-MM-DDTHH:MM'), dentro do horário das rotinas. '' = nada a marcar.
+function retornoDaFrase(t, agora) {
+  const s = semAcento(String(t || '')).replace(/\s+/g, ' '), n = agora || agoraSP();
+  const promete = /\b(te chamo|eu te chamo|te ligo|volto a te chamar|volto a falar (contigo|com voce))\b/.test(s);
+  const solta = /\bquando (voce |tu |voces )?(achar|puder|puderem|tiver|tiverem|quiser|quiserem|decidir|decidirem)\b[^.?!]{0,70}\b(me chama|me chamem|me avisa|me fala|e so (me )?chamar)\b/.test(s);
+  if (!promete && !solta) return '';
+  const dia = (d) => { const x = new Date(n.getTime() + d * 864e5); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+  const amanha = /\bamanha\b/.test(s); let d = amanha ? 1 : 0, h = -1, mi = 0;
+  const ex = promete && /\b(?:as|a partir das|depois das|la pelas|pelas) (\d{1,2})(?:h|:| horas)(\d{2})?/.exec(s);
+  if (ex) { h = Number(ex[1]); mi = Number(ex[2] || 0); }
+  else if (solta && !promete) { d = 1; h = 10; }
+  else if (/\b(fim|final) d[ae] tarde\b/.test(s)) { h = 17; mi = 30; }
+  else if (/\b(a noite|de noite|hoje a noite|mais a noite)\b/.test(s)) h = 19;
+  else if (/\bdepois do almoco\b/.test(s)) h = 14;
+  else if (/\b(cedo|de manha|pela manha)\b/.test(s)) { h = 9; if (!amanha && n.getHours() >= 9) d = 1; }
+  else if (/\b(a tarde|de tarde)\b/.test(s)) h = 14;
+  else if (/\b(mais tarde|daqui a pouco|logo mais|ainda hoje)\b/.test(s)) { h = n.getHours() + 3; }
+  else if (amanha) h = 10;
+  else return '';
+  if (h < 0 || h > 23) return '';
+  const ini = minutos(ROT_INI), fim = minutos(ROT_FIM);
+  if (h * 60 + mi > fim || (d === 0 && h * 60 + mi <= n.getHours() * 60 + n.getMinutes() + 5)) { d += 1; h = 9; mi = 0; }
+  if (h * 60 + mi < ini) { h = Math.ceil(ini / 60); mi = 0; }
+  if (new Date(n.getTime() + d * 864e5).getDay() === 0) d += 1;   // domingo não chama
+  return dia(d) + 'T' + String(h).padStart(2, '0') + ':' + String(mi).padStart(2, '0');
+}
 async function revisarSaida(f, t) {
   try {
     if (!t || f.dono) return t;
@@ -1620,6 +1646,8 @@ async function revisarSaida(f, t) {
     try { const pm = /[^.!?\n]*\b(?:vou|deixa eu|preciso) (?:confirmar|verificar|checar|conferir|ver (?:isso|certinho|com))[^.!?\n]*|[^.!?\n]*\bj[áa] te (?:falo|retorno|confirmo|aviso)\b[^.!?\n]*/i.exec(t);
       if (pm && !f.rotina && !(estado.avisos || []).some(a => a.jid === f.jid && a.tipo === 'duvida' && !a.feito && Date.now() - (a.ts || 0) < 6 * 3600e3)) { const uc = lerEsp(f.jid).filter(m => m.autor === 'cliente' && String(m.texto || '').trim()).pop();
         estado.avisos = [...(estado.avisos || []), { id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), ts: Date.now(), jid: f.jid, nome: f.nome || '', telefone: f.telefone || '', texto: ('Ela prometeu confirmar e não anotou a dúvida. O que ela disse: "' + pm[0].trim().slice(0, 220) + '". Última mensagem do cliente: "' + String((uc || {}).texto || '').replace(/\s+/g, ' ').slice(0, 220) + '"').slice(0, 600), tipo: 'duvida', auto: true }].slice(-80); salvarEstado(); log('revisor: promessa de confirmar anotada para o CRM', f.telefone || f.jid); } } catch (e) { }
+    // Retorno prometido sem marcar (17/11/2026, caso da Elaine: "te chamo no fim da tarde" e ninguém chamou; e da Daiane: "quando achar um horário, me chama"). Se ela prometeu chamar, ou deixou para o cliente chamar, e não usou agendar_retorno, o servidor marca o retorno.
+    try { if (!f.rotina && !(estado.retornos || {})[f.jid] && !(estado.visitas || {})[f.jid]) { const q = retornoDaFrase(t); if (q) { estado.retornos = estado.retornos || {}; estado.retornos[f.jid] = { q, assunto: 'Retorno marcado pelo servidor: ela disse "' + String(t).replace(/\s+/g, ' ').slice(0, 140) + '"', criado: Date.now(), auto: true }; salvarEstado(); log('revisor: retorno marcado pelo servidor', f.telefone || f.jid, q); } } } catch (e) { }
     if (/📋/.test(t)) return t;
     const ja = jaFalouCom(f.jid), conversando = !!(ja && Date.now() - (ja.ts || 0) < 6 * 3600e3);
     const r = revisorFixo(t, conversando); let novo = r.texto; const feitos = r.feitos.slice();
@@ -2484,16 +2512,17 @@ function rotinaPermitida(jid, tipo) {
   if (etiquetasDe(jid).some(e => /pausad|perdid|desist|fechad|finaliz|comprou|corretor|constru|capta|pessoa|negocia/.test(semAcento(e.nome)))) return false;
   return true;
 }
+const RE_SO_OK = /^(certo|ok+|okay|blz|beleza|ta|ta bom|ta certo|tudo bem|entendi|hum+|uhum|aham|show|top|legal|sim|isso|\p{Extended_Pictographic}+)[\s.!]*$/iu;   // resposta de uma palavra que não pede nada
 function conversaParada(jid) {   // última mensagem (sem contar avisos internos) foi da assistente e o cliente não respondeu
-  const l = lerEsp(jid); let ult = null, ultCli = 0, agenda = false;
+  const l = lerEsp(jid); let ult = null, ultCli = 0, agenda = false, ack = 0;
   for (let i = l.length - 1; i >= 0; i--) {
     const m = l[i];
-    if (m.autor === 'cliente') { ultCli = m.ts; break; }
+    if (m.autor === 'cliente') { if (!ult && !ack && RE_SO_OK.test(semAcento(String(m.texto || '')).trim())) { ack = m.ts; continue; } ultCli = m.ts; break; }   // 17/11/2026: "Certo" da Antonia ficou sem resposta e sem retomada
     if (m.autor === 'aviso') continue;
     if (!ult) ult = m;
     if (m.autor === 'ia' && /make\.com|marque seu hor[aá]rio/i.test(m.texto || '')) agenda = true;
   }
-  return ult && ult.autor === 'ia' && ultCli && ult.ts > ultCli ? { ultIa: ult.ts, ultCli, agenda, jaRetomou: !!ult.rotina } : null;
+  return ult && ult.autor === 'ia' && ultCli && ult.ts > ultCli ? { ultIa: ack || ult.ts, ultCli: ack || ultCli, agenda, jaRetomou: !ack && !!ult.rotina } : null;
 }
 async function verificarRotinas() {
   if (!ROTINAS || rotinas.rodando || !sock || !conectado || !API_KEY) return;
@@ -2527,7 +2556,7 @@ async function verificarRotinas() {
     if (janela && dentroRetomada()) {
       for (const jid of Object.keys(chats)) {
         const c = chats[jid];
-        if (!['ia', 'aviso'].includes(c.ultAutor) || !c.ult || agora - c.ult > 22 * 3600e3 || agora - c.ult < 2 * 3600e3) continue;
+        if (!(['ia', 'aviso'].includes(c.ultAutor) || (c.ultAutor === 'cliente' && RE_SO_OK.test(semAcento(String(c.ultTexto || '')).trim()))) || !c.ult || agora - c.ult > 22 * 3600e3 || agora - c.ult < 2 * 3600e3) continue;
         if ((estado.visitas || {})[jid]) continue;            // tem visita marcada: quem cuida são os lembretes
         if ((estado.retornos || {})[jid]) continue;           // tem retorno combinado: ela chama na hora marcada, não antes
         const p = conversaParada(jid); if (!p || p.jaRetomou) continue;
@@ -2615,7 +2644,9 @@ const spDe = (ms) => new Date(ms - 3 * 3600e3);   // Joinville é UTC-3 (sem hor
 const fuDia = (ms) => spDe(ms).toISOString().slice(0, 10);
 function fuUltimoEnvio() { let t = 0; for (const v of Object.values(fu)) if ((v.enviadoEm || 0) > t) t = v.enviadoEm; return t; }
 function fuEnviadosHoje() { const h = fuDia(Date.now()); return Object.values(fu).filter(v => v.enviadoEm && fuDia(v.enviadoEm) === h).length; }
-function fuFilaAprovada() { return Object.values(fu).filter(v => v.status === 'aprovado').sort((a, b) => (b.prioridade || 0) - (a.prioridade || 0) || (a.aprovadoEm || 0) - (b.aprovadoEm || 0)); }
+// Quem está em "Remarcar visita" no CRM sai antes dos perdidos (pedido do Djhonata, 17/11/2026: já agendaram uma vez, estão mais quentes).
+const fuQuente = (v) => ((estado.crmStatus || {})[String(v.tel8 || v.tel || '').replace(/\D/g, '').slice(-8)] === 'novo' ? 1 : 0);
+function fuFilaAprovada() { return Object.values(fu).filter(v => v.status === 'aprovado').sort((a, b) => (b.prioridade || 0) - (a.prioridade || 0) || fuQuente(b) - fuQuente(a) || (a.aprovadoEm || 0) - (b.aprovadoEm || 0)); }
 function fuNaJanela(ms) { const d = spDe(ms), m = d.getUTCHours() * 60 + d.getUTCMinutes(); return m >= minutos(FU_INI) && m <= fuFimDoDia(d.getUTCDay()); }
 function fuProximaAbertura(ms) {   // próximo 9h (segunda a sábado) depois de ms
   const d = spDe(ms); let t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 9 + 3, 0);
