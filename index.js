@@ -1202,6 +1202,9 @@ const acaso = (a, b) => a + Math.floor(Math.random() * (b - a));
 function tel8De(jid, tel) { return String(tel || (chats[jid] || {}).telefone || (pnDe(jid) || '').split('@')[0] || '').replace(/\D/g, '').slice(-8); }
 function podeResponder(jid, tel) {   // ligada para todos, ou modo teste e é o número de teste; e não pausada nessa conversa
   if ((estado.pausas[jid] || 0) > Date.now()) return false;
+  // 18/11/2026 (Djhonata, cliente Jairo): a trava do CRM tem que valer na hora. O CRM manda a lista de telefones travados assim que o card muda
+  // (arrastou para Em negociação, marcou o cadeado, desistiu, fechado...), sem esperar a sincronização do computador do escritório.
+  if ((estado.travaCrm || []).length) { const t8 = tel8De(jid, tel); if (t8.length === 8 && estado.travaCrm.includes(t8)) return false; }
   if (estado.teste && estado.teste.ativo) return ehNumeroTeste(jid, tel);
   return !!estado.ativo;
 }
@@ -3670,6 +3673,15 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const tx = String(b.texto || '').trim(), d = /^\d+$/.test(tx) ? Number(tx) : Date.parse(tx);
           if (!d) return json(res, { erro: 'diga desde quando' }, 400);
           return json(res, Object.assign({ ok: true }, responderPausados(d, 'pedido do Djhonata')));
+        } else if (ac === 'travar_lista') {   // 18/11/2026: lista completa de finais (8 dígitos) travados no CRM, mandada pelo CRM na hora em que o card muda
+          let l = []; try { l = JSON.parse(String(b.texto || '[]')); } catch (e) { return json(res, { erro: 'lista inválida' }, 400); }
+          l = [...new Set((Array.isArray(l) ? l : []).map(x => String(x).replace(/\D/g, '').slice(-8)).filter(x => x.length === 8))].sort();
+          const antes = new Set(estado.travaCrm || []), novos = l.filter(t => !antes.has(t));
+          estado.travaCrm = l; estado.travaCrmEm = Date.now(); salvarEstado();
+          let cortadas = 0;
+          if (novos.length) for (const j of Object.keys(chats)) { const t8 = tel8De(j); if (t8 && novos.includes(t8) && filas.has(j)) { filas.delete(j); cortadas++; } }
+          if (novos.length) log('trava do CRM: travou', novos.length, 'telefone(s)', cortadas ? '(' + cortadas + ' resposta(s) na fila cancelada(s))' : '');
+          return json(res, { ok: true, travados: l.length, novos: novos.length, cortadas });
         } else if (ac === 'ia_conversa') {
           if (!jidValido(jid)) return json(res, { erro: 'conversa inválida' }, 400);
           if (b.on) delete estado.pausas[jid]; else { estado.pausas[jid] = Date.now() + 3650 * 864e5; filas.delete(jid); }
