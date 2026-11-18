@@ -3597,6 +3597,37 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
             await new Promise(r => setTimeout(r, 2));
           }
           return json(res, { ok: true, conversas: lista.length, texto: partes.join('\n\n') });
+        } else if (ac === 'meu_jeito') {   // 18/11/2026 (Djhonata): tudo o que ELE escreveu/gravou para clientes (autor celular), para a assistente aprender o jeito dele. texto = {desde, ate, pagina, transcrever}
+          let o = {}; try { o = JSON.parse(b.texto || '{}'); } catch (e) { }
+          const desde = Number(o.desde) || Date.parse(o.desde || '') || 0, ate = Number(o.ate) || Date.parse(o.ate || '') || Date.now(), pag = Math.max(0, Number(o.pagina) || 0), maxT = Math.min(20, Math.max(0, Number(o.transcrever) || 0));
+          const hm = (t) => new Date(t - 3 * 3600e3).toISOString().slice(0, 16).replace('T', ' ');
+          const linhas = []; let audios = 0, audiosSemArquivo = 0, audiosTranscritos = 0, transcritosAgora = 0;
+          for (const j of Object.keys(chats)) {
+            if (!jidValido(j) || ehDono(pnDe(j) || j)) continue;
+            const ms = lerEsp(j); if (!ms.some(m => m.autor === 'celular' && m.ts >= desde && m.ts <= ate)) continue;
+            const nome = String(chatPublico(j).nome || '').split(/\s+/)[0] || 'cliente';
+            let antes = '';
+            for (const m of ms) {
+              if (m.autor === 'cliente') { antes = String(m.texto || (m.tipo !== 'text' ? '[' + m.tipo + ']' : '')).replace(/\s+/g, ' ').slice(0, 160); continue; }
+              if (m.autor !== 'celular' || m.ts < desde || m.ts > ate) continue;
+              let t = String(m.texto || '').replace(/\s+/g, ' ').trim();
+              if (m.tipo === 'audio') {
+                audios++;
+                if (!t && m.arquivo && transcritosAgora < maxT) {
+                  try { const f = path.join(MIDIA, path.basename(m.arquivo)); const tr = await transcrever(fs.readFileSync(f), 'audio/ogg'); if (tr) { t = tr; transcritosAgora++; registrarEspelho(j, { id: m.id, autor: 'celular', tipo: 'audio', texto: tr, transc: true, ts: m.ts }, { silencioso: true }); } } catch (e) { }
+                }
+                if (t) audiosTranscritos++; else if (!m.arquivo) audiosSemArquivo++;
+                t = t ? '[áudio] ' + t : (m.arquivo ? '[áudio ainda sem transcrição]' : '[áudio sem arquivo no servidor]');
+              } else if (m.tipo !== 'text') { if (/^(video|image|document)$/.test(m.tipo) && t.length > 60) continue; t = '[' + m.tipo + '] ' + t; }
+              if (!t) continue;
+              linhas.push({ ts: m.ts, l: hm(m.ts) + ' | ' + nome + (antes ? ' | cliente: ' + antes : '') + '\n  EU: ' + t.slice(0, 2500) });
+              antes = '';
+            }
+            await new Promise(r => setTimeout(r, 1));
+          }
+          linhas.sort((a, b) => a.ts - b.ts);
+          const POR = 400, total = linhas.length, fatia = linhas.slice(pag * POR, (pag + 1) * POR);
+          return json(res, { ok: true, total, pagina: pag, paginas: Math.ceil(total / POR), audios, audiosTranscritos, audiosSemArquivo, transcritosAgora, texto: fatia.map(x => x.l).join('\n') });
         } else if (ac === 'sinais') {   // sinais de cada conversa dos últimos N dias (texto = dias), para a pontuação "Quentes" do CRM
           const dias = Math.min(120, Math.max(1, Number(b.texto) || 45)), desde = Date.now() - dias * 864e5, tels = {};
           let k = 0;
