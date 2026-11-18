@@ -252,7 +252,19 @@ function horaDoConvite(jid) {
   } catch (e) { }
   return '';
 }
+// Economia (pedido do Djhonata, 18/11/2026): na conversa com o próprio Djhonata (WhatsApp pessoal) vai um pacote LEVE de instruções,
+// sem catálogo e sem as regras de atendimento de cliente (ele não é cliente). As ferramentas continuam as mesmas (ficha, agenda, CRM, mandar ao cliente).
+const SISTEMA_DONO = `# VOCÊ É A ASSISTENTE DO DJHONATA, FALANDO COM ELE (o chefe), NO WHATSAPP PESSOAL DELE
+O Djhonata é corretor da Euro Consultoria Imobiliária (Joinville). Você atende os clientes dele no WhatsApp falando como ele, em primeira pessoa. Agora quem escreve é o PRÓPRIO Djhonata: ele não é cliente.
+- Responda a ele curto e direto, em português do Brasil, sem formalidade. Sua resposta em texto vai para o WhatsApp dele; para mais de uma mensagem, use uma linha só com --- entre elas. Se não precisar responder, escreva só NO_REPLY.
+- Nunca se apresente, não mande agenda, endereço, oferta nem material para ele, e não pergunte "qual imóvel" como se fosse cliente. Mensagens antigas desta conversa em que ele testou fingindo ser cliente: ignore. Nunca fale com o Djhonata como se ele fosse cliente.
+- Quando ele pedir algo para um cliente (ex.: "fala pra ele que aposentado também pode", "manda a planta pro João"), descubra de qual cliente é (nome ou número que ele citou; se não citou, o último aviso listado abaixo; na dúvida pergunte curto: "É o Emerson (+55 47 9991-5821)?") e use mandar_ao_cliente. A mensagem ao cliente é escrita como o Djhonata: primeira pessoa, frases curtas e naturais, com o nome do cliente, sem copiar o texto dele ao pé da letra e sem os erros de digitação; emojis só ✅ e 🙏🏼; pode usar [[tts:...]] para áudio na voz dele. Em "combinado", resuma a orientação para valer nas próximas conversas com esse cliente. Depois responda a ele: "Feito! Mandei pro [nome]: [resumo]".
+- Se ele mandar só um link, arquivo, contato ou nome sem dizer o que fazer, pergunte curto o que ele quer ("Quer que eu mande esse link para o João?") e só mande depois que ele confirmar.
+- Perguntas sobre imóveis: use ler_ficha, imoveis_perto ou distancia. Sobre visitas e horários: agenda_visita (consultar) e a lista de visitas abaixo. Não invente dados; se não souber, diga que não achou.
+- Se ele pedir uma informação de cliente que você não tem aqui, diga isso em uma linha (ele vê tudo no CRM).
+- Áudio dele chega transcrito como [áudio do Djhonata, transcrito]: "...". Responda ao conteúdo normalmente.`;
 function sistema(ctx) {
+  if (ctx.dono && !(estado.teste && estado.teste.ativo)) return sistemaDono(ctx);
   const partes = [ADAPTADOR];
   for (const f of ARQS_REGRAS) {
     let t = lerTexto(f);
@@ -310,6 +322,17 @@ Esta conversa pode ter mensagens antigas de quando ele testou a assistente fingi
     }
   }
   return [{ type: 'text', text: fixo, cache_control: { type: 'ephemeral' } }, { type: 'text', text: din }];
+}
+function sistemaDono(ctx) {
+  const d = agoraSP();
+  let din = `Agora: ${d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}, ${d.toTimeString().slice(0, 5)} (horário de Joinville).`;
+  if (!ELEVEN_KEY) din += `\nÁudio com a voz do Djhonata: indisponível agora (não use [[tts:...]]).`;
+  const av = (estado.avisos || []).slice(-8).reverse().map(a => `- ${new Date(a.ts).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}: ${a.nome || 'sem nome'} (${a.telefone ? formatoBR(a.telefone) : 'sem número'}) — ${String(a.texto || '').slice(0, 220)}`).join('\n');
+  din += `\nÚltimos avisos que você mandou ao Djhonata (o mais recente primeiro):\n${av || '(nenhum)'}`;
+  const vis = Object.entries(estado.visitas || {}).map(([j, v]) => ({ j, v, T: quandoMs(v.q) })).filter(x => x.T > Date.now() - 3600e3).sort((a, b) => a.T - b.T).slice(0, 15)
+    .map(x => { const c = chatPublico(x.j); return `- ${descreverQuando(x.v.q)}: ${c.nome || 'sem nome'} (${c.telefone ? formatoBR(c.telefone) : 'sem número'})${x.v.local ? ' · NO IMÓVEL: ' + x.v.local : ''}`; }).join('\n');
+  din += `\nVisitas marcadas que o sistema conhece (próximas):\n${vis || '(nenhuma)'}`;
+  return [{ type: 'text', text: SISTEMA_DONO, cache_control: { type: 'ephemeral' } }, { type: 'text', text: din }];
 }
 
 // ---------- ferramentas ----------
@@ -2143,7 +2166,8 @@ function ligarOuPausar(on, quem) {
 }
 
 function montarMensagens(jid, imagens, rotina) {
-  const h = lerConv(jid).slice(-40);
+  const todas = lerConv(jid), h = todas.slice(-24);   // 18/11/2026 (Djhonata): 24 últimas mensagens (era 40); das mais antigas vai só o que o cliente disse, encurtado
+  const antigas = todas.slice(-80, -24).filter(it => it.role !== 'assistant').map(it => String(it.texto || '').replace(/\s+/g, ' ').slice(0, 160)).filter(Boolean);
   const msgs = [];
   for (const it of h) {
     const role = it.role === 'assistant' ? 'assistant' : 'user';
@@ -2152,6 +2176,7 @@ function montarMensagens(jid, imagens, rotina) {
     else msgs.push({ role, content: [{ type: 'text', text: txt }] });
   }
   while (msgs.length && msgs[0].role !== 'user') msgs.shift();
+  if (antigas.length && msgs.length) { let r = antigas.join(' | '); if (r.length > 1500) r = '…' + r.slice(-1500); msgs[0].content[0].text = `(Mensagens mais antigas desta pessoa, encurtadas, só para contexto: ${r})\n\n` + msgs[0].content[0].text; }
   if (rotina) {   // rotina automática (lembrete/retomada): instrução do sistema no fim, como última "mensagem"
     if (msgs.length && msgs[msgs.length - 1].role === 'user') msgs[msgs.length - 1].content[0].text += '\n\n' + rotina;
     else msgs.push({ role: 'user', content: [{ type: 'text', text: rotina }] });
