@@ -3626,7 +3626,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
             await new Promise(r => setTimeout(r, 1));
           }
           linhas.sort((a, b) => a.ts - b.ts);
-          const POR = 400, total = linhas.length, fatia = linhas.slice(pag * POR, (pag + 1) * POR);
+          const POR = Math.min(20000, Math.max(50, Number(o.por) || 400)), total = linhas.length, fatia = linhas.slice(pag * POR, (pag + 1) * POR);
           return json(res, { ok: true, total, pagina: pag, paginas: Math.ceil(total / POR), audios, audiosTranscritos, audiosSemArquivo, transcritosAgora, texto: fatia.map(x => x.l).join('\n') });
         } else if (ac === 'sinais') {   // sinais de cada conversa dos últimos N dias (texto = dias), para a pontuação "Quentes" do CRM
           const dias = Math.min(120, Math.max(1, Number(b.texto) || 45)), desde = Date.now() - dias * 864e5, tels = {};
