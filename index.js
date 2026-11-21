@@ -3616,10 +3616,10 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           b._resultado = r;
         } else if (ac === 'conversas') {   // exporta as conversas de clientes em texto compacto, para análise (texto = {desde, limite, msgs})
           let o = {}; try { o = JSON.parse(b.texto || '{}'); } catch (e) { }
-          const desde = Number(o.desde) || Date.parse(o.desde || '') || Date.now() - 3 * 864e5, lim = Math.min(120, Number(o.limite) || 60), nMsgs = Math.min(80, Number(o.msgs) || 40);
+          const desde = Number(o.desde) || Date.parse(o.desde || '') || Date.now() - 3 * 864e5, ate = Number(o.ate) || Date.parse(o.ate || '') || 0, lim = Math.min(120, Number(o.limite) || 60), nMsgs = Math.min(80, Number(o.msgs) || 40);
           const bloq = lerBloqueados(), hm = (t) => new Date(t - 3 * 3600e3).toISOString().slice(5, 16).replace('T', ' ');
           const lista = Object.keys(chats).filter(j => jidValido(j) && (chats[j].ultCliente || 0) >= desde).map(j => ({ j, p: chatPublico(j) }))
-            .filter(x => x.p.telefone && !bloq.has(normal(x.p.telefone)) && normal(x.p.telefone) !== normal(DONO)).sort((a, b) => (b.p.ult || 0) - (a.p.ult || 0)).slice(0, lim);
+            .filter(x => x.p.telefone && !bloq.has(normal(x.p.telefone)) && normal(x.p.telefone) !== normal(DONO) && (!ate || (x.p.ult || 0) <= ate)).sort((a, b) => (b.p.ult || 0) - (a.p.ult || 0)).slice(0, lim);
           const partes = [];
           for (const x of lista) {
             const t8 = String(x.p.telefone).replace(/\D/g, '').slice(-8), c = chats[x.j] || {};
@@ -3919,7 +3919,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
         else if (ac === 'diag') {
           const lids = Object.keys(chats).filter(j => j.endsWith('@lid'));
           let bl = ''; try { bl = fs.readFileSync(path.join(DADOS, 'baileys.log'), 'utf8').split('\n').slice(-25).map(l => { try { const o = JSON.parse(l); return (o.msg || '') + ' ' + JSON.stringify(o.err ? o.err.message : (o.error || '')).slice(0, 200); } catch (e) { return l.slice(0, 200); } }).join('\n'); } catch (e) { }
-          return json(res, { baileys: bl, etiquetas: etq.labels, etiquetando, temAddLabel: !!(sock && typeof sock.addLabel === 'function'), chats: Object.keys(chats).length, lids: lids.length, lidsComTelefone: lids.filter(j => lidPn[j] || chats[j].telefone).length, mapa: Object.keys(lidPn).length, contatos: Object.keys(contatos).length, temLidMapping: !!(sock && sock.signalRepository && sock.signalRepository.lidMapping) });
+          return json(res, { baileys: bl, etiquetas: etq.labels, equipe: estado.equipe || [], etiquetando, temAddLabel: !!(sock && typeof sock.addLabel === 'function'), chats: Object.keys(chats).length, lids: lids.length, lidsComTelefone: lids.filter(j => lidPn[j] || chats[j].telefone).length, mapa: Object.keys(lidPn).length, contatos: Object.keys(contatos).length, temLidMapping: !!(sock && sock.signalRepository && sock.signalRepository.lidMapping) });
         }
         else if (ac === 'avisos') {   // dúvidas de clientes que a assistente anotou para o Djhonata responder (não foram para o celular dele)
           return json(res, { ok: true, avisos: (estado.avisos || []).filter(a => a.tipo === 'duvida' && !a.feito).slice(-40).reverse() });
