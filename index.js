@@ -2187,6 +2187,10 @@ function montarMensagens(jid, imagens, rotina) {
   return msgs;
 }
 
+// 22/11/2026: emoji cortado no meio (metade de um par UTF-16) quebrava o JSON da API ("unexpected end of hex escape") e o cliente ficava sem resposta
+function jsonLimpo(o) {
+  return JSON.stringify(o).replace(/(^|[^\\])((?:\\\\)*)\\u(d[89ab][0-9a-f]{2})(?!\\ud[c-f][0-9a-f]{2})/gi, '$1$2').replace(/(^|[^\\])((?:\\\\)*)(\\ud[89ab][0-9a-f]{2})?\\u(d[c-f][0-9a-f]{2})/gi, (m, a, b, alto) => alto ? m : a + b);
+}
 async function claude(system, messages, ferramentas = FERRAMENTAS) {
   for (let tentativa = 0; tentativa < 3; tentativa++) {
     let r;
@@ -2195,7 +2199,7 @@ async function claude(system, messages, ferramentas = FERRAMENTAS) {
         method: 'POST',
         headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
         // a IA pensa antes de responder: 1500 era pouco e às vezes acabava só pensando (max_tokens)
-        body: JSON.stringify({ model: MODELO, max_tokens: 4000, system, tools: ferramentas, messages })
+        body: jsonLimpo({ model: MODELO, max_tokens: 4000, system, tools: ferramentas, messages })
       });
     } catch (e) {   // internet do servidor oscilou ("fetch failed"): tenta de novo
       log('erro de rede com a IA', e.message, 'tentativa', tentativa + 1);
@@ -3059,7 +3063,7 @@ async function arquivarChat(jid, arquivar) {
 // (foi o que dava "a IA não devolveu o JSON" no follow-up). Por isso o piso de 5.000 tokens: só se paga o que for usado.
 async function claudeTexto(system, texto, maxTokens = 3000, temperatura) {
   for (let t = 0; t < 3; t++) {
-    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: JSON.stringify(Object.assign({ model: MODELO, max_tokens: Math.max(maxTokens, 5000), system, messages: [{ role: 'user', content: texto }] }, temperatura === undefined ? {} : { temperature: temperatura })) });
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: jsonLimpo({ model: MODELO, max_tokens: Math.max(maxTokens, 5000), system, messages: [{ role: 'user', content: texto }] }) });
     if (r.ok) { const j = await r.json(); if (j.usage) registrarUso(j.usage); return (j.content || []).map(x => x.text || '').join(''); }
     if (![429, 500, 502, 503, 529].includes(r.status)) throw new Error('API ' + r.status + ' ' + (await r.text()).slice(0, 200));
     await new Promise(res => setTimeout(res, 5000 * (t + 1)));
