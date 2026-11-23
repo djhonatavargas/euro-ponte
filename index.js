@@ -3061,8 +3061,9 @@ function catArquivo(jid) {
   const t = tel8Chat(jid), agora = Date.now(), uc = ultCli(jid);
   const etqs = etiquetasDe(jid).map(e => semAcento(e.nome));
   if (etqs.some(n => /import/.test(n))) return '';
-  if (filas.has(jid) || ocupado.has(jid) || (estado.visitas || {})[jid] || (c.naoLidas || 0) > 0) return '';
+  if (filas.has(jid) || ocupado.has(jid) || (estado.visitas || {})[jid]) return '';
   if (uc && agora - uc < 864e5) return '';
+  if (c.ultAutor === 'cliente' && uc && agora - uc < 3 * 864e5) return '';   // o cliente falou por último há menos de 3 dias: fica
   if (t && (estado.equipe || []).includes(t)) return 'corretor';
   const s = t ? (estado.crmStatus || {})[t] || '' : '';
   if (['visita', 'negociacao', 'novo', 'atendimento'].includes(s)) return '';
@@ -3081,7 +3082,7 @@ const autoArq = { rodando: false };
 async function arquivarAutomatico(simular) {
   const porCat = {}, alvos = [];
   for (const jid of Object.keys(chats)) { const k = catArquivo(jid); if (k) { porCat[k] = (porCat[k] || 0) + 1; alvos.push(jid); } }
-  if (simular) return { total: alvos.length, porCat };
+  if (simular) { const fica = {}; for (const jid of Object.keys(chats)) { const c = chats[jid] || {}; if (c.arquivado || catArquivo(jid)) continue; const t = tel8Chat(jid); const s = t ? (estado.crmStatus || {})[t] || 'sem card' : 'sem telefone'; fica[s] = (fica[s] || 0) + 1; } return { total: alvos.length, porCat, ficam: fica }; }
   if (autoArq.rodando || !sock || !conectado) return { total: 0, porCat, erro: 'ocupado ou desconectado' };
   autoArq.rodando = true; let feitos = 0, falhas = 0;
   try { for (const jid of alvos.slice(0, 400)) { if (!sock || !conectado) break; if (!catArquivo(jid)) continue; try { await arquivarChat(jid, true); feitos++; } catch (e) { falhas++; } await dorme(400); } }
