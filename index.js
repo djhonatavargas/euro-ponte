@@ -2819,8 +2819,33 @@ function fuResumo() {
   const prev = fuPrevisoes(), prox = Math.min(...Object.values(prev), Infinity);
   return { contagem, hoje: fuEnviadosHoje(), limiteDia: FU_DIA, gerando: (contagem.fila || 0) + (contagem.gerando || 0), proximo: isFinite(prox) ? prox : 0 };
 }
+// 23/11/2026 (Djhonata): última interação do cliente (qualquer mensagem, nossa ou dele) para o follow-up não repetir o que já foi mandado por pendência, oportunidade ou conversa.
+function fuUltima(x) {
+  try { const jid = acharJid(fuNumero(x.tel) + '@s.whatsapp.net'); if (!chats[jid]) return { em: 0, autor: '', texto: '' };
+    let em = 0, autor = '', texto = '';
+    for (const m of lerEsp(jid)) { if (m.autor === 'aviso' || m.tipo === 'reacao' || (m.ts || 0) <= em) continue; em = m.ts || 0; autor = m.followup ? 'followup' : m.autor; texto = String(m.texto || (m.tipo ? '[' + m.tipo + ']' : '')).replace(/\s+/g, ' ').slice(0, 90); }
+    const rc = ((estado.reacoesCli || {})[jid]) || 0; if (rc > em) { em = rc; autor = 'cliente'; texto = '[reagiu a uma mensagem]'; }
+    return { em, autor, texto };
+  } catch (e) { return { em: 0, autor: '', texto: '' }; }
+}
+function fuVarrer() {   // pronto ou programado que ficou velho: o cliente escreveu, ou nós mandamos algo depois que o texto foi preparado
+  let n = 0;
+  for (const x of Object.values(fu)) {
+    if (!['pronto', 'aprovado'].includes(x.status)) continue;
+    const t0 = x.geradoEm || x.criadoEm || 0, u = fuUltima(x); if (!u.em || u.em <= t0 + 1000 || u.autor === 'followup') continue;
+    if (u.autor === 'cliente') Object.assign(x, { status: 'cancelado', erro: 'o cliente escreveu em ' + quandoFoi(u.em) + ' (a conversa continua no atendimento)' });
+    else if (Date.now() - u.em < 7 * 864e5) Object.assign(x, { status: 'cancelado', erro: 'você já mandou mensagem em ' + quandoFoi(u.em) + ' (pendência, oportunidade ou conversa): não sai para não repetir. Use Atualizar depois de 7 dias' });
+    else Object.assign(x, { status: 'fila', tent: 0, erro: '' });
+    n++;
+  }
+  if (n) { salvarFu(); setTimeout(fuTrabalhar, 500); log('follow-up: varredura tirou ou refez', n); }
+  return n;
+}
+setInterval(() => { try { fuVarrer(); } catch (e) { log('follow-up varrer', e.message); } }, 10 * 60e3);
+setTimeout(() => { try { fuVarrer(); } catch (e) { } }, 90e3);
 function fuPublico(x, prev) {
-  return { tel8: x.tel8, tel: x.tel, id: x.id, nome: x.nome, status: x.status, decisao: x.decisao || '', motivo: x.motivo || '', analise: x.analise || '', mensagem: x.mensagem || '', prioridade: x.prioridade || 0, imovel: x.imovel || '', criadoEm: x.criadoEm, geradoEm: x.geradoEm || 0, aprovadoEm: x.aprovadoEm || 0, enviadoEm: x.enviadoEm || 0, respondeuEm: x.respondeuEm || 0, erro: x.erro || '', jid: x.jid || '', previsao: (prev && prev[x.tel8]) || 0 };
+  const u = fuUltima(x);
+  return { ultimaEm: u.em, ultimaAutor: u.autor, ultimaTexto: u.texto, velho: !!(u.em && u.em > (x.geradoEm || x.criadoEm || 0) + 1000 && u.autor !== 'followup'), tel8: x.tel8, tel: x.tel, id: x.id, nome: x.nome, status: x.status, decisao: x.decisao || '', motivo: x.motivo || '', analise: x.analise || '', mensagem: x.mensagem || '', prioridade: x.prioridade || 0, imovel: x.imovel || '', criadoEm: x.criadoEm, geradoEm: x.geradoEm || 0, aprovadoEm: x.aprovadoEm || 0, enviadoEm: x.enviadoEm || 0, respondeuEm: x.respondeuEm || 0, erro: x.erro || '', jid: x.jid || '', previsao: (prev && prev[x.tel8]) || 0 };
 }
 function fuEvento(x, novoStatus, resultado) {   // vai para o CRM pelo mesmo caminho dos eventos da assistente
   try { fs.appendFileSync(path.join(DADOS, 'eventos-crm.jsonl'), JSON.stringify({ rid: 'fu' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), telefone: formatoBR(fuNumero(x.tel)), nome: x.nome || '', novoStatus, resultado }) + '\n'); } catch (e) { }
@@ -3923,6 +3948,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           }
           return json(res, out);
         }
+        else if (ac === 'followup_varrer') { const n = fuVarrer(); return json(res, Object.assign({ ok: true, mudou: n }, fuResumo())); }
         else if (ac === 'followup_salvar') {   // {tel8 | tels:[...], acao: aprovar|cancelar|desaprovar, mensagem}
           let p = {}; try { p = JSON.parse(b.texto || '{}'); } catch (e) { }
           const tels = [...new Set((Array.isArray(p.tels) ? p.tels : [p.tel8]).map(fuT8))].filter(t => fu[t]);
@@ -3933,6 +3959,9 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
             if (p.acao === 'aprovar' && ['pronto', 'cancelado', 'erro'].includes(x.status) && x.mensagem) { Object.assign(x, { status: 'aprovado', aprovadoEm: Date.now(), erro: '' }); n++; }
             else if (p.acao === 'cancelar' && ['fila', 'pronto', 'aprovado', 'erro'].includes(x.status)) { Object.assign(x, { status: 'cancelado', erro: 'cancelado por você' }); n++; }
             else if (p.acao === 'desaprovar' && x.status === 'aprovado') { x.status = 'pronto'; n++; }
+            else if (p.acao === 'refazer' && ['pronto', 'aprovado', 'cancelado', 'erro'].includes(x.status)) {   // 23/11/2026: o Djhonata pede para a IA reescrever com a conversa de agora
+              if (p.crm && typeof p.crm === 'object') x.crm = Object.assign({}, x.crm || {}, { nome: String(p.crm.nome || '').slice(0, 80), bairro: String(p.crm.bairro || '').slice(0, 80), imovel: String(p.crm.imovel || '').slice(0, 160), proximo: String(p.crm.proximo || '').slice(0, 300), resumo: String(p.crm.resumo || '').slice(0, 1500), historico: String(p.crm.historico || '').slice(0, 1800), obs: String(p.crm.obs || '').slice(-900) });
+              Object.assign(x, { status: 'fila', tent: 0, erro: '', criadoEm: Date.now() }); n++; setTimeout(fuTrabalhar, 300); }
             else if (!p.acao) n++;
           }
           salvarFu();
