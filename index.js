@@ -4009,6 +4009,12 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
         else if (ac === 'avisos') {   // dúvidas de clientes que a assistente anotou para o Djhonata responder (não foram para o celular dele)
           return json(res, { ok: true, avisos: (estado.avisos || []).filter(a => a.tipo === 'duvida' && !a.feito).slice(-40).reverse() });
         }
+        else if (ac === 'simular') {   // 23/11/2026: o CRM pede a condição padrão de imóveis (pendências): texto = JSON [ref ou nome, ...]; devolve o bloco pronto de cada um
+          let lst = []; try { lst = JSON.parse(String(b.texto || '[]')); } catch (e) { }
+          if (!Array.isArray(lst)) lst = [lst];
+          const itens = lst.slice(0, 6).map(im => { try { const r = simularFluxo({ imovel: String(im) }); return r.erro ? { imovel: String(im), erro: r.erro } : { imovel: String(im), pasta: r.pasta, resumo: r.resumo, texto: r.texto }; } catch (e) { return { imovel: String(im), erro: e.message }; } });
+          return json(res, { ok: true, itens });
+        }
         else if (ac === 'avisos_limpar') { const n = limparDuvidas(); return json(res, { ok: true, saiu: n, ficam: (estado.avisos || []).filter(a => a.tipo === 'duvida' && !a.feito).length }); }
         else if (ac === 'aviso_feito') {   // texto = id do aviso: sai da lista
           const a = (estado.avisos || []).find(x => x.id && x.id === String(b.texto || '')); if (!a) return json(res, { erro: 'aviso não encontrado' }, 404);
