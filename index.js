@@ -3079,6 +3079,24 @@ function catArquivo(jid) {
   if (!s && agora - Math.max(uc || 0, c.ult || 0) > 7 * 864e5) return 'perdido';
   return '';
 }
+// Dúvidas anotadas para o Djhonata (23/11/2026): saem sozinhas da lista quando alguém responde na conversa (você pelo celular,
+// pelo CRM ou a assistente a teu pedido), quando o card vai para perdido, desistiu, pausado ou fechado, ou depois de 7 dias.
+function limparDuvidas() {
+  let n = 0; const agora = Date.now();
+  for (const a of estado.avisos || []) {
+    if (a.tipo !== 'duvida' || a.feito) continue;
+    const t8 = String(a.telefone || '').replace(/\D/g, '').slice(-8) || tel8Chat(a.jid);
+    const st = t8 ? (estado.crmStatus || {})[t8] || '' : '';
+    let motivo = '';
+    if (['perdido', 'desistiu', 'pausado', 'fechado'].includes(st)) motivo = 'card em ' + st;
+    else if (agora - (a.ts || 0) > 7 * 864e5) motivo = 'mais de 7 dias';
+    else if (a.jid && lerEsp(a.jid).some(m => (m.ts || 0) > (a.ts || 0) && (m.autor === 'voce' || m.autor === 'celular' || (m.autor === 'ia' && m.ordem)))) motivo = 'respondida na conversa';
+    if (motivo) { a.feito = agora; a.saiu = motivo; n++; }
+  }
+  if (n) { salvarEstado(); log('dúvidas resolvidas sozinhas', n); }
+  return n;
+}
+setInterval(() => { try { limparDuvidas(); } catch (e) { log('limpar dúvidas', e.message); } }, 30 * 60e3);
 const autoArq = { rodando: false };
 async function arquivarAutomatico(simular) {
   const porCat = {}, alvos = [];
@@ -3979,6 +3997,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
         else if (ac === 'avisos') {   // dúvidas de clientes que a assistente anotou para o Djhonata responder (não foram para o celular dele)
           return json(res, { ok: true, avisos: (estado.avisos || []).filter(a => a.tipo === 'duvida' && !a.feito).slice(-40).reverse() });
         }
+        else if (ac === 'avisos_limpar') { const n = limparDuvidas(); return json(res, { ok: true, saiu: n, ficam: (estado.avisos || []).filter(a => a.tipo === 'duvida' && !a.feito).length }); }
         else if (ac === 'aviso_feito') {   // texto = id do aviso: sai da lista
           const a = (estado.avisos || []).find(x => x.id && x.id === String(b.texto || '')); if (!a) return json(res, { erro: 'aviso não encontrado' }, 404);
           a.feito = Date.now(); salvarEstado(); return json(res, { ok: true });
