@@ -2776,7 +2776,7 @@ setInterval(() => verificarRotinas().catch(e => log('rotinas', e.message)), 2 * 
 // quentes para os mais frios, com uns 15 a 25 minutos entre um e outro. Quem disse que não quer, comprou com outro ou adiou
 // não recebe nada e vai para "Desistiu" no CRM. Se o cliente responder, o card vai para "Em atendimento" e a assistente continua.
 const FU_F = path.join(DADOS, 'followups.json');
-const FU_DIA = Number(ENV.FOLLOWUP_DIA || 30), FU_INI = '09:00', FU_FIM = '19:00', FU_FIM_SAB = '12:00';
+const FU_DIA = Number(ENV.FOLLOWUP_DIA || 50), FU_INI = '09:00', FU_FIM = '19:00', FU_FIM_SAB = '12:00';
 // Horário do follow-up (decisão do Djhonata, 12/11/2026): segunda a sexta das 9h às 19h, sábado das 9h às 12h; domingo não sai.
 const fuFimDoDia = (dow) => dow === 0 ? -1 : minutos(dow === 6 ? FU_FIM_SAB : FU_FIM);
 const fu = lerJson(FU_F, {});
@@ -2802,7 +2802,7 @@ function fuProximaAbertura(ms) {   // próximo 9h (segunda a sábado) depois de 
   return t;
 }
 function fuPrevisoes() {   // quando cada aprovado deve sair (estimativa: uns 20 minutos entre um e outro)
-  const out = {}; let t = Math.max(Date.now(), fuUltimoEnvio() + 20 * 60e3), dia = fuDia(t), noDia = dia === fuDia(Date.now()) ? fuEnviadosHoje() : 0;
+  const out = {}; let t = Math.max(Date.now(), fuUltimoEnvio() + 11 * 60e3), dia = fuDia(t), noDia = dia === fuDia(Date.now()) ? fuEnviadosHoje() : 0;
   for (const x of fuFilaAprovada()) {
     for (let g = 0; g < 500; g++) {
       if (fuDia(t) !== dia) { dia = fuDia(t); noDia = 0; }
@@ -2810,7 +2810,7 @@ function fuPrevisoes() {   // quando cada aprovado deve sair (estimativa: uns 20
       const d = spDe(t), m = d.getUTCHours() * 60 + d.getUTCMinutes();
       t = (d.getUTCDay() !== 0 && m < minutos(FU_INI) && noDia < FU_DIA) ? t + (minutos(FU_INI) - m) * 60e3 : fuProximaAbertura(t);
     }
-    out[x.tel8] = t; noDia++; t += 20 * 60e3;
+    out[x.tel8] = t; noDia++; t += 11 * 60e3;
   }
   return out;
 }
@@ -2952,11 +2952,11 @@ async function fuEnviar(x) {   // devolve 'enviado', 'cancelado' ou 'erro'
 async function fuEnviarProximo() {
   if (!sock || !conectado || !estado.ativo || (estado.teste && estado.teste.ativo) || !fuNaJanela(Date.now())) return;
   if (fuEnviadosHoje() >= FU_DIA) return;
-  if (!fuRun.proximoIntervalo) fuRun.proximoIntervalo = acaso(14, 26) * 60e3;
+  if (!fuRun.proximoIntervalo) fuRun.proximoIntervalo = acaso(8, 13) * 60e3;
   if (Date.now() - fuUltimoEnvio() < fuRun.proximoIntervalo) return;
   for (const x of fuFilaAprovada()) {
     let r = 'erro'; try { r = await fuEnviar(x); } catch (e) { log('follow-up: erro ao enviar', x.tel, e.message); }
-    if (r === 'enviado') { fuRun.proximoIntervalo = acaso(14, 26) * 60e3; return; }
+    if (r === 'enviado') { fuRun.proximoIntervalo = acaso(8, 13) * 60e3; return; }
     if (r === 'erro' && x.status === 'aprovado') return;   // erro passageiro (ex.: WhatsApp oscilou): tenta na próxima volta
   }
 }
