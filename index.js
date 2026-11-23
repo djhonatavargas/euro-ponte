@@ -4072,6 +4072,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
         }
         else if (ac === 'rascunho') {   // texto = JSON { chave, oque, pergunta, mensagem } (pedir) ou { chave } (buscar o resultado)
           let p = {}; try { p = JSON.parse(String(b.texto || '{}')); } catch (e) { }
+          if (Array.isArray(p.chaves)) { const out = {}; for (const k of p.chaves.slice(0, 100)) if (rascunhos.prontos[k]) out[k] = rascunhos.prontos[k]; return json(res, { prontos: out, naFila: rascunhos.fila.length, rodando: rascunhos.rodando }); }   // várias de uma vez (economiza operação do Make)
           const chave = String(p.chave || '').slice(0, 60); if (!chave) return json(res, { erro: 'falta a chave' }, 400);
           const pronto = rascunhos.prontos[chave];
           if (pronto && !p.refazer) return json(res, Object.assign({ pronto: true }, pronto));
