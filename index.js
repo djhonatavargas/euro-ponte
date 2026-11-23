@@ -2463,7 +2463,7 @@ async function rascunhoTrabalhar() {   // até 3 ao mesmo tempo
   while (rascunhos.ativos < 3 && rascunhos.fila.length) {
     const it = rascunhos.fila.shift(); rascunhos.ativos++; rascunhos.rodando = true;
     (async () => {
-      try { const t = await rascunhoFazer(it); rascunhos.prontos[it.chave] = { ok: !!t, mensagem: t, em: Date.now() }; }
+      try { const t = await rascunhoFazer(it); rascunhos.prontos[it.chave] = { ok: !!t, mensagem: semDiminutivo(t), em: Date.now() }; }
       catch (e) { rascunhos.prontos[it.chave] = { ok: false, erro: e.message, em: Date.now() }; log('rascunho', it.chave, e.message); }
       finally { rascunhos.ativos--; rascunhos.rodando = rascunhos.ativos > 0; rascunhoTrabalhar(); }
     })();
@@ -2836,16 +2836,18 @@ function fuUltima(x) {
   } catch (e) { return { em: 0, autor: '', texto: '' }; }
 }
 function fuVarrer() {   // pronto ou programado que ficou velho: o cliente escreveu, ou nós mandamos algo depois que o texto foi preparado
-  let n = 0;
+  let n = 0, limpos = 0;
   for (const x of Object.values(fu)) {
     if (!['pronto', 'aprovado'].includes(x.status)) continue;
+    { const m2 = semDiminutivo(x.mensagem || ''); if (m2 !== (x.mensagem || '')) { x.mensagem = m2; limpos++; } }   // 23/11/2026 (Djhonata): nada de diminutivo, nem nos textos já preparados
+    { const stc = (estado.crmStatus || {})[x.tel8]; if (['semperfil', 'desistiu', 'fechado', 'pausado', 'corretor', 'construtor', 'pessoal'].includes(stc)) { Object.assign(x, { status: 'cancelado', erro: 'o card está em ' + stc + ' no CRM: não recebe follow-up' }); n++; continue; } }
     const t0 = x.geradoEm || x.criadoEm || 0, u = fuUltima(x); if (!u.em || u.em <= t0 + 1000 || u.autor === 'followup') continue;
     if (u.autor === 'cliente') Object.assign(x, { status: 'cancelado', erro: 'o cliente escreveu em ' + quandoFoi(u.em) + ' (a conversa continua no atendimento)' });
     else if (Date.now() - u.em < 7 * 864e5) Object.assign(x, { status: 'cancelado', erro: 'você já mandou mensagem em ' + quandoFoi(u.em) + ' (pendência, oportunidade ou conversa): não sai para não repetir. Use Atualizar depois de 7 dias' });
     else Object.assign(x, { status: 'fila', tent: 0, erro: '' });
     n++;
   }
-  if (n) { salvarFu(); setTimeout(fuTrabalhar, 500); log('follow-up: varredura tirou ou refez', n); }
+  if (n || limpos) { salvarFu(); setTimeout(fuTrabalhar, 500); log('follow-up: varredura tirou ou refez', n, limpos ? '| textos sem diminutivo ' + limpos : ''); }
   return n;
 }
 setInterval(() => { try { fuVarrer(); } catch (e) { log('follow-up varrer', e.message); } }, 10 * 60e3);
@@ -2878,6 +2880,7 @@ ${conversa || '(não há conversa deste cliente neste WhatsApp: use só os dados
 O QUE FAZER
 1) Decida:
 - "desistiu": o cliente disse claramente que não quer mais, que já comprou (com outro corretor, imobiliária ou construtora), pediu para não receber mais mensagens, ou adiou ("agora não", "vou deixar para frente", "sem condições no momento"). Não escreva mensagem.
+- "sem_perfil": pelas regras SEM PERFIL AGORA e TERRENO E PERMUTA (renda bruta somada abaixo de R$ 4 mil, só consegue pagar uns R$ 500 por mês, quer imóvel fora de Joinville, ou só quer vender terreno/imóvel sem permuta). Só use se isso estiver dito na conversa ou no CRM. Não escreva mensagem.
 - "nao_cliente": é corretor, construtor, fornecedor, contato pessoal, ou a conversa não é sobre comprar imóvel. Não escreva mensagem.
 - "enviar": nos outros casos.
 2) Se for "enviar", escreva UMA mensagem de WhatsApp curta (no máximo 3 frases), na voz do Djhonata, em primeira pessoa, retomando de onde parou, com o gancho que mais pode converter este cliente:
@@ -2887,7 +2890,7 @@ O QUE FAZER
  Termine com uma pergunta simples que convide a responder. Não prometa mandar nada depois ("vou separar as fotos", "confirmo e te falo"): se citar um imóvel, as fotos dele precisam existir para mandar quando ele pedir. Não diga que ele sumiu, que parou de responder ou que é um follow-up. Não mande link nem agenda nesta mensagem (se ele responder, a conversa continua). Só use 🙏🏼 (agradecer) ou ✅ (confirmar) como emoji, nunca 👍, sem negrito e sem lista. Chame pelo primeiro nome só se for nome de pessoa (do CRM ou dito na conversa). Se nunca conversaram neste WhatsApp, apresente-se em poucas palavras ("aqui é o Djhonata, da Euro Consultoria"). Se a última mensagem da conversa já é do Djhonata e ficou sem resposta (ex.: "Estou com imóveis novos em Joinville. Qual bairro você busca?"), não repita a mesma ideia: traga algo concreto e novo.
 3) Prioridade de 1 a 5: 5 = muito quente (marcou visita, pediu simulação, perguntou de entrada ou financiamento com os dados dele, gostou de um imóvel); 3 = pediu informações e conversou; 1 = só a primeira mensagem do anúncio, sem conversa.
 Responda SOMENTE com um JSON válido, sem texto antes ou depois:
-{"decisao": "enviar|desistiu|nao_cliente", "motivo": "frase curta", "analise": "1 ou 2 frases: o que ele procurava, onde parou e qual gancho você usou", "prioridade": 1, "imovel": "imóvel citado ou vazio", "mensagem": "texto da mensagem ou vazio"}`;
+{"decisao": "enviar|desistiu|sem_perfil|nao_cliente", "motivo": "frase curta", "analise": "1 ou 2 frases: o que ele procurava, onde parou e qual gancho você usou", "prioridade": 1, "imovel": "imóvel citado ou vazio", "mensagem": "texto da mensagem ou vazio"}`;
 }
 async function fuGerarUm(x) {
   x.status = 'gerando'; x.tent = (x.tent || 0) + 1;
@@ -2898,14 +2901,15 @@ async function fuGerarUm(x) {
     const i = txt.indexOf('{'), j = txt.lastIndexOf('}'); if (i < 0 || j < i) { log('follow-up: resposta sem JSON', x.tel, JSON.stringify(String(txt).slice(0, 160))); throw new Error('a IA não devolveu o JSON'); }
     const r = JSON.parse(txt.slice(i, j + 1));
     if (x.status !== 'gerando') return;   // cancelado enquanto a IA pensava (ex.: o cliente voltou a escrever)
-    const dec = ['enviar', 'desistiu', 'nao_cliente'].includes(r.decisao) ? r.decisao : 'enviar';
+    const semPerfil = r.decisao === 'sem_perfil', dec = semPerfil ? 'desistiu' : ['enviar', 'desistiu', 'nao_cliente'].includes(r.decisao) ? r.decisao : 'enviar';
     Object.assign(x, { decisao: dec, motivo: String(r.motivo || '').slice(0, 300), analise: String(r.analise || '').slice(0, 700), prioridade: Math.max(1, Math.min(5, Math.round(Number(r.prioridade) || 1))), imovel: String(r.imovel || '').slice(0, 120), geradoEm: Date.now(), erro: '', jid: temChat ? jid : '' });
     if (dec === 'enviar') {
       const msg = String(r.mensagem || '').trim(); if (!msg) throw new Error('a IA não escreveu a mensagem');
-      x.mensagem = msg.slice(0, 1200); x.status = 'pronto';
+      x.mensagem = semDiminutivo(msg).slice(0, 1200); x.status = 'pronto';
     } else {
       x.mensagem = ''; x.status = dec;
-      if (dec === 'desistiu') fuEvento(x, 'sem_interesse', 'Follow-up dos perdidos: ' + (x.motivo || 'disse que não quer mais'));
+      if (semPerfil) { x.motivo = 'Sem perfil: ' + (x.motivo || ''); fuEvento(x, 'sem_perfil', 'Follow-up dos perdidos: ' + x.motivo); }
+      else if (dec === 'desistiu') fuEvento(x, 'sem_interesse', 'Follow-up dos perdidos: ' + (x.motivo || 'disse que não quer mais'));
     }
   } catch (e) {
     x.erro = String(e.message || e).slice(0, 200);
@@ -2941,7 +2945,7 @@ async function fuEnviar(x) {   // devolve 'enviado', 'cancelado' ou 'erro'
   // Mensagem não entregue (17/11/2026): as últimas mensagens para este número ficaram só com um tique por 2 dias ou mais. Pode ter bloqueado, trocado de número ou estar sem WhatsApp: não gasta envio.
   { const dse = semEntregaDias(jid); if (dse) return fim('cancelado', 'as últimas mensagens não foram entregues há ' + dse + ' dias (pode ter bloqueado ou trocado de número)'); }
   if (lerBloqueados().has(num) || (estado.equipe || []).includes(x.tel8) || ehDono(num)) return fim('cancelado', 'número bloqueado para a assistente');
-  const texto = String(x.mensagem || '').trim(); if (!texto) return fim('erro', 'mensagem vazia');
+  const texto = semDiminutivo(String(x.mensagem || '').trim()); if (!texto) return fim('erro', 'mensagem vazia');
   if (!chats[jid]) {   // nunca conversou neste WhatsApp: confere se o número tem WhatsApp
     try { const [r] = await sock.onWhatsApp(num); if (!r || !r.exists) return fim('erro', 'esse número não tem WhatsApp'); if (r.jid) jid = acharJid(r.jid); } catch (e) { return 'erro'; }
   }
@@ -3186,7 +3190,7 @@ function limparDuvidas() {
     const t8 = String(a.telefone || '').replace(/\D/g, '').slice(-8) || tel8Chat(a.jid);
     const st = t8 ? (estado.crmStatus || {})[t8] || '' : '';
     let motivo = '';
-    if (['perdido', 'desistiu', 'pausado', 'fechado'].includes(st)) motivo = 'card em ' + st;
+    if (['perdido', 'desistiu', 'pausado', 'fechado', 'semperfil', 'corretor', 'construtor', 'pessoal'].includes(st)) motivo = 'card em ' + st;
     else if (agora - (a.ts || 0) > 7 * 864e5) motivo = 'mais de 7 dias';
     else if (a.jid && lerEsp(a.jid).some(m => (m.ts || 0) > (a.ts || 0) && (m.autor === 'voce' || m.autor === 'celular' || (m.autor === 'ia' && m.ordem)))) motivo = 'respondida na conversa';
     if (motivo) { a.feito = agora; a.saiu = motivo; n++; }
@@ -3681,7 +3685,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           catch (e) { return json(res, { erro: e.message }, 502); }
         }
         if (ac === 'enviar') {
-          const texto = String(b.texto || '').trim();
+          const texto = semDiminutivo(String(b.texto || '').trim());
           if (jid && !chats[jid] && jid.endsWith('@s.whatsapp.net') && sock && conectado) { try { const [r] = await sock.onWhatsApp(jid.split('@')[0]); if (r && r.exists && r.jid) jid = r.jid; } catch (e) { } }
           if (!jidValido(jid) || !texto) return json(res, { erro: 'conversa ou texto inválido' }, 400);
           // 23/11/2026: retorno com duas partes (bloco da simulação --- pergunta) sai em mensagens separadas
@@ -4038,6 +4042,16 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const arq = ARQS_REGRAS.includes(b.jid) ? b.jid : 'REGRAS-ATENDIMENTO.md';
           let em = 0; try { em = fs.statSync(path.join(CATALOGO, arq)).mtimeMs; } catch (e) { }
           return json(res, { arquivo: arq, texto: lerTexto(arq), em, arquivos: ARQS_REGRAS.map(f => ({ arquivo: f, ok: !!lerTexto(f) })) });
+        }
+        else if (ac === 'regras_buscar') {   // 23/11/2026: procura um padrão em todos os arquivos de regras e devolve só os trechos (para conferir sem baixar tudo)
+          let o = {}; try { o = JSON.parse(String(b.texto || '{}')); } catch (e) { }
+          let re = null; try { re = new RegExp(String(o.re || ''), 'giu'); } catch (e) { return json(res, { erro: 'expressão inválida' }, 400); }
+          if (!o.re) return json(res, { erro: 'mande texto = JSON { re }' }, 400);
+          const arqs = (Array.isArray(o.arquivos) && o.arquivos.length ? o.arquivos : ARQS_REGRAS).filter(f => ARQS_REGRAS.includes(f)), ctx = Math.min(400, Math.max(20, Number(o.ctx) || 90)), max = Math.min(200, Number(o.max) || 60);
+          const achados = [], tam = {};
+          for (const f of arqs) { let t = ''; try { t = fs.readFileSync(path.join(CATALOGO, f), 'utf8').replace(/\r/g, ''); } catch (e) { } tam[f] = t.length; let m; re.lastIndex = 0;
+            while ((m = re.exec(t)) && achados.length < max) { if (!m[0]) { re.lastIndex++; continue; } achados.push({ arquivo: f, pos: m.index, achou: m[0].slice(0, 80), trecho: t.slice(Math.max(0, m.index - ctx), m.index + m[0].length + ctx).replace(/\n/g, ' ⏎ ') }); } }
+          return json(res, { ok: true, total: achados.length, tamanhos: tam, achados });
         }
         else if (ac === 'regras_trocar') {   // troca trechos exatos de um arquivo de regras: texto = JSON { assunto, pares: [[antigo, novo], ...] }; cada trecho precisa aparecer 1 vez. Só grava com on = sim (sem isso, só diz o que trocaria). Guarda cópia antes.
           const arq = ARQS_REGRAS.includes(b.jid) ? b.jid : 'REGRAS-ATENDIMENTO.md', abs = path.join(CATALOGO, arq);
