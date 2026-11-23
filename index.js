@@ -2863,6 +2863,31 @@ function fuPublico(x, prev) {
 function fuEvento(x, novoStatus, resultado) {   // vai para o CRM pelo mesmo caminho dos eventos da assistente
   try { fs.appendFileSync(path.join(DADOS, 'eventos-crm.jsonl'), JSON.stringify({ rid: 'fu' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), telefone: formatoBR(fuNumero(x.tel)), nome: x.nome || '', novoStatus, resultado }) + '\n'); } catch (e) { }
 }
+// 23/11/2026 (Djhonata, caso Gabriele): a oferta de quarta não ficou anotada no card e o CRM deixou mandar o mesmo imóvel de novo, cinco dias depois.
+// A verdade é a conversa: daqui sai cada imóvel que o cliente já recebeu de nós (legenda ou texto com "🏠 Nome").
+const RE_CASA_NOME = /🏠\s*([^\n\/|]{3,80})/gu;
+let ofEnvCache = { em: 0, mapa: {} };
+function nomesMandados(jid) {   // { nome sem acento: hora da última vez }
+  const o = {}; let l = []; try { l = lerEsp(jid); } catch (e) { return o; }
+  for (const m of l) { if (m.autor === 'cliente' || m.autor === 'aviso' || !m.texto) continue; for (const x of String(m.texto).matchAll(RE_CASA_NOME)) { const n = semAcento(x[1]).trim(); if (n && (!o[n] || (m.ts || 0) > o[n])) o[n] = m.ts || 1; } }
+  return o;
+}
+function jaRecebeuImovel(jid, nome) {   // hora em que este cliente recebeu o imóvel (0 = nunca); olha todas as conversas do mesmo telefone
+  const alvo = semAcento(nome).trim(), t8 = tel8De(jid); if (!alvo) return 0; let ja = 0;
+  for (const j of new Set([jid, ...Object.keys(chats).filter(k => t8 && t8.length === 8 && tel8De(k) === t8)])) { const o = nomesMandados(j); if (o[alvo]) ja = Math.max(ja, o[alvo]); }
+  return ja;
+}
+function ofertasEnviadas(quer) {   // { final do telefone: { nome: hora } } de todas as conversas (refaz no máximo a cada 3 min)
+  if (Date.now() - ofEnvCache.em > 3 * 60e3) {
+    const mapa = {};
+    for (const j of Object.keys(chats)) { const t8 = tel8De(j); if (!t8 || t8.length !== 8) continue; const o = nomesMandados(j); for (const n of Object.keys(o)) { const d = mapa[t8] = mapa[t8] || {}; if (!d[n] || o[n] > d[n]) d[n] = o[n]; } }
+    ofEnvCache = { em: Date.now(), mapa };
+  }
+  if (!quer || !quer.size) return ofEnvCache.mapa;
+  const out = {};
+  for (const [t8, o] of Object.entries(ofEnvCache.mapa)) for (const [n, ts] of Object.entries(o)) if (quer.has(n)) (out[t8] = out[t8] || {})[n] = ts;
+  return out;
+}
 function fuConversa(jid) {
   const quem = { cliente: 'Cliente', ia: 'Djhonata (assistente)', voce: 'Djhonata', celular: 'Djhonata (celular)' };
   const l = lerEsp(jid).filter(m => m.autor !== 'aviso' && (String(m.texto || '').trim() || m.tipo !== 'text')).slice(-40);
@@ -3713,6 +3738,8 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           }
           let caminho = String(pa.caminho || '').replace(/^[a-z]:[\\/]+users[\\/]+public[\\/]+catalogo[\\/]+/i, ''), pastaA = '';
           if (!caminho) { pastaA = pa.ref ? acharPasta(String(pa.ref)) || '' : ''; if (!pastaA) return json(res, { erro: 'imóvel não encontrado' }, 404); const mi = midiaDaOferta(pastaA); caminho = mi.video || mi.foto1 || ''; if (!caminho) return json(res, { erro: 'esse imóvel não tem vídeo nem foto na pasta' }, 404); }
+          if (pa.naoRepetir) { const jaR = jaRecebeuImovel(jid, String(pa.naoRepetir)); if (jaR) return json(res, { erro: 'este cliente já recebeu esse imóvel em ' + quandoFoi(jaR) + '. Não mandei de novo.', jaRecebeu: jaR }, 409); }   // 23/11/2026 (caso Gabriele): o mesmo imóvel não vai duas vezes para o mesmo cliente
+          ofEnvCache.em = 0;
           const legendaA = String(pa.legenda || '').slice(0, 3000), rA = await enviarArquivo(jid, caminho, legendaA, 'voce', pastaA ? { oferta: pastaA } : undefined);
           if (rA !== 'Enviado.') return json(res, { erro: rA }, /desconectado/i.test(rA) ? 409 : 400);
           anotar(jid, 'assistant', `(Djhonata enviou ${caminho}${legendaA ? ' com a legenda: ' + legendaA.slice(0, 300) : ''})`);
@@ -4047,6 +4074,15 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const arq = ARQS_REGRAS.includes(b.jid) ? b.jid : 'REGRAS-ATENDIMENTO.md';
           let em = 0; try { em = fs.statSync(path.join(CATALOGO, arq)).mtimeMs; } catch (e) { }
           return json(res, { arquivo: arq, texto: lerTexto(arq), em, arquivos: ARQS_REGRAS.map(f => ({ arquivo: f, ok: !!lerTexto(f) })) });
+        }
+        else if (ac === 'ofertas_enviadas') {   // 23/11/2026: imóveis que cada cliente já recebeu, pelas conversas. texto = JSON { nomes: [...] } (sem nomes = todos)
+          let p = {}; try { p = JSON.parse(String(b.texto || '{}')); } catch (e) { }
+          const quer = new Set((Array.isArray(p.nomes) ? p.nomes : []).map(n => semAcento(n).trim()).filter(Boolean));
+          return json(res, { ok: true, enviados: ofertasEnviadas(quer) });
+        }
+        else if (ac === 'ja_recebeu') {   // 23/11/2026: este cliente já recebeu este imóvel? jid = conversa (ou telefone); texto = nome do imóvel
+          let j = String(b.jid || ''); if (j && !chats[j]) { const t8 = j.replace(/\D/g, '').slice(-8), k = Object.keys(chats).find(x => tel8De(x) === t8); if (k) j = k; }
+          return json(res, { ok: true, ja: j ? jaRecebeuImovel(j, String(b.texto || '')) : 0 });
         }
         else if (ac === 'falas') {   // 23/11/2026 (Djhonata, caso Nilza): o que o cliente escreveu depois de um momento (ex.: depois da última oferta), para a IA das oportunidades ver se ele gostou do que recebeu. texto = JSON { tels: [{ t8, desde }], max }
           let p = {}; try { p = JSON.parse(String(b.texto || '{}')); } catch (e) { }
