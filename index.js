@@ -2451,15 +2451,16 @@ async function rascunhoFazer(item) {
   }
   return texto.replace(/^NO_REPLY\b.*$/m, '').trim();
 }
-async function rascunhoTrabalhar() {
-  if (rascunhos.rodando) return; rascunhos.rodando = true;
-  try {
-    while (rascunhos.fila.length) {
-      const it = rascunhos.fila.shift();
+async function rascunhoTrabalhar() {   // até 3 ao mesmo tempo
+  rascunhos.ativos = rascunhos.ativos || 0;
+  while (rascunhos.ativos < 3 && rascunhos.fila.length) {
+    const it = rascunhos.fila.shift(); rascunhos.ativos++; rascunhos.rodando = true;
+    (async () => {
       try { const t = await rascunhoFazer(it); rascunhos.prontos[it.chave] = { ok: !!t, mensagem: t, em: Date.now() }; }
       catch (e) { rascunhos.prontos[it.chave] = { ok: false, erro: e.message, em: Date.now() }; log('rascunho', it.chave, e.message); }
-    }
-  } finally { rascunhos.rodando = false; }
+      finally { rascunhos.ativos--; rascunhos.rodando = rascunhos.ativos > 0; rascunhoTrabalhar(); }
+    })();
+  }
 }
 // ---------- rotinas do OpenClaw: lembretes de visita e retomada ----------
 // Lembrete 1: ~24h antes (8h–21h30). Lembrete 2: no dia, 2–3h antes. Retomada (só das 9h às 19h30): uma vez, 3h depois que o cliente
@@ -4072,6 +4073,16 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
         }
         else if (ac === 'rascunho') {   // texto = JSON { chave, oque, pergunta, mensagem } (pedir) ou { chave } (buscar o resultado)
           let p = {}; try { p = JSON.parse(String(b.texto || '{}')); } catch (e) { }
+          if (Array.isArray(p.lote)) {   // várias pendências de uma vez: [{ chave, tel, oque, pergunta, mensagem }]
+            let n = 0;
+            for (const q of p.lote.slice(0, 100)) {
+              const ch = String(q.chave || '').slice(0, 60); if (!ch || rascunhos.fila.some(x => x.chave === ch) || (rascunhos.prontos[ch] && rascunhos.prontos[ch].ok && !p.refazer)) continue;
+              const alvo = jidPorTel8(String(q.tel || '').replace(/\D/g, '').slice(-8)); if (!alvo) continue;
+              delete rascunhos.prontos[ch]; rascunhos.fila.push({ chave: ch, jid: alvo, oque: String(q.oque || '').slice(0, 400), pergunta: String(q.pergunta || '').slice(0, 400), mensagem: String(q.mensagem || '').slice(0, 1200) }); n++;
+            }
+            rascunhoTrabalhar().catch(e => log('rascunho', e.message));
+            return json(res, { ok: true, naFila: rascunhos.fila.length, novos: n });
+          }
           if (Array.isArray(p.chaves)) { const out = {}; for (const k of p.chaves.slice(0, 100)) if (rascunhos.prontos[k]) out[k] = rascunhos.prontos[k]; return json(res, { prontos: out, naFila: rascunhos.fila.length, rodando: rascunhos.rodando }); }   // várias de uma vez (economiza operação do Make)
           const chave = String(p.chave || '').slice(0, 60); if (!chave) return json(res, { erro: 'falta a chave' }, 400);
           const pronto = rascunhos.prontos[chave];
