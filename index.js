@@ -3381,7 +3381,9 @@ async function vidRotina() {
   } finally { vid.rodando = ''; }
 }
 setTimeout(() => vidRotina().catch(e => log('vídeos', e.message)), 90e3);
-setInterval(() => vidRotina().catch(e => log('vídeos', e.message)), 30 * 60e3);   // imóvel novo que entrar sem vídeo ganha o vídeo sozinho
+// 23/11/2026 (Djhonata): nada de rodar de tempo em tempo. O vídeo é feito quando o catálogo chega (ficha ou CATALOGO.md novo), 2 minutos depois do último arquivo.
+let vidAviso = null;
+function vidQuandoChegarCatalogo() { clearTimeout(vidAviso); vidAviso = setTimeout(() => vidRotina().catch(e => log('vídeos', e.message)), 120e3); }
 async function vidAmostra(pasta) {   // 5 quadros do vídeo lado a lado, para conferência
   const r = await rodarFfmpeg(['-hide_banner', '-loglevel', 'error', '-i', path.join(CATALOGO, pasta, 'video-whatsapp.mp4'), '-vf', 'fps=1/5,scale=256:-1,tile=5x1', '-frames:v', '1', '-q:v', '6', '-f', 'image2pipe', '-c:v', 'mjpeg', 'pipe:1'], null, 60000);
   return r.status === 0 ? r.stdout.toString('base64') : '';
@@ -3816,7 +3818,7 @@ http.createServer(async (req, res) => {
         const tmp = abs + '.parcial';
         const w = fs.createWriteStream(tmp);
         req.pipe(w);
-        w.on('finish', () => { fs.renameSync(tmp, abs); const mt = Number(u.searchParams.get('m') || 0); if (mt) fs.utimesSync(abs, mt, mt); res.writeHead(200); res.end('ok'); });
+        w.on('finish', () => { fs.renameSync(tmp, abs); const mt = Number(u.searchParams.get('m') || 0); if (mt) fs.utimesSync(abs, mt, mt); if (/(^|\/)(ficha|CATALOGO)\.md$/.test(rel)) vidQuandoChegarCatalogo(); res.writeHead(200); res.end('ok'); });
         w.on('error', e => { res.writeHead(500); res.end(e.message); });
         return;
       }
