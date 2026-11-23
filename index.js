@@ -3594,6 +3594,15 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           if (!pa || typeof pa !== 'object') return json(res, { erro: 'mande texto = JSON { ref ou caminho, legenda }' }, 400);
           if (jid && !chats[jid] && jid.endsWith('@s.whatsapp.net') && sock && conectado) { try { const [r] = await sock.onWhatsApp(jid.split('@')[0]); if (r && r.exists && r.jid) jid = r.jid; } catch (e) { } }
           if (!jidValido(jid)) return json(res, { erro: 'conversa inválida' }, 400);
+          if (pa.projeto && pa.ref) {   // 23/11/2026: o Djhonata manda o projeto (planta) do imóvel pela tela de Pendências do CRM: vão os PDFs de projeto que já estão na pasta do imóvel
+            const pastaJ = acharPasta(String(pa.ref).split('-')[0]); if (!pastaJ) return json(res, { erro: 'imóvel não encontrado' }, 404);
+            const arqs = fs.readdirSync(path.join(CATALOGO, pastaJ)).filter(f => /^projeto-.+\.(pdf|jpe?g|png)$/i.test(f)).sort().slice(0, 4);
+            if (!arqs.length) return json(res, { erro: 'esse imóvel ainda não tem projeto guardado no servidor' }, 404);
+            const enviados = [];
+            for (let i = 0; i < arqs.length; i++) { const r = await enviarArquivo(jid, pastaJ + '/' + arqs[i], i === 0 ? String(pa.legenda || '').slice(0, 1000) : '', 'voce'); if (r !== 'Enviado.') return json(res, { erro: r, enviados }, /desconectado/i.test(r) ? 409 : 400); enviados.push(arqs[i]); await dorme(1500); }
+            anotar(jid, 'assistant', `(Djhonata enviou o projeto do imóvel ${pastaJ}: ${enviados.join(', ')})`);
+            return json(res, { ok: true, enviados });
+          }
           let caminho = String(pa.caminho || '').replace(/^[a-z]:[\\/]+users[\\/]+public[\\/]+catalogo[\\/]+/i, ''), pastaA = '';
           if (!caminho) { pastaA = pa.ref ? acharPasta(String(pa.ref)) || '' : ''; if (!pastaA) return json(res, { erro: 'imóvel não encontrado' }, 404); const mi = midiaDaOferta(pastaA); caminho = mi.video || mi.foto1 || ''; if (!caminho) return json(res, { erro: 'esse imóvel não tem vídeo nem foto na pasta' }, 404); }
           const legendaA = String(pa.legenda || '').slice(0, 3000), rA = await enviarArquivo(jid, caminho, legendaA, 'voce', pastaA ? { oferta: pastaA } : undefined);
