@@ -1269,11 +1269,24 @@ function pausarPorSeguranca(motivo) {
 }
 // O Djhonata não manda joinha para cliente: se a IA escrever 👍, sai 🙏🏼 (o emoji de agradecer que ele usa).
 function semJoinha(t) { return String(t || '').replace(/👍(?:\u{1F3FB}|\u{1F3FC}|\u{1F3FD}|\u{1F3FE}|\u{1F3FF})?/gu, '🙏🏼'); }
+// 23/11/2026 (Djhonata): responder citando a pergunta do cliente (a "setinha" do WhatsApp). A mensagem pode começar com [[cita: trecho]]
+// (trecho = começo da mensagem do cliente, ou o id dela); o servidor acha essa mensagem na conversa e manda a resposta citando ela.
+const RE_CITA = /\[\[\s*cita\s*:\s*([^\]]{1,200})\]\]/i;
+function acharCitada(jid, alvo) {
+  const norm = (x) => semAcento(String(x || '')).replace(/[^a-z0-9]+/g, ' ').trim();
+  const a = norm(alvo); if (!a) return null;
+  let l = lerEsp(jid); if (!l.length) { try { const j2 = acharJid(jid); if (j2 && j2 !== jid) { l = lerEsp(j2); jid = j2; } } catch (e) { } }
+  const cli = l.filter(m => m.autor === 'cliente' && m.id && String(m.texto || '').trim()).slice(-60).reverse();
+  const m = cli.find(x => x.id === String(alvo).trim()) || cli.find(x => { const t = norm(x.texto); return t && (t.includes(a.slice(0, 60)) || a.includes(t.slice(0, 60))); });
+  return m ? { key: { remoteJid: jid, id: m.id, fromMe: false }, message: { conversation: String(m.texto).slice(0, 1000) } } : null;
+}
 async function enviarTexto(jid, texto, autor = 'ia', extra) {
   if (!sock || !conectado || !String(texto || '').trim()) return null;
+  let citada = null; { const mc = RE_CITA.exec(String(texto)); if (mc) { try { citada = acharCitada(jid, mc[1]); } catch (e) { } } texto = String(texto).replace(new RegExp(RE_CITA.source, 'gi'), '').replace(/^\s+/, ''); }
+  if (!String(texto || '').trim()) return null;
   if (autor === 'ia') texto = semJoinha(texto);
   try { await guardaEnvio(jid, autor, texto, 'text'); } catch (e) { log('envio barrado', jid, e.message); return null; }
-  const r = await sock.sendMessage(jid, { text: String(texto).trim() });
+  const r = citada ? await sock.sendMessage(jid, { text: String(texto).trim() }, { quoted: citada }) : await sock.sendMessage(jid, { text: String(texto).trim() });
   const id = lembrarEnvio(r);
   registrarEspelho(jid, Object.assign({ id, autor, tipo: 'text', texto: String(texto).trim(), ts: Date.now() }, extra || {}));
   return id;
@@ -1725,12 +1738,16 @@ async function enviarSaida(jid, texto, autor = 'ia', extra) {   // devolve o que
   const proprio = String(texto || '').split('\n').filter(l => !RE_LINK_AGENDA.test(l) && !linhaDaAgenda(l)).join('\n');   // o texto da IA sem o bloco da agenda
   for (const p of partesResposta(String(texto || ''))) {
     if (p.tipo === 'audio') {
+      p.t = String(p.t).replace(new RegExp(RE_CITA.source, 'gi'), '').trim();
       const ok = await enviarAudio(jid, p.t, autor, extra);
       if (ok === true) { feitos.push('[[tts:' + p.t + ']]'); continue; }   // na memória fica com a marcação certa, para a IA não aprender outra
       if (ok === 'barrado') continue;
     }
+    let citaPend = '';   // [[cita:...]] sozinho numa linha vale para o pedaço seguinte
     for (const parte of p.t.split(/\n\s*---\s*\n/)) for (const sub0 of separarFluxo(parte)) for (const sub of separarAgenda(sub0)) {
       let s = sub.replace(/^\s*---\s*$/gm, '').trim(); if (!s) continue;
+      if (!s.replace(new RegExp(RE_CITA.source, 'gi'), '').trim()) { citaPend = (RE_CITA.exec(s) || [])[0] || ''; continue; }
+      if (citaPend) { if (!RE_CITA.test(s)) s = citaPend + ' ' + s; citaPend = ''; }
       if (autor === 'ia' && ehEnderecoEscritorio(s) && mandouHaPouco(jid, m => ehEnderecoEscritorio(m.texto), 10 * 60e3)) continue;   // o endereço já foi junto com a agenda
       if (autor === 'ia' && RE_LINK_AGENDA.test(s) && !podeMandarAgenda(jid, extra)) {
         log('agenda não reenviada (já foi mandada e o cliente não pediu)', jid);
@@ -3591,7 +3608,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           if (!jidValido(jid) || !texto) return json(res, { erro: 'conversa ou texto inválido' }, 400);
           const id = await enviarTexto(jid, texto, 'voce');
           if (!id) return json(res, { erro: 'WhatsApp desconectado' }, 409);
-          anotar(jid, 'assistant', `(Djhonata escreveu) ${texto}`);
+          anotar(jid, 'assistant', `(Djhonata escreveu) ${texto.replace(new RegExp(RE_CITA.source, 'gi'), '').trim()}`);
         } else if (ac === 'enviar_arquivo') {   // 13/11/2026: o Djhonata manda pelo painel o vídeo, a foto ou o projeto de um imóvel do catálogo. texto = JSON { ref ou caminho, legenda }; com ref vai o vídeo da oferta (ou a foto da fachada)
           let pa = null; try { pa = JSON.parse(String(b.texto || '')); } catch (e) { }
           if (!pa || typeof pa !== 'object') return json(res, { erro: 'mande texto = JSON { ref ou caminho, legenda }' }, 400);
