@@ -3066,7 +3066,8 @@ function catArquivo(jid) {
   if (c.ultAutor === 'cliente' && uc && agora - uc < 3 * 864e5) return '';   // o cliente falou por último há menos de 3 dias: fica
   if (t && (estado.equipe || []).includes(t)) return 'corretor';
   const s = t ? (estado.crmStatus || {})[t] || '' : '';
-  if (['visita', 'negociacao', 'novo', 'atendimento'].includes(s)) return '';
+  if (['visita', 'negociacao', 'novo'].includes(s)) return '';
+  if (s === 'atendimento') return (!uc || agora - uc > 7 * 864e5) ? 'perdido' : '';   // em atendimento mas 7 dias sem o cliente falar = perdido (regra dos 7 dias)
   if (s === 'fechado' || s === 'desistiu') return 'comprou';
   if (['corretor', 'corretor_euro', 'construtor', 'pessoal'].includes(s)) return s === 'corretor_euro' ? 'corretor' : s;
   if (etqs.some(n => /visita|negocia|remarcar|atendimento/.test(n))) return '';
