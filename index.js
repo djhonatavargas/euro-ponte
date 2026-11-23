@@ -1843,6 +1843,7 @@ async function aoReceber(m, tipoUpsert) {
   const recente = Date.now() - ts < (atrasada ? JANELA_ATRASADA : 180e3);
   const telefone = telefoneDe(m);
   if (!m.key.fromMe && !cifrada && tipoUpsert !== 'historico') marcarOrigem(jid, x, texto, ts);
+  if (!m.key.fromMe && tipoUpsert === 'notify' && !x.reactionMessage && (chats[jid] || {}).arquivado) setTimeout(() => arquivarChat(jid, false).then(() => log('desarquivada: o cliente escreveu de novo', tel8Chat(jid))).catch(e => log('desarquivar', e.message)), 2500);
 
   // espelho: grava tudo (menos o que a própria ponte já gravou ao enviar)
   if (!(m.key.fromMe && enviados.has(m.key.id))) {
@@ -3050,6 +3051,53 @@ function unirDuplicadas() {   // mesma pessoa em duas conversas (número e códi
   if (n) { salvarChats(); log('conversas duplicadas unidas:', n); }
   return n;
 }
+// ---------- arquivamento automático (23/11/2026, Djhonata) ----------
+// Todo dia às 22h: primeiro atualiza as etiquetas pelo último status que o CRM mandou, depois arquiva quem já comprou ou desistiu,
+// os perdidos, corretores, construtores e contatos pessoais. Quem está em atendimento, visita, negociação, remarcar, com etiqueta
+// Importante, com mensagem não lida ou que falou nas últimas 24 h fica. Se a pessoa escrever de novo, a conversa desarquiva sozinha.
+function catArquivo(jid) {
+  if (!jidValido(jid) || ehDono(pnDe(jid) || jid)) return '';
+  const c = chats[jid] || {}; if (c.arquivado) return '';
+  const t = tel8Chat(jid), agora = Date.now(), uc = ultCli(jid);
+  const etqs = etiquetasDe(jid).map(e => semAcento(e.nome));
+  if (etqs.some(n => /import/.test(n))) return '';
+  if (filas.has(jid) || ocupado.has(jid) || (estado.visitas || {})[jid] || (c.naoLidas || 0) > 0) return '';
+  if (uc && agora - uc < 864e5) return '';
+  if (t && (estado.equipe || []).includes(t)) return 'corretor';
+  const s = t ? (estado.crmStatus || {})[t] || '' : '';
+  if (['visita', 'negociacao', 'novo', 'atendimento'].includes(s)) return '';
+  if (s === 'fechado' || s === 'desistiu') return 'comprou';
+  if (['corretor', 'corretor_euro', 'construtor', 'pessoal'].includes(s)) return s === 'corretor_euro' ? 'corretor' : s;
+  if (etqs.some(n => /visita|negocia|remarcar|atendimento/.test(n))) return '';
+  if (etqs.some(n => /finaliz|pago|comprou|vendid|desist/.test(n))) return 'comprou';
+  if (etqs.some(n => /corretor/.test(n))) return 'corretor';
+  if (etqs.some(n => /capta|constru/.test(n))) return 'construtor';
+  if (etqs.some(n => /pessoal/.test(n))) return 'pessoal';
+  if (s === 'perdido' || s === 'pausado') return 'perdido';
+  if (!s && agora - Math.max(uc || 0, c.ult || 0) > 7 * 864e5) return 'perdido';
+  return '';
+}
+const autoArq = { rodando: false };
+async function arquivarAutomatico(simular) {
+  const porCat = {}, alvos = [];
+  for (const jid of Object.keys(chats)) { const k = catArquivo(jid); if (k) { porCat[k] = (porCat[k] || 0) + 1; alvos.push(jid); } }
+  if (simular) return { total: alvos.length, porCat };
+  if (autoArq.rodando || !sock || !conectado) return { total: 0, porCat, erro: 'ocupado ou desconectado' };
+  autoArq.rodando = true; let feitos = 0, falhas = 0;
+  try { for (const jid of alvos.slice(0, 400)) { if (!sock || !conectado) break; if (!catArquivo(jid)) continue; try { await arquivarChat(jid, true); feitos++; } catch (e) { falhas++; } await dorme(400); } }
+  finally { autoArq.rodando = false; }
+  log('arquivamento automático:', feitos, 'arquivadas', falhas ? 'falhas ' + falhas : '', JSON.stringify(porCat));
+  return { total: alvos.length, feitos, falhas, porCat };
+}
+setInterval(async () => {
+  try {
+    const d = agoraSP(); if (d.getHours() !== 22) return;
+    const dia = d.toISOString().slice(0, 10); if (estado.autoArqDia === dia || !sock || !conectado) return;
+    estado.autoArqDia = dia; salvarEstado();
+    await etiquetarTudo();
+    estado.autoArqUlt = Object.assign({ em: Date.now() }, await arquivarAutomatico(false)); salvarEstado();
+  } catch (e) { log('arquivamento automático', e.message); }
+}, 5 * 60e3);
 async function arquivarChat(jid, arquivar) {
   if (!sock || !conectado) throw new Error('WhatsApp desconectado');
   const c = chats[jid] || (chats[jid] = {});
@@ -3720,6 +3768,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
         } else if (ac === 'desconectar') { await desconectarWhatsApp(); }
         else if (ac === 'conectar') { await conectarWhatsApp(); await new Promise(r => setTimeout(r, 2500)); }
         else if (ac === 'lido') { if (chats[jid]) { chats[jid].naoLidas = 0; salvarChats(); } }
+        else if (ac === 'arquivo_auto') { const r = await arquivarAutomatico(b.on !== true); return json(res, { resultado: r, ultimo: estado.autoArqUlt || null }); }
         else if (ac === 'arquivar') {
           let alvos = []; try { alvos = JSON.parse(b.texto || '[]'); } catch (e) { }
           if (!Array.isArray(alvos)) alvos = []; if (jidValido(jid)) alvos.push(jid);
