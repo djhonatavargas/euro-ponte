@@ -4080,6 +4080,15 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const quer = new Set((Array.isArray(p.nomes) ? p.nomes : []).map(n => semAcento(n).trim()).filter(Boolean));
           return json(res, { ok: true, enviados: ofertasEnviadas(quer) });
         }
+        else if (ac === 'ofertas_repetidas') {   // 23/11/2026 (caso Gabriele): clientes que receberam o MESMO imóvel mais de uma vez pelo painel ou CRM (autor "voce"), com 20h ou mais entre uma e outra
+          const out = [];
+          for (const j of Object.keys(chats)) {
+            const t8 = tel8De(j); if (!t8 || t8.length !== 8) continue; const porNome = {}; let l = []; try { l = lerEsp(j); } catch (e) { continue; }
+            for (const m of l) { if (m.autor !== 'voce' || !m.texto) continue; for (const x of String(m.texto).matchAll(RE_CASA_NOME)) { const n = semAcento(x[1]).trim(); if (n) (porNome[n] = porNome[n] || []).push(m.ts || 0); } }
+            for (const [n, ts] of Object.entries(porNome)) { ts.sort((x, y) => x - y); const sep = [ts[0]]; for (const t of ts) if (t - sep[sep.length - 1] > 20 * 3600e3) sep.push(t); if (sep.length > 1) out.push({ t8, nome: String((chats[j] || {}).nome || '').slice(0, 40), imovel: n, vezes: sep.map(quandoFoi) }); }
+          }
+          return json(res, { ok: true, repetidas: out });
+        }
         else if (ac === 'ja_recebeu') {   // 23/11/2026: este cliente já recebeu este imóvel? jid = conversa (ou telefone); texto = nome do imóvel
           let j = String(b.jid || ''); if (j && !chats[j]) { const t8 = j.replace(/\D/g, '').slice(-8), k = Object.keys(chats).find(x => tel8De(x) === t8); if (k) j = k; }
           return json(res, { ok: true, ja: j ? jaRecebeuImovel(j, String(b.texto || '')) : 0 });
