@@ -996,7 +996,9 @@ async function executar(nome, entrada, ctx) {
       const st = String(entrada.novoStatus || '').toLowerCase();
       if (st === 'visita_marcada' && entrada.data) guardarVisita(ctx.jid, String(entrada.data), String(entrada.hora || ''), 'assistente');
       if (['remarcar', 'sem_interesse', 'sem_perfil', 'pausado', 'desistiu', 'negociacao'].includes(st)) cancelarVisita(ctx.jid, st);
-      if (st === 'sem_perfil') { estado.pausas[ctx.jid] = Date.now() + 182 * 864e5; salvarEstado(); log('sem perfil: assistente travada nesta conversa', ctx.telefone || ctx.jid); }   // 23/11/2026 (Djhonata): sem perfil fica travado na hora
+      if (st === 'sem_perfil') { estado.pausas[ctx.jid] = Date.now() + 182 * 864e5; ctx.autoTrava = true; salvarEstado(); log('sem perfil: assistente travada nesta conversa', ctx.telefone || ctx.jid); }   // 23/11/2026 (Djhonata): sem perfil fica travado na hora
+      // 23/11/2026 (Djhonata, cliente Jakyson): quando ela passa a conversa para ele (pausado), trava na hora, sem esperar o CRM abrir. A resposta desta vez ainda sai (autoTrava).
+      if (st === 'pausado' && ctx.jid) { estado.pausas[ctx.jid] = Date.now() + 7 * 864e5; ctx.autoTrava = true; salvarEstado(); log('pausado pela assistente: conversa travada, o Djhonata assume', ctx.telefone || ctx.jid); }
     }
     if (nome === 'mandar_ao_cliente') {
       if (!ctx.dono || (estado.teste && estado.teste.ativo)) return 'Só o Djhonata pode pedir isso.';
@@ -2393,7 +2395,7 @@ async function responder(f) {
         if (!t || /^NO_REPLY\b/.test(t) || /^nada a fazer\W*$/i.test(t)) continue;
         if (segura3p) continue;
         // o Djhonata pode ter desligado a assistente nessa conversa enquanto ela pensava
-        if (!podeResponder(f.jid, f.telefone)) { log('resposta descartada (pausada no meio)', f.jid); return; }
+        if (!podeResponder(f.jid, f.telefone) && !ctx.autoTrava) { log('resposta descartada (pausada no meio)', f.jid); return; }
         saida.push(...await enviarSaida(f.jid, await revisarSaida(f, t), 'ia', f.extra));
       } else if (bloco.type === 'tool_use') {
         usouFerramenta = true;
