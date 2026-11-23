@@ -2424,6 +2424,43 @@ async function responder(f) {
   if (saida.length && !f.dono) { try { cardAutomatico(f.jid); } catch (e) { } }
 }
 
+// ---------- rascunho das pendências (23/11/2026, Djhonata: "eu preciso que venha a informação, não fique ali o [DADO]") ----------
+// O CRM pede o retorno de uma pendência; a assistente pesquisa com as ferramentas de consulta (ficha, simulação, distância, imóveis perto, FIPE),
+// com todas as regras dela, e devolve SÓ o texto. Nada é enviado ao cliente: quem manda é o Djhonata, no botão Enviar.
+const RASC_FERR = ['ler_ficha', 'simular_fluxo', 'distancia', 'imoveis_perto', 'fipe_veiculo'];
+const rascunhos = { fila: [], rodando: false, prontos: {} };
+async function rascunhoFazer(item) {
+  const alvo = item.jid;
+  const c = chats[alvo] || {};
+  const ctxSis = { jid: alvo, telefone: c.telefone || '', nome: c.nome || '', notas: [], rotina: 'rascunho' };
+  const system = sistema(ctxSis) + `\n\n===== MODO RASCUNHO (pedido do Djhonata pelo CRM) =====\nVocê NÃO está mandando nada ao cliente agora: escreva o texto do retorno que o Djhonata vai revisar e enviar. Ficou uma pendência nesta conversa. Pesquise a resposta com as ferramentas (ler_ficha, simular_fluxo, distancia, imoveis_perto, fipe_veiculo), as regras e o catálogo que você tem. Responda a pergunta do cliente com a informação de verdade (números, medidas, nomes, distâncias, opções de imóvel). Só escreva [DADO] no ponto que depende de algo que só o Djhonata ou a construtora sabem e que não está em lugar nenhum (ex.: decisão da construtora sobre uma condição especial); nesse caso diga com naturalidade que confirma e já fala, sem [DADO]. Primeira pessoa, como o Djhonata, curto (até 4 frases, ou o bloco da simulação quando for conta), só os emojis ✅ e 🙏🏼, sem oferecer dia ou data fixos (pergunte qual dia da semana fica melhor). Devolva SÓ o texto da mensagem, sem comentários.`;
+  const messages = montarMensagens(alvo, [], `(sistema) PENDÊNCIA: ${item.oque || ''}\nPergunta para responder: ${item.pergunta || ''}\nRascunho anterior (pode melhorar): ${item.mensagem || ''}\nEscreva agora o retorno.`);
+  const ferr = FERRAMENTAS.filter(t => RASC_FERR.includes(t.name));
+  const ctxF = { jid: 'rascunho-' + alvo, telefone: c.telefone || '', nome: c.nome || '', notas: [], rotina: 'rascunho' };
+  let texto = '';
+  for (let volta = 0; volta < 6; volta++) {
+    const resp = await claude(system, messages, ferr);
+    messages.push({ role: 'assistant', content: (resp.content || []).length ? resp.content : [{ type: 'text', text: '(sem resposta)' }] });
+    const res = [];
+    for (const bl of resp.content || []) {
+      if (bl.type === 'text' && String(bl.text || '').trim()) texto = String(bl.text).trim();
+      else if (bl.type === 'tool_use') { let r = ''; try { r = RASC_FERR.includes(bl.name) ? await executar(bl.name, bl.input || {}, ctxF) : 'Ferramenta indisponível no rascunho.'; } catch (e) { r = 'erro: ' + e.message; } res.push({ type: 'tool_result', tool_use_id: bl.id, content: String(r).slice(0, 20000) }); }
+    }
+    if (res.length) { messages.push({ role: 'user', content: res }); texto = ''; continue; }
+    break;
+  }
+  return texto.replace(/^NO_REPLY\b.*$/m, '').trim();
+}
+async function rascunhoTrabalhar() {
+  if (rascunhos.rodando) return; rascunhos.rodando = true;
+  try {
+    while (rascunhos.fila.length) {
+      const it = rascunhos.fila.shift();
+      try { const t = await rascunhoFazer(it); rascunhos.prontos[it.chave] = { ok: !!t, mensagem: t, em: Date.now() }; }
+      catch (e) { rascunhos.prontos[it.chave] = { ok: false, erro: e.message, em: Date.now() }; log('rascunho', it.chave, e.message); }
+    }
+  } finally { rascunhos.rodando = false; }
+}
 // ---------- rotinas do OpenClaw: lembretes de visita e retomada ----------
 // Lembrete 1: ~24h antes (8h–21h30). Lembrete 2: no dia, 2–3h antes. Retomada (só das 9h às 19h30): uma vez, 3h depois que o cliente
 // parou de responder (2h se ela mandou a agenda), dentro das 24h do cliente. Tudo passa pelos freios de envio.
@@ -4031,6 +4068,19 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           if (!Array.isArray(lst)) lst = [lst];
           const itens = lst.slice(0, 6).map(im => { try { const r = simularFluxo({ imovel: String(im) }); return r.erro ? { imovel: String(im), erro: r.erro } : { imovel: String(im), pasta: r.pasta, resumo: r.resumo, texto: r.texto }; } catch (e) { return { imovel: String(im), erro: e.message }; } });
           return json(res, { ok: true, itens });
+        }
+        else if (ac === 'rascunho') {   // texto = JSON { chave, oque, pergunta, mensagem } (pedir) ou { chave } (buscar o resultado)
+          let p = {}; try { p = JSON.parse(String(b.texto || '{}')); } catch (e) { }
+          const chave = String(p.chave || '').slice(0, 60); if (!chave) return json(res, { erro: 'falta a chave' }, 400);
+          const pronto = rascunhos.prontos[chave];
+          if (pronto && !p.refazer) return json(res, Object.assign({ pronto: true }, pronto));
+          if (p.oque || p.pergunta) {
+            const alvo = jidValido(jid) && chats[jid] ? jid : jidPorTel8(String(b.jid || '').replace(/\D/g, '').slice(-8));
+            if (!alvo) return json(res, { erro: 'conversa não encontrada' }, 404);
+            if (!rascunhos.fila.some(x => x.chave === chave)) { delete rascunhos.prontos[chave]; rascunhos.fila.push({ chave, jid: alvo, oque: String(p.oque || '').slice(0, 400), pergunta: String(p.pergunta || '').slice(0, 400), mensagem: String(p.mensagem || '').slice(0, 1200) }); }
+            rascunhoTrabalhar().catch(e => log('rascunho', e.message));
+          }
+          return json(res, { pronto: false, naFila: rascunhos.fila.length, rodando: rascunhos.rodando });
         }
         else if (ac === 'avisos_limpar') { const n = limparDuvidas(); return json(res, { ok: true, saiu: n, ficam: (estado.avisos || []).filter(a => a.tipo === 'duvida' && !a.feito).length }); }
         else if (ac === 'aviso_feito') {   // texto = id do aviso: sai da lista
