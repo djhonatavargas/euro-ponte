@@ -1932,6 +1932,7 @@ async function aoReceber(m, tipoUpsert) {
   if (x.locationMessage) entrada = (entrada ? entrada + '\n' : '') + '[o cliente mandou uma localização]';
   if (x.stickerMessage) entrada = (entrada ? entrada + '\n' : '') + '[figurinha]';
   if (!entrada) return;
+  try { const cit = textoCitado(x); if (cit) entrada = `[${quemFala === 'do cliente' ? 'o cliente' : 'o Djhonata'} respondeu citando esta mensagem da conversa: "${cit}"]\n` + entrada; } catch (e) { }
   if (m.key.id && lerConv(jid).some(e => e.mid === m.key.id)) return;   // o WhatsApp reentregou: a IA já leu essa
   if (atrasada) log('mensagem atrasada (chegou na reconexão) entrou na fila', telefone || jid);
   if (Date.now() - ts > 20 * 60e3) entrada = avisoDemora(ts) + entrada;
@@ -2024,6 +2025,15 @@ function dadosAnuncio(x) {
   return null;
 }
 // Cartão de contato (ex.: indicação): passa para a assistente o nome e o número que vieram no cartão.
+// 23/11/2026 (Djhonata, caso Mauro): o cliente respondeu citando uma mensagem ("Esse aqui" em cima da oferta). A assistente precisa saber qual foi.
+function textoCitado(x) {
+  for (const k of Object.keys(x || {})) {
+    const ci = x[k] && typeof x[k] === 'object' ? x[k].contextInfo : null, q = ci && ci.quotedMessage; if (!q) continue;
+    const t = q.conversation || (q.extendedTextMessage && q.extendedTextMessage.text) || (q.imageMessage && q.imageMessage.caption) || (q.videoMessage && q.videoMessage.caption) || (q.documentMessage && (q.documentMessage.caption || q.documentMessage.fileName)) || (q.imageMessage ? '(uma foto, sem legenda)' : q.videoMessage ? '(um vídeo, sem legenda)' : q.audioMessage ? '(um áudio)' : '');
+    const txt = String(t || '').replace(/\s+/g, ' ').trim().slice(0, 400); if (txt) return txt;
+  }
+  return '';
+}
 function textoDoContato(x) {
   try {
     const cs = x.contactMessage ? [x.contactMessage] : ((x.contactsArrayMessage && x.contactsArrayMessage.contacts) || []);
@@ -2210,7 +2220,11 @@ function montarMensagens(jid, imagens, rotina) {
     if (msgs.length && msgs[msgs.length - 1].role === role) msgs[msgs.length - 1].content[0].text += '\n' + txt;
     else msgs.push({ role, content: [{ type: 'text', text: txt }] });
   }
-  while (msgs.length && msgs[0].role !== 'user') msgs.shift();
+  // 23/11/2026 (Djhonata, caso Mauro): quando a memória começa com mensagem NOSSA (oferta do CRM, follow-up), ela era cortada aqui e a assistente
+  // não sabia o que o cliente tinha acabado de receber ("tem foto por dentro?" -> "qual imóvel?"). Agora o que foi mandado antes vai junto, como contexto.
+  let antesNosso = '';
+  while (msgs.length && msgs[0].role !== 'user') { antesNosso += (antesNosso ? '\n' : '') + msgs[0].content[0].text; msgs.shift(); }
+  if (antesNosso && msgs.length) msgs[0].content[0].text = `(Contexto: antes da mensagem abaixo, VOCÊ mandou a este cliente o seguinte. Se ele pedir fotos, valor ou entrada, ou disser "esse", sem dizer o nome, é sobre isto.)\n${antesNosso.slice(-3000)}\n\n(Mensagem do cliente:)\n` + msgs[0].content[0].text;
   if (antigas.length && msgs.length) { let r = antigas.join(' | '); if (r.length > 1500) r = '…' + r.slice(-1500); msgs[0].content[0].text = `(Mensagens mais antigas desta pessoa, encurtadas, só para contexto: ${r})\n\n` + msgs[0].content[0].text; }
   if (rotina) {   // rotina automática (lembrete/retomada): instrução do sistema no fim, como última "mensagem"
     if (msgs.length && msgs[msgs.length - 1].role === 'user') msgs[msgs.length - 1].content[0].text += '\n\n' + rotina;
