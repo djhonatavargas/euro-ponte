@@ -568,7 +568,7 @@ function simularFluxo(e) {
   return {
     texto: L.join('\n'),
     resumo: `${f.nome}, ${brl(f.preco)}, sinal ${brl(sinal)}${parcelaUsada ? ', parcela ' + brl(parcelaUsada) : ''}${fgtsUsado ? ', FGTS ' + brl(fgtsUsado) : ''}${nBal ? `, ${nBal} reforço(s) de fim de ano de ${brl(balaoV)}` : ''}${naEntrega >= 1 ? ', na entrega das chaves ' + brl(naEntrega) : ''}${posTxt}${falta ? ', falta combinar ' + brl(falta) : ''}, financiamento ${brl(financ)} (avaliação ${brl(av)}${f.aval ? ' da ficha' : ''})`,
-    financ, entrada, renda: renda || 0, pasta, nome: f.nome, parcelas: n, falta, parcFin, baloes: nBal, naEntrega, entregaMin,
+    financ, entrada, av, preco: f.preco, renda: renda || 0, pasta, nome: f.nome, parcelas: n, falta, parcFin, baloes: nBal, naEntrega, entregaMin,
     sinalPadrao: !informado(e.sinal), acimaDoPreco: av > f.preco, temReforco: q > 0, temFgts: fgtsUsado > 0, reforcoDoCliente: informado(e.reforco), semBalao: informado(e.balao) && balaoV < 1, temPos: !!posTxt
   };
 }
@@ -823,7 +823,10 @@ async function executar(nome, entrada, ctx) {
       else if (r.falta >= 1) depois = `diga que ainda ficam ${brl(r.falta)} para combinar e pergunte SÓ como ele prefere acertar esse valor: um pouco mais de sinal, um reforço no fim do ano ou um valor na entrega das chaves`;
       else if (r.entregaMin) depois = `explique que, para a conta fechar, ficam ${brl(r.naEntrega)} na entrega das chaves (é o mínimo: "pelo menos ${brl(r.naEntrega)} você precisa dar na entrega das chaves") e pergunte SÓ se assim fica bom para ele`;
       else depois = 'pergunte SÓ se assim fica bom para ele';
-      const fecho = ` Não fale da avaliação do banco por conta própria e não convide para o escritório por causa da simulação: só se ele mostrar interesse em fechar ou ver de perto.${comoAjustar}${avisoRenda}${porque}`;
+      // 23/11/2026 (Djhonata, caso Clemair): quando o cliente pergunta "qual o valor da entrada", a resposta é o percentual (20%, ou menos quando a avaliação passa do preço)
+      const pctEnt = r.av > 0 ? Math.round(1000 * r.entrada / r.av) / 10 : 0;
+      const notaEntrada = pctEnt ? ` ENTRADA DESTE IMÓVEL: ${brl(r.entrada)} no total, que dá ${String(pctEnt).replace('.', ',')}% (somando sinal, parcelas, reforços e o valor das chaves). Se o cliente perguntar "qual o valor da entrada", responda com esse percentual arredondado (regra QUAL É A ENTRADA); o valor em reais só se ele pedir.` : '';
+      const fecho = ` Não fale da avaliação do banco por conta própria e não convide para o escritório por causa da simulação: só se ele mostrar interesse em fechar ou ver de perto.${comoAjustar}${avisoRenda}${porque}${notaEntrada}`;
       ms.em = Date.now(); for (const k of Object.keys(estado.sim)) if (Date.now() - (estado.sim[k].em || 0) > 30 * 864e5) delete estado.sim[k];
       salvarEstado();
       if (repetida) {
