@@ -3254,6 +3254,136 @@ function catArquivo(jid) {
 }
 // Dúvidas anotadas para o Djhonata (23/11/2026): saem sozinhas da lista quando alguém responde na conversa (você pelo celular,
 // pelo CRM ou a assistente a teu pedido), quando o card vai para perdido, desistiu, pausado ou fechado, ou depois de 7 dias.
+// ---------- vídeo do imóvel feito das fotos (23/11/2026, pedido do Djhonata: todo imóvel tem que ter vídeo, e é o vídeo que vai primeiro na oferta) ----------
+// O servidor monta sozinho o video-whatsapp.mp4 de cada imóvel do catálogo que ainda não tem: as fotos da ficha passando, com o título, os dados, o preço e "Chame no WhatsApp".
+const VID_TMP = path.join(DADOS, 'videos-tmp'), VID_FONTE = path.join(DADOS, 'fonte-video.ttf'), VID_MUSICA = path.join(DADOS, 'musica-video.m4a');
+const VID_LIGADO = path.join(DADOS, 'videos-ligado');
+const vid = { rodando: '', feitos: [], erros: {}, ultima: 0, drawtext: null, fonte: '', musica: null, parar: false };
+function vidAcharFonte() {
+  if (vid.fonte && fs.existsSync(vid.fonte)) return vid.fonte;
+  try { if (fs.statSync(VID_FONTE).size > 20000) return vid.fonte = VID_FONTE; } catch (e) { }
+  const cand = []; const anda = (d, n) => { if (n > 5) return; let l = []; try { l = fs.readdirSync(d, { withFileTypes: true }); } catch (e) { return; } for (const x of l) { const p = path.join(d, x.name); if (x.isDirectory()) anda(p, n + 1); else if (/\.(ttf|otf)$/i.test(x.name)) cand.push(p); } };
+  anda('/usr/share/fonts', 0); anda('/usr/local/share/fonts', 0);
+  for (const re of [/Poppins-Bold\.ttf$/i, /Montserrat-Bold/i, /DejaVuSans-Bold\.ttf$/i, /LiberationSans-Bold/i, /Bold\.(ttf|otf)$/i, /./]) { const f = cand.find(c => re.test(c)); if (f) return vid.fonte = f; }
+  return '';
+}
+async function vidPreparar() {
+  if (vid.drawtext === null) { const r = await rodarFfmpeg(['-hide_banner', '-filters'], null, 15000); const t = String(r.stdout || ''); vid.drawtext = / drawtext /.test(t); vid.xfade = / xfade /.test(t); }
+  if (!fs.existsSync(VID_FONTE)) { try { const r = await fetch('https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-Bold.ttf', { signal: AbortSignal.timeout(30000) }); if (r.ok) { const b = Buffer.from(await r.arrayBuffer()); if (b.length > 20000) fs.writeFileSync(VID_FONTE, b); } } catch (e) { log('vídeo: não baixei a fonte', e.message); } }
+  vidAcharFonte();
+  if (vid.musica === null) {   // a trilha é a mesma dos vídeos que o Djhonata já usa: sai do áudio de um vídeo do catálogo
+    vid.musica = '';
+    try { if (fs.statSync(VID_MUSICA).size > 30000) vid.musica = VID_MUSICA; } catch (e) { }
+    if (!vid.musica) {
+      const com = pastasImoveis().map(p => path.join(CATALOGO, p, 'video-whatsapp.mp4')).filter(f => { try { return fs.statSync(f).size > 1e6; } catch (e) { return false; } }).slice(0, 6);
+      for (const f of com) {
+        const r = await rodarFfmpeg(['-hide_banner', '-loglevel', 'error', '-y', '-i', f, '-vn', '-c:a', 'aac', '-b:a', '128k', VID_MUSICA], null, 60000);
+        try { if (r.status === 0 && fs.statSync(VID_MUSICA).size > 30000) { vid.musica = VID_MUSICA; break; } } catch (e) { }
+      }
+    }
+  }
+}
+function vidTextos(pasta) {
+  const f = lerTexto(path.join(pasta, 'ficha.md'));
+  const sec = (/## Descrição pronta para o WhatsApp[^\n]*\n([\s\S]*?)(?=\n## |$)/.exec(f) || [])[1] || '';
+  const limpa = s => String(s || '').replace(/[\u{1F000}-\u{1FFFF}\u{2190}-\u{2BFF}\u{FE0F}\u{200D}*_]/gu, '').replace(/\s+/g, ' ').trim();
+  const ls = sec.split('\n').map(x => x.trim()).filter(Boolean);
+  const pega = e => { const l = ls.find(x => x.startsWith(e)); return l ? limpa(l) : ''; };
+  const cab = (/^#\s*(.+)$/m.exec(f) || [])[1] || '', [nomeCab, bairroCab] = cab.split(/\s+[—-]\s+/);
+  let titulo = ls[0] && /^✨/.test(ls[0]) ? limpa(ls[0]) : ''; if (!titulo && bairroCab) titulo = 'Oportunidade no ' + limpa(bairroCab);
+  return {
+    titulo: titulo.replace(/[!.]+$/, '').toUpperCase().slice(0, 60),
+    nome: (pega('🏠') || limpa(nomeCab)).slice(0, 60),
+    dados: pega('📐').replace(/\s*\|\s*/g, ' · ').slice(0, 70),
+    preco: pega('💰').replace(/,00\b/, '').slice(0, 40),
+    entrega: pega('📅').slice(0, 60),
+  };
+}
+async function vidMontar(fotos, tx, saida, dir) {
+  const D = 3.2, T = 0.5, DF = 4.4, FPS = 30, n = fotos.length, total = n * (D - T) + DF;
+  const seq = fotos.concat([fotos[0]]), args = ['-hide_banner', '-loglevel', 'error', '-y'];
+  seq.forEach((f, i) => args.push('-loop', '1', '-framerate', String(FPS), '-t', String(i === n ? DF : D), '-i', f));
+  if (vid.musica) args.push('-stream_loop', '-1', '-i', vid.musica);
+  let fc = '';
+  seq.forEach((f, i) => {
+    const fr = Math.round((i === n ? DF : D) * FPS), z = i % 2 === 0 ? `1+0.06*on/${fr}` : `1.06-0.06*on/${fr}`;
+    fc += `[${i}:v]split[sa${i}][sb${i}];[sa${i}]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=24:4,eq=brightness=-0.12[bg${i}];[sb${i}]scale=1920:1080:force_original_aspect_ratio=decrease[fg${i}];[bg${i}][fg${i}]overlay=(W-w)/2:(H-h)/2,zoompan=z='${z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1280x720:fps=${FPS},setsar=1,format=yuv420p[v${i}];`;
+  });
+  let ant = 'v0';
+  for (let i = 1; i <= n; i++) { fc += `[${ant}][v${i}]xfade=transition=fade:duration=${T}:offset=${(i * (D - T)).toFixed(2)}[x${i}];`; ant = 'x' + i; }
+  const fonte = vid.drawtext ? vidAcharFonte() : '';
+  if (fonte) {
+    const esc = p => p.replace(/\\/g, '/').replace(/([:'])/g, '\\$1');
+    const txt = (nome, s) => { const p = path.join(dir, nome + '.txt'); fs.writeFileSync(p, s); return esc(p); };
+    const tam = (s, max) => Math.max(22, Math.min(max, Math.floor(1160 / (Math.max(1, s.length) * 0.6))));
+    const dt = (arq, s, y, max, a, b) => `drawtext=fontfile='${esc(fonte)}':textfile='${arq}':fontcolor=white:fontsize=${tam(s, max)}:x=(w-text_w)/2:y=${y}:shadowcolor=black@0.6:shadowx=2:shadowy=2:enable='between(t,${a.toFixed(2)},${b.toFixed(2)})'`;
+    const f = [], a0 = 0.25, b0 = D - T, a1 = D - T + 0.3, b1 = 2 * (D - T), aF = n * (D - T) + 0.5, bF = total;
+    if (tx.titulo || tx.nome) f.push(`drawbox=x=0:y=0:w=iw:h=170:color=black@0.45:t=fill:enable='between(t,${a0},${b0.toFixed(2)})'`);
+    if (tx.titulo) f.push(dt(txt('titulo', tx.titulo), tx.titulo, 38, 46, a0, b0));
+    if (tx.nome) f.push(dt(txt('nome', tx.nome), tx.nome, tx.titulo ? 104 : 60, 30, a0, b0));
+    if (tx.dados && n >= 2) { f.push(`drawbox=x=0:y=ih-110:w=iw:h=110:color=black@0.45:t=fill:enable='between(t,${a1.toFixed(2)},${b1.toFixed(2)})'`); f.push(dt(txt('dados', tx.dados), tx.dados, 'h-78', 34, a1, b1)); }
+    f.push(`drawbox=x=0:y=0:w=iw:h=ih:color=black@0.5:t=fill:enable='between(t,${aF.toFixed(2)},${bF.toFixed(2)})'`);
+    if (tx.preco) f.push(dt(txt('preco', tx.preco), tx.preco, 'h/2-110', 76, aF, bF));
+    if (tx.entrega) f.push(dt(txt('entrega', tx.entrega), tx.entrega, 'h/2', 32, aF, bF));
+    f.push(dt(txt('chame', 'Chame no WhatsApp'), 'Chame no WhatsApp', 'h/2+70', 40, aF, bF));
+    fc += `[${ant}]${f.join(',')}[vout]`;
+  } else fc += `[${ant}]null[vout]`;
+  if (vid.musica) fc += `;[${n + 1}:a]atrim=0:${total.toFixed(2)},afade=t=in:d=0.4,afade=t=out:st=${(total - 1.6).toFixed(2)}:d=1.6,volume=0.9[aout]`;
+  args.push('-filter_complex', fc, '-map', '[vout]'); if (vid.musica) args.push('-map', '[aout]', '-c:a', 'aac', '-b:a', '96k');
+  args.push('-t', total.toFixed(2), '-r', String(FPS), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '25', '-pix_fmt', 'yuv420p', '-threads', '2', '-movflags', '+faststart', saida);
+  return rodarFfmpeg(args, null, 8 * 60e3);
+}
+async function vidGerar(pasta, refazer) {
+  const destino = path.join(CATALOGO, pasta, 'video-whatsapp.mp4');
+  if (!refazer && fs.existsSync(destino)) return 'já tem vídeo';
+  await vidPreparar();
+  const dir = path.join(VID_TMP, String(Date.now())); fs.mkdirSync(dir, { recursive: true });
+  try {
+    const fotos = [];
+    for (const c of fotosDoImovel(pasta).slice(0, 8)) {
+      const arq = path.join(dir, 'f' + fotos.length + '.jpg');
+      try {
+        if (/^https?:\/\//i.test(c)) { const r = await fetch(c, { signal: AbortSignal.timeout(30000) }); if (!r.ok) continue; const b = Buffer.from(await r.arrayBuffer()); if (b.length < 5000) continue; fs.writeFileSync(arq, b); }
+        else fs.copyFileSync(path.join(CATALOGO, c), arq);
+        fotos.push(arq);
+      } catch (e) { }
+    }
+    if (fotos.length < 2) return 'sem fotos suficientes (' + fotos.length + ')';
+    const saida = path.join(dir, 'video.mp4'), r = await vidMontar(fotos, vidTextos(pasta), saida, dir);
+    let tam = 0; try { tam = fs.statSync(saida).size; } catch (e) { }
+    if (r.status !== 0 || tam < 150e3) return 'o ffmpeg falhou: ' + String(r.stderr || '').slice(-300);
+    if (tam > 15.5e6) return 'vídeo grande demais (' + Math.round(tam / 1e6) + ' MB)';
+    if (fs.existsSync(destino)) fs.renameSync(destino, path.join(CATALOGO, pasta, 'video-anterior-' + Date.now() + '.mp4'));
+    fs.copyFileSync(saida, destino);
+    log('vídeo feito', pasta, Math.round(tam / 1e3) + ' KB', fotos.length + ' fotos');
+    return 'ok';
+  } finally { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { } }
+}
+function vidFaltando() {   // imóveis do catálogo (os que estão no CATALOGO.md) sem vídeo
+  const cat = lerTexto('CATALOGO.md');
+  return pastasImoveis().filter(p => p !== 'escritorio' && fs.existsSync(path.join(CATALOGO, p, 'ficha.md')) && !fs.existsSync(path.join(CATALOGO, p, 'video-whatsapp.mp4')))
+    .filter(p => { const m = /\(ref (\d+)\)$/.exec(p); return !cat || (m ? new RegExp('\\b' + m[1] + '\\b').test(cat) : cat.toLowerCase().includes(p.toLowerCase())); });
+}
+async function vidRotina() {
+  if (vid.rodando || !fs.existsSync(VID_LIGADO) || !temFfmpeg()) return; vid.parar = false;
+  try {
+    for (const p of vidFaltando()) {
+      if (vid.parar) break;
+      if ((vid.erros[p] || {}).n >= 2 && Date.now() - vid.erros[p].em < 12 * 3600e3) continue;
+      vid.rodando = p; let r = '';
+      try { r = await vidGerar(p); } catch (e) { r = 'erro: ' + e.message; }
+      if (r === 'ok') { vid.feitos.push(p); delete vid.erros[p]; } else if (r !== 'já tem vídeo') { vid.erros[p] = { n: ((vid.erros[p] || {}).n || 0) + 1, em: Date.now(), msg: r }; log('vídeo: não fiz', p, r); }
+      vid.ultima = Date.now();
+      await dorme(4000);
+    }
+  } finally { vid.rodando = ''; }
+}
+setTimeout(() => vidRotina().catch(e => log('vídeos', e.message)), 90e3);
+setInterval(() => vidRotina().catch(e => log('vídeos', e.message)), 30 * 60e3);   // imóvel novo que entrar sem vídeo ganha o vídeo sozinho
+async function vidAmostra(pasta) {   // 5 quadros do vídeo lado a lado, para conferência
+  const r = await rodarFfmpeg(['-hide_banner', '-loglevel', 'error', '-i', path.join(CATALOGO, pasta, 'video-whatsapp.mp4'), '-vf', 'fps=1/5,scale=256:-1,tile=5x1', '-frames:v', '1', '-q:v', '6', '-f', 'image2pipe', '-c:v', 'mjpeg', 'pipe:1'], null, 60000);
+  return r.status === 0 ? r.stdout.toString('base64') : '';
+}
 function limparDuvidas() {
   let n = 0; const agora = Date.now();
   for (const a of estado.avisos || []) {
@@ -4133,6 +4263,21 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
         else if (ac === 'ja_recebeu') {   // 23/11/2026: este cliente já recebeu este imóvel? jid = conversa (ou telefone); texto = nome do imóvel
           let j = String(b.jid || ''); if (j && !chats[j]) { const t8 = j.replace(/\D/g, '').slice(-8), k = Object.keys(chats).find(x => tel8De(x) === t8); if (k) j = k; }
           return json(res, { ok: true, ja: j ? jaRecebeuImovel(j, String(b.texto || '')) : 0 });
+        }
+        else if (ac === 'videos') {   // 23/11/2026: vídeos dos imóveis feitos das fotos. texto = JSON { ligar: true|false, ref, refazer, amostra }; sem nada devolve a situação
+          let pv = {}; try { pv = JSON.parse(String(b.texto || '{}')) || {}; } catch (e) { }
+          if (pv.ligar === true) { fs.writeFileSync(VID_LIGADO, '1'); vidRotina().catch(e => log('vídeos', e.message)); }
+          if (pv.ligar === false) { try { fs.unlinkSync(VID_LIGADO); } catch (e) { } vid.parar = true; }
+          if (pv.amostra) { const pa2 = acharPasta(String(pv.amostra)); return json(res, { pasta: pa2, jpg: pa2 ? await vidAmostra(pa2) : '' }); }
+          if (pv.ref) {
+            const pr = acharPasta(String(pv.ref)); if (!pr) return json(res, { erro: 'imóvel não encontrado' }, 404);
+            if (vid.rodando) return json(res, { erro: 'ocupado com ' + vid.rodando }, 409);
+            vid.rodando = pr;
+            vidGerar(pr, !!pv.refazer).then(r => { vid.ultimoPedido = { pasta: pr, resultado: r, em: Date.now() }; if (r === 'ok') vid.feitos.push(pr); }).catch(e => { vid.ultimoPedido = { pasta: pr, resultado: 'erro: ' + e.message, em: Date.now() }; }).finally(() => { vid.rodando = ''; });
+            return json(res, { ok: true, fazendo: pr });
+          }
+          const falta = vidFaltando();
+          return json(res, { ligado: fs.existsSync(VID_LIGADO), ffmpeg: temFfmpeg(), rodando: vid.rodando, feitos: vid.feitos.length, faltam: falta.length, lista: falta.slice(0, 160).map(x => (/ref (\d+)\)$/.exec(x) || [0, x])[1]).join(' '), erros: vid.erros, ultimoPedido: vid.ultimoPedido || null, drawtext: vid.drawtext, fonte: path.basename(vid.fonte || ''), musica: vid.musica });
         }
         else if (ac === 'falas') {   // 23/11/2026 (Djhonata, caso Nilza): o que o cliente escreveu depois de um momento (ex.: depois da última oferta), para a IA das oportunidades ver se ele gostou do que recebeu. texto = JSON { tels: [{ t8, desde }], max }
           let p = {}; try { p = JSON.parse(String(b.texto || '{}')); } catch (e) { }
