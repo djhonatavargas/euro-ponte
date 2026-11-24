@@ -3448,6 +3448,7 @@ function enxRecente(t, dias = 30) {
   while ((m = re.exec(t))) { const d = Date.UTC(+m[3], +m[2] - 1, +m[1]); if (d >= lim && d <= Date.now() + 864e5) return true; }
   return false;
 }
+function enxData(t) { let m, max = 0; const re = /\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/g; while ((m = re.exec(String(t)))) { const d = Date.UTC(+m[3], +m[2] - 1, +m[1]); if (d <= Date.now() + 864e5 && d > max) max = d; } return max; }
 const enxTitulo = (t) => String(t).replace(/^- /, '').split(/[:(]/)[0].trim().slice(0, 70);
 async function regrasEnxugar(opc = {}) {
   const arqs = ENX_ARQS.map((f, i) => { const txt = lerTexto(f); return { f, letra: 'AB'[i], txt, blocos: enxBlocos(txt) }; }).filter(a => a.txt.length > 2000);
@@ -3458,24 +3459,32 @@ async function regrasEnxugar(opc = {}) {
 Sua tarefa é SÓ apontar o que pode sair sem mudar nenhuma regra em vigor:
 1. "remover": regra ANTIGA cujo conteúdo foi inteiro substituído ou contrariado por outra mais nova (diga qual, no campo "por"). Só remova se TUDO o que ela manda já está na outra ou foi revogado por ela. Na dúvida, não remova.
 2. "juntar": duas ou mais regras ANTIGAS sobre o mesmo assunto que dizem a mesma coisa: escreva UMA regra com todo o conteúdo delas (campo "texto", começando com "- TÍTULO EM MAIÚSCULAS"), sem perder nenhum detalhe, número, exemplo de frase ou exceção, e sem diminutivos.
-PROIBIDO: tocar em regra marcada RECENTE (nem remover, nem juntar); inventar regra; resumir a ponto de perder conteúdo; remover regra só porque é longa.
-Responda SOMENTE com JSON: {"remover":[{"id":"B12","por":"A40","motivo":"..."}],"juntar":[{"ids":["B5","B88"],"texto":"- ...","motivo":"..."}]}. Motivos com até 12 palavras. Escreva primeiro todo o "remover"; no "juntar", no máximo 8 grupos, os mais repetidos. Dentro dos textos use aspas simples, nunca aspas duplas.`;
+3. "conflito": duas regras marcadas RECENTE que mandam coisas OPOSTAS para a mesma situação. Em "id" vai a mais ANTIGA das duas e em "por" a mais NOVA (pela data no texto). "total": true só se a mais nova contraria TUDO o que a antiga manda; se contraria só uma parte, "total": false. Regra que só completa ou detalha a outra NÃO é conflito.
+PROIBIDO: tocar em regra marcada RECENTE em "remover" ou "juntar"; inventar regra; resumir a ponto de perder conteúdo; remover regra só porque é longa.
+Responda SOMENTE com JSON: {"remover":[{"id":"B12","por":"A40","motivo":"..."}],"conflito":[{"id":"A7","por":"A30","total":true,"motivo":"..."}],"juntar":[{"ids":["B5","B88"],"texto":"- ...","motivo":"..."}]}. Motivos com até 12 palavras. Escreva primeiro todo o "remover", depois o "conflito"; no "juntar", no máximo 8 grupos, os mais repetidos. Dentro dos textos use aspas simples, nunca aspas duplas.`;
   const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: jsonLimpo({ model: ENX_MODELO, max_tokens: 30000, system: sis, messages: [{ role: 'user', content: 'Regras atuais:' + lista }] }), signal: AbortSignal.timeout(9 * 60e3) });
   if (!r.ok) return { erro: 'API ' + r.status + ' ' + (await r.text()).slice(0, 200) };
   const j = await r.json(), bruto = (j.content || []).map(x => x.text || '').join(''); if (j.usage) registrarUso(j.usage);
   let plano; try { plano = JSON.parse(bruto.slice(bruto.indexOf('{'), bruto.lastIndexOf('}') + 1)); }
   catch (e) {   // resposta cortada ou com aspas soltas: aproveita só as remoções, que têm formato simples
-    plano = { remover: [], juntar: [] }; let mm; const reR = /\{\s*"id"\s*:\s*"([AB]\d+)"\s*,\s*"por"\s*:\s*"([AB]\d+)"\s*,\s*"motivo"\s*:\s*"([^"]*)"\s*\}/g;
+    plano = { remover: [], juntar: [], conflito: [] }; let mm; const reR = /\{\s*"id"\s*:\s*"([AB]\d+)"\s*,\s*"por"\s*:\s*"([AB]\d+)"\s*,\s*"motivo"\s*:\s*"([^"]*)"\s*\}/g;
     while ((mm = reR.exec(bruto))) plano.remover.push({ id: mm[1], por: mm[2], motivo: mm[3] });
     if (!plano.remover.length) return { erro: 'a IA não devolveu um plano válido', parou: j.stop_reason, tamanho: bruto.length, bruto: bruto.slice(0, 300) };
     log('limpeza das regras: plano cortado, aproveitei só as remoções', plano.remover.length, j.stop_reason);
   }
   const porId = {}; for (const a of arqs) for (const b of a.blocos) if (b.id) porId[b.id] = b;
-  const feito = { remover: [], juntar: [], recusados: [] };
+  const feito = { remover: [], juntar: [], conflito: [], avisar: [], recusados: [] };
   for (const x of (plano.remover || [])) {
     const b = porId[x.id], p = porId[x.por];
     if (!b || b.recente || b.sai || !p || p === b || p.sai) { feito.recusados.push('remover ' + x.id); continue; }
     b.sai = true; feito.remover.push({ titulo: enxTitulo(b.texto), por: enxTitulo(p.texto), motivo: String(x.motivo || '').slice(0, 120) });
+  }
+  // 24/11/2026 (Djhonata): duas regras novas que se contradizem não podem ficar as duas. Vale a de data mais nova; a outra sai e as duas aparecem no resumo. Mesma data ou conflito só em parte: ninguém sai, só aviso.
+  for (const x of (plano.conflito || [])) {
+    const b = porId[x.id], p = porId[x.por];
+    if (!b || !p || p === b || b.sai || p.sai || !b.recente || !p.recente) { feito.recusados.push('conflito ' + x.id); continue; }
+    const db = enxData(b.texto), dp = enxData(p.texto), item = { sai: b.texto.slice(0, 400), vale: p.texto.slice(0, 400), motivo: String(x.motivo || '').slice(0, 120) };
+    if (x.total === true && db && dp && dp > db) { b.sai = true; b.conflito = true; feito.conflito.push(item); } else feito.avisar.push(item);
   }
   for (const x of (plano.juntar || [])) {
     const bs = (x.ids || []).map(i => porId[i]), novo = String(x.texto || '').trim();
@@ -3489,9 +3498,9 @@ Responda SOMENTE com JSON: {"remover":[{"id":"B12","por":"A40","motivo":"..."}],
     const novoTxt = a.blocos.filter(b => !b.sai).map(b => b.novo || b.texto).join('\n').replace(/\n{4,}/g, '\n\n\n');
     a.novoTxt = novoTxt; res.arquivos.push({ f: a.f, antes: a.txt.length, depois: novoTxt.length });
     if (novoTxt.length < a.txt.length * 0.65) return { erro: `a limpeza tiraria mais de 35% de ${a.f}: não troquei nada`, ...res };
-    for (const b of a.blocos) if (b.regra && b.recente && !novoTxt.includes(b.texto)) return { erro: `uma regra recente sumiria de ${a.f}: não troquei nada`, ...res };
+    for (const b of a.blocos) if (b.regra && b.recente && !b.conflito && !novoTxt.includes(b.texto)) return { erro: `uma regra recente sumiria de ${a.f}: não troquei nada`, ...res };
   }
-  if (opc.testar || !(feito.remover.length + feito.juntar.length)) return { ok: true, aplicado: false, ...res };
+  if (opc.testar || !(feito.remover.length + feito.juntar.length + feito.conflito.length)) return { ok: true, aplicado: false, ...res };
   const dia = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   for (const a of arqs) { if (a.novoTxt === a.txt) continue; const abs = path.join(CATALOGO, a.f), copia = a.f.replace(/\.md$/, '') + '-backup-limpeza-' + dia + '.md'; fs.writeFileSync(path.join(CATALOGO, copia), a.txt); fs.writeFileSync(abs, a.novoTxt); res.arquivos.find(x => x.f === a.f).copia = copia; }
   res.aplicado = true; gravarJson(ENX_LOG, res); log('limpeza das regras: saíram', feito.remover.length, 'juntei', feito.juntar.length, JSON.stringify(res.arquivos.map(x => [x.f, x.antes, x.depois])));
@@ -3506,12 +3515,15 @@ function enxDesfazer() {
 }
 function enxResumo(r) {
   if (r.erro) return '🧹 Limpeza das regras: não troquei nada. ' + r.erro;
-  if (!r.aplicado) return '';
+  const avisos = (r.avisar || []).length ? `\n\n⚠️ ${r.avisar.length} pares de regras novas parecem se contradizer e eu NÃO mexi (mesma data ou só em parte). Me diga qual vale:\n` + r.avisar.slice(0, 6).map((x, i) => `${i + 1}) ${x.sai.slice(0, 220)}\n   x\n   ${x.vale.slice(0, 220)}`).join('\n') : '';
+  if (!r.aplicado) return avisos ? '🧹 Limpeza das regras: nada para tirar.' + avisos : '';
   const k = (n) => Math.round(n / 1000) + ' mil';
   let t = '🧹 Limpeza semanal das regras da assistente feita.\n' + r.arquivos.map(a => `${a.f.replace('.md', '')}: de ${k(a.antes)} para ${k(a.depois)} caracteres`).join('\n');
   if (r.remover.length) t += `\n\nSaíram ${r.remover.length} regras antigas, já substituídas por outra mais nova:\n` + r.remover.slice(0, 25).map(x => `• ${x.titulo} → vale: ${x.por}`).join('\n') + (r.remover.length > 25 ? `\n… e mais ${r.remover.length - 25}` : '');
   if (r.juntar.length) t += `\n\nJuntei ${r.juntar.length} grupos de regras repetidas:\n` + r.juntar.slice(0, 15).map(x => `• ${x.titulos.join(' + ')}`).join('\n');
-  return t + '\n\nNenhuma regra dos últimos 30 dias foi tocada. A cópia anterior está guardada; para voltar atrás é só pedir.';
+  if ((r.conflito || []).length) t += `\n\nRegras NOVAS que se contradiziam (${r.conflito.length}): ficou a mais recente.\n` + r.conflito.slice(0, 8).map((x, i) => `${i + 1}) SAIU: ${x.sai.slice(0, 260)}\n   VALE: ${x.vale.slice(0, 260)}`).join('\n');
+  t += avisos;
+  return t + ((r.conflito || []).length ? '\n\nDas regras dos últimos 30 dias, só saíram as que uma mais nova contrariava por inteiro.' : '\n\nNenhuma regra dos últimos 30 dias foi tocada.') + ' A cópia anterior está guardada; para voltar atrás é só pedir.';
 }
 // Toda segunda-feira, entre 6h e 7h (horário de Joinville), uma vez.
 setInterval(async () => {
