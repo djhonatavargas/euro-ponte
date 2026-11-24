@@ -3430,6 +3430,90 @@ async function vidAmostra(pasta) {   // 5 quadros do vídeo lado a lado, para co
   const r = await rodarFfmpeg(['-hide_banner', '-loglevel', 'error', '-i', path.join(CATALOGO, pasta, 'video-whatsapp.mp4'), '-vf', 'fps=1/5,scale=256:-1,tile=5x1', '-frames:v', '1', '-q:v', '6', '-f', 'image2pipe', '-c:v', 'mjpeg', 'pipe:1'], null, 60000);
   return r.status === 0 ? r.stdout.toString('base64') : '';
 }
+// ---------- limpeza automática das regras (24/11/2026, decisão do Djhonata: toda segunda cedo, entra sozinha, com cópia e resumo) ----------
+// A IA NÃO reescreve os arquivos. Ela só aponta, pelo número, quais regras ANTIGAS foram substituídas por outra mais nova (saem) e quais repetidas viram uma só.
+// Regra com data dos últimos 30 dias não pode sair nem ser reescrita. Se a limpeza tirar mais de 35% de um arquivo, nada é trocado.
+const ENX_ARQS = ['REGRAS-ATENDIMENTO.md', 'MELHORIAS-APROVADAS.md'], ENX_LOG = path.join(DADOS, 'regras-limpeza.json'), ENX_MODELO = ENV.MODELO_LIMPEZA || 'claude-sonnet-5-5';
+function enxBlocos(txt) {   // divide o arquivo em pedaços; regra = linha que começa com "- " (e as linhas seguintes dela)
+  const out = []; let cur = null;
+  for (const l of String(txt).split('\n')) {
+    if (/^- \S/.test(l)) { cur = { regra: true, linhas: [l] }; out.push(cur); }
+    else if (/^#{1,6} /.test(l) || (!l.trim() && !(cur && cur.regra))) { cur = { regra: false, linhas: [l] }; out.push(cur); }
+    else if (cur) cur.linhas.push(l); else { cur = { regra: false, linhas: [l] }; out.push(cur); }
+  }
+  return out.map(b => ({ regra: b.regra, texto: b.linhas.join('\n') }));
+}
+function enxRecente(t, dias = 30) {
+  const lim = Date.now() - dias * 864e5; let m; const re = /\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/g;
+  while ((m = re.exec(t))) { const d = Date.UTC(+m[3], +m[2] - 1, +m[1]); if (d >= lim && d <= Date.now() + 864e5) return true; }
+  return false;
+}
+const enxTitulo = (t) => String(t).replace(/^- /, '').split(/[:(]/)[0].trim().slice(0, 70);
+async function regrasEnxugar(opc = {}) {
+  const arqs = ENX_ARQS.map((f, i) => { const txt = lerTexto(f); return { f, letra: 'AB'[i], txt, blocos: enxBlocos(txt) }; }).filter(a => a.txt.length > 2000);
+  if (!arqs.length) return { erro: 'arquivos de regras vazios' };
+  let lista = '';
+  for (const a of arqs) { lista += `\n\n===== ARQUIVO ${a.letra}: ${a.f} =====\n`; a.blocos.forEach((b, i) => { if (b.regra) { b.id = a.letra + i; b.recente = enxRecente(b.texto); lista += `\n[${b.id}${b.recente ? ' RECENTE' : ''}] ${b.texto}\n`; } else if (b.texto.trim()) lista += `\n${b.texto}\n`; }); }
+  const sis = `Você faz a manutenção das regras de atendimento de um corretor de imóveis (o Djhonata), lidas por uma assistente de WhatsApp. As regras estão em dois arquivos e cada regra tem um número entre colchetes. O arquivo A (REGRAS-ATENDIMENTO) vale acima do B (MELHORIAS-APROVADAS). Regra mais nova vale acima da mais antiga (a data está no texto).
+Sua tarefa é SÓ apontar o que pode sair sem mudar nenhuma regra em vigor:
+1. "remover": regra ANTIGA cujo conteúdo foi inteiro substituído ou contrariado por outra mais nova (diga qual, no campo "por"). Só remova se TUDO o que ela manda já está na outra ou foi revogado por ela. Na dúvida, não remova.
+2. "juntar": duas ou mais regras ANTIGAS sobre o mesmo assunto que dizem a mesma coisa: escreva UMA regra com todo o conteúdo delas (campo "texto", começando com "- TÍTULO EM MAIÚSCULAS"), sem perder nenhum detalhe, número, exemplo de frase ou exceção, e sem diminutivos.
+PROIBIDO: tocar em regra marcada RECENTE (nem remover, nem juntar); inventar regra; resumir a ponto de perder conteúdo; remover regra só porque é longa.
+Responda SOMENTE com JSON: {"remover":[{"id":"B12","por":"A40","motivo":"..."}],"juntar":[{"ids":["B5","B88"],"texto":"- ...","motivo":"..."}]}. Motivos com até 12 palavras.`;
+  const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: jsonLimpo({ model: ENX_MODELO, max_tokens: 16000, system: sis, messages: [{ role: 'user', content: 'Regras atuais:' + lista }] }), signal: AbortSignal.timeout(9 * 60e3) });
+  if (!r.ok) return { erro: 'API ' + r.status + ' ' + (await r.text()).slice(0, 200) };
+  const j = await r.json(), bruto = (j.content || []).map(x => x.text || '').join(''); if (j.usage) registrarUso(j.usage);
+  let plano; try { plano = JSON.parse(bruto.slice(bruto.indexOf('{'), bruto.lastIndexOf('}') + 1)); } catch (e) { return { erro: 'a IA não devolveu um plano válido', bruto: bruto.slice(0, 300) }; }
+  const porId = {}; for (const a of arqs) for (const b of a.blocos) if (b.id) porId[b.id] = b;
+  const feito = { remover: [], juntar: [], recusados: [] };
+  for (const x of (plano.remover || [])) {
+    const b = porId[x.id], p = porId[x.por];
+    if (!b || b.recente || b.sai || !p || p === b || p.sai) { feito.recusados.push('remover ' + x.id); continue; }
+    b.sai = true; feito.remover.push({ titulo: enxTitulo(b.texto), por: enxTitulo(p.texto), motivo: String(x.motivo || '').slice(0, 120) });
+  }
+  for (const x of (plano.juntar || [])) {
+    const bs = (x.ids || []).map(i => porId[i]), novo = String(x.texto || '').trim();
+    const soma = bs.reduce((n, b) => n + (b ? b.texto.length : 0), 0);
+    if (bs.length < 2 || bs.some(b => !b || b.recente || b.sai || b.novo) || !/^- \S/.test(novo) || novo.length < soma * 0.45 || /\n- \S/.test(novo)) { feito.recusados.push('juntar ' + (x.ids || []).join('+')); continue; }
+    bs[0].novo = semDiminutivo(novo); bs.slice(1).forEach(b => { b.sai = true; });
+    feito.juntar.push({ titulos: bs.map(b => enxTitulo(b.texto)), novo: enxTitulo(novo), motivo: String(x.motivo || '').slice(0, 120) });
+  }
+  const res = { quando: Date.now(), arquivos: [], ...feito };
+  for (const a of arqs) {
+    const novoTxt = a.blocos.filter(b => !b.sai).map(b => b.novo || b.texto).join('\n').replace(/\n{4,}/g, '\n\n\n');
+    a.novoTxt = novoTxt; res.arquivos.push({ f: a.f, antes: a.txt.length, depois: novoTxt.length });
+    if (novoTxt.length < a.txt.length * 0.65) return { erro: `a limpeza tiraria mais de 35% de ${a.f}: não troquei nada`, ...res };
+    for (const b of a.blocos) if (b.regra && b.recente && !novoTxt.includes(b.texto)) return { erro: `uma regra recente sumiria de ${a.f}: não troquei nada`, ...res };
+  }
+  if (opc.testar || !(feito.remover.length + feito.juntar.length)) return { ok: true, aplicado: false, ...res };
+  const dia = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+  for (const a of arqs) { if (a.novoTxt === a.txt) continue; const abs = path.join(CATALOGO, a.f), copia = a.f.replace(/\.md$/, '') + '-backup-limpeza-' + dia + '.md'; fs.writeFileSync(path.join(CATALOGO, copia), a.txt); fs.writeFileSync(abs, a.novoTxt); res.arquivos.find(x => x.f === a.f).copia = copia; }
+  res.aplicado = true; gravarJson(ENX_LOG, res); log('limpeza das regras: saíram', feito.remover.length, 'juntei', feito.juntar.length, JSON.stringify(res.arquivos.map(x => [x.f, x.antes, x.depois])));
+  return { ok: true, ...res };
+}
+function enxDesfazer() {
+  const u = lerJson(ENX_LOG, null); if (!u || !u.aplicado) return { erro: 'não há limpeza para desfazer' };
+  const voltou = [];
+  for (const a of u.arquivos || []) { if (!a.copia) continue; const c = path.join(CATALOGO, a.copia); if (fs.existsSync(c)) { fs.copyFileSync(c, path.join(CATALOGO, a.f)); voltou.push(a.f); } }
+  u.aplicado = false; u.desfeito = Date.now(); gravarJson(ENX_LOG, u); log('limpeza das regras desfeita', voltou.join(', '));
+  return { ok: true, voltou };
+}
+function enxResumo(r) {
+  if (r.erro) return '🧹 Limpeza das regras: não troquei nada. ' + r.erro;
+  if (!r.aplicado) return '';
+  const k = (n) => Math.round(n / 1000) + ' mil';
+  let t = '🧹 Limpeza semanal das regras da assistente feita.\n' + r.arquivos.map(a => `${a.f.replace('.md', '')}: de ${k(a.antes)} para ${k(a.depois)} caracteres`).join('\n');
+  if (r.remover.length) t += `\n\nSaíram ${r.remover.length} regras antigas, já substituídas por outra mais nova:\n` + r.remover.slice(0, 25).map(x => `• ${x.titulo} → vale: ${x.por}`).join('\n') + (r.remover.length > 25 ? `\n… e mais ${r.remover.length - 25}` : '');
+  if (r.juntar.length) t += `\n\nJuntei ${r.juntar.length} grupos de regras repetidas:\n` + r.juntar.slice(0, 15).map(x => `• ${x.titulos.join(' + ')}`).join('\n');
+  return t + '\n\nNenhuma regra dos últimos 30 dias foi tocada. A cópia anterior está guardada; para voltar atrás é só pedir.';
+}
+// Toda segunda-feira, entre 6h e 7h (horário de Joinville), uma vez.
+setInterval(async () => {
+  const d = new Date(Date.now() - 3 * 3600e3), dia = d.toISOString().slice(0, 10);
+  if (d.getUTCDay() !== 1 || d.getUTCHours() !== 6 || estado.limpezaRegras === dia) return;
+  estado.limpezaRegras = dia; salvarEstado();
+  try { const r = await regrasEnxugar(); const t = enxResumo(r); if (t && conectado) await enviarTexto(DONO + '@s.whatsapp.net', t, 'aviso'); } catch (e) { log('limpeza das regras', e.message); }
+}, 10 * 60e3);
 function limparDuvidas() {
   let n = 0; const agora = Date.now();
   for (const a of estado.avisos || []) {
@@ -4327,6 +4411,14 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           if (pv.com) return json(res, { com: pastasImoveis().filter(x => fs.existsSync(path.join(CATALOGO, x, 'video-whatsapp.mp4'))).map(x => (/ref (\d+)\)$/.exec(x) || [0, x])[1]), sem: falta.map(x => (/ref (\d+)\)$/.exec(x) || [0, x])[1]) });   // 24/11/2026: o CRM mostra quais imóveis têm vídeo no servidor
           return json(res, { ligado: fs.existsSync(VID_LIGADO), ffmpeg: temFfmpeg(), rodando: vid.rodando, feitos: vid.feitos.length, faltam: falta.length, lista: falta.slice(0, 160).map(x => (/ref (\d+)\)$/.exec(x) || [0, x])[1]).join(' '), erros: vid.erros, ultimoPedido: vid.ultimoPedido || null, drawtext: vid.drawtext, fonte: path.basename(vid.fonte || ''), musica: vid.musica });
         }
+        else if (ac === 'regras_enxugar') {   // texto = JSON { testar: true } só mostra o plano; { desfazer: true } volta a cópia; sem nada, faz a limpeza agora
+          let pe = {}; try { pe = JSON.parse(String(b.texto || '{}')) || {}; } catch (e) { }
+          if (pe.desfazer) return json(res, enxDesfazer());
+          if (pe.ultimo) return json(res, lerJson(ENX_LOG, {}));
+          regrasEnxugar({ testar: !!pe.testar }).then(r => { gravarJson(path.join(DADOS, 'regras-limpeza-ultimo-pedido.json'), r); }).catch(e => { gravarJson(path.join(DADOS, 'regras-limpeza-ultimo-pedido.json'), { erro: e.message }); });
+          return json(res, { ok: true, rodando: true });
+        }
+        else if (ac === 'regras_enxugar_ver') return json(res, lerJson(path.join(DADOS, 'regras-limpeza-ultimo-pedido.json'), { aguardando: true }));
         else if (ac === 'semana') {   // 24/11/2026 (pente fino do Djhonata): conversas com a assistente desde uma data, em texto curto. texto = JSON { desde (ms), pular, limite, max }
           let p = {}; try { p = JSON.parse(String(b.texto || '{}')); } catch (e) { }
           const desde = Number(p.desde) || Date.now() - 2 * 864e5, pular = Math.max(0, Number(p.pular) || 0), limite = Math.max(1, Math.min(40, Number(p.limite) || 20)), max = Math.max(80, Math.min(1500, Number(p.max) || 600));
