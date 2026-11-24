@@ -4285,6 +4285,19 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const falta = vidFaltando();
           return json(res, { ligado: fs.existsSync(VID_LIGADO), ffmpeg: temFfmpeg(), rodando: vid.rodando, feitos: vid.feitos.length, faltam: falta.length, lista: falta.slice(0, 160).map(x => (/ref (\d+)\)$/.exec(x) || [0, x])[1]).join(' '), erros: vid.erros, ultimoPedido: vid.ultimoPedido || null, drawtext: vid.drawtext, fonte: path.basename(vid.fonte || ''), musica: vid.musica });
         }
+        else if (ac === 'semana') {   // 24/11/2026 (pente fino do Djhonata): conversas com a assistente desde uma data, em texto curto. texto = JSON { desde (ms), pular, limite, max }
+          let p = {}; try { p = JSON.parse(String(b.texto || '{}')); } catch (e) { }
+          const desde = Number(p.desde) || Date.now() - 2 * 864e5, pular = Math.max(0, Number(p.pular) || 0), limite = Math.max(1, Math.min(40, Number(p.limite) || 20)), max = Math.max(80, Math.min(1500, Number(p.max) || 600));
+          const fora = new Set(['pessoal', 'corretor', 'construtor', 'corretor_euro']);
+          const hh = (ts) => new Date(ts - 3 * 3600e3).toISOString().slice(5, 16).replace('T', ' ');
+          const lista = Object.keys(chats).filter(j => jidValido(j) && !/@g\.us$/.test(j) && (chats[j].ult || 0) > desde && !fora.has((estado.crmStatus || {})[tel8De(j)] || ''))
+            .map(j => { const ms = lerEsp(j); return { j, ms, ia: ms.some(m => m.autor === 'ia' && (m.ts || 0) > desde) }; }).filter(x => x.ia).sort((x, y) => (chats[y.j].ult || 0) - (chats[x.j].ult || 0));
+          const out = lista.slice(pular, pular + limite).map(({ j, ms }) => {
+            const ini = ms.findIndex(m => (m.ts || 0) > desde), ctxIni = Math.max(0, (ini < 0 ? ms.length : ini) - 4);
+            return { t8: tel8De(j), nome: chats[j].nome || '', status: (estado.crmStatus || {})[tel8De(j)] || '', msgs: ms.slice(ctxIni).map(m => `${hh(m.ts || 0)} ${m.autor === 'cliente' ? 'C' : m.autor === 'ia' ? 'IA' : 'DJ'}${m.tipo && m.tipo !== 'text' ? '[' + m.tipo + ']' : ''}: ${String(m.texto || '').replace(/\s+/g, ' ').slice(0, max)}`) };
+          });
+          return json(res, { total: lista.length, pular, limite, conversas: out });
+        }
         else if (ac === 'falas') {   // 23/11/2026 (Djhonata, caso Nilza): o que o cliente escreveu depois de um momento (ex.: depois da última oferta), para a IA das oportunidades ver se ele gostou do que recebeu. texto = JSON { tels: [{ t8, desde }], max }
           let p = {}; try { p = JSON.parse(String(b.texto || '{}')); } catch (e) { }
           const max = Math.max(100, Math.min(800, Number(p.max) || 400)), out = {};
