@@ -2806,6 +2806,22 @@ async function verificarRotinas() {
         if (!rotinaPermitida(jid, 'retomada')) continue;
         fila.push({ jid, tipo: 'retomada', p });
       }
+      // 24/11/2026 (Djhonata, caso Alessandro final 5134): nos 7 dias depois da última fala do cliente, a assistente insiste sozinha para não deixar
+      // esfriar: dia 1, dia 3 e dia 6 (uma mensagem por dia, cada uma com algo novo). Depois de 7 dias vira perdido e entra o follow-up com aprovação.
+      const INSISTIR_DIAS = [1, 3, 6];
+      for (const jid of Object.keys(chats)) {
+        const c = chats[jid]; if (!c || !c.ult || !['ia', 'aviso'].includes(c.ultAutor)) continue;
+        if ((estado.visitas || {})[jid] || (estado.retornos || {})[jid]) continue;
+        const p = conversaParada(jid); if (!p) continue;
+        const dias = (agora - p.ultCli) / 864e5; if (dias < 1 || dias >= 7) continue;
+        if (agora - p.ultIa < 20 * 3600e3) continue;                                  // já mandamos algo nas últimas 20 horas
+        const reg = (estado.insistir || {})[jid], feitas = reg && reg.base === p.ultCli ? reg.n || 0 : 0;
+        if (feitas >= INSISTIR_DIAS.length || dias < INSISTIR_DIAS[feitas]) continue;
+        const r = (estado.retomadas || {})[jid], diaDe = (ms) => new Date(ms - 3 * 3600e3).toISOString().slice(0, 10);
+        if (r && diaDe(r.em || 0) === diaDe(agora)) continue;                        // já retomou hoje
+        if (!rotinaPermitida(jid, 'retomada')) continue;
+        fila.push({ jid, tipo: 'insistir', p, n: feitas + 1, dias: Math.floor(dias) });
+      }
     }
     for (const it of fila.slice(0, 15)) {
       if (!sock || !conectado) break;
@@ -2826,6 +2842,15 @@ async function rodarRotina(it) {
     estado.retomadas = estado.retomadas || {}; estado.retomadas[jid] = { base: it.p.ultCli, em: Date.now() };
     for (const [k, r] of Object.entries(estado.retomadas)) if (Date.now() - (r.em || 0) > 7 * 864e5) delete estado.retomadas[k];
     salvarEstado();
+  } else if (it.tipo === 'insistir') {
+    const foco = it.n === 1 ? 'retome a última dúvida ou pergunta dele, de um jeito diferente do que já mandou' : it.n === 2 ? 'traga um fato novo do imóvel que ele viu (ou o vídeo dele, se ainda não mandou), ou a conta com o sinal, e uma pergunta' : 'convide para vir ao escritório (ou ver o imóvel) com dois horários livres de agenda_visita a partir de amanhã';
+    instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Follow-up automático ${it.n} de 3: o cliente parou de responder há ${it.dias} dia${it.dias === 1 ? '' : 's'}. Releia a conversa inteira. Mande UMA mensagem curta (até 2 frases), natural, na voz do Djhonata: ${foco}. Nunca repita frase, pergunta, dia ou horário que já mandou (os horários antigos já passaram), nunca "e aí, pensou?", nunca cobre resposta. Responda só NO_REPLY se: ele disse que não quer, desistiu, comprou com outro, está sem perfil, combinou de retornar numa data, ou a conversa terminou com despedida.`;
+    extra = { rotina: 'retomada' };
+    estado.insistir = estado.insistir || {}; estado.insistir[jid] = { base: it.p.ultCli, n: it.n, em: Date.now() };
+    for (const [k, r] of Object.entries(estado.insistir)) if (Date.now() - (r.em || 0) > 10 * 864e5) delete estado.insistir[k];
+    estado.retomadas = estado.retomadas || {}; estado.retomadas[jid] = { base: it.p.ultCli, em: Date.now() };
+    salvarEstado();
+    liberado24h.add(jid);
   } else if (it.tipo === 'naoveio') {
     instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Não compareceu: o cliente tinha visita marcada para ${descreverQuando(it.n.q)}, ${it.n.local ? 'no imóvel (' + it.n.local + ')' : 'no escritório'}, e não veio nem avisou. O Djhonata colocou o card em "Remarcar visita". Releia a conversa e mande UMA mensagem curta, leve e sem cobrança: diga que ficou esperando ele no dia da visita (se a visita foi hoje, diga "hoje"), que imprevisto acontece, e pergunte qual dia e horário fica melhor para remarcar (pode sugerir dois horários livres, consultando agenda_visita). Não mande o link, não repita a apresentação do imóvel e não diga que ele faltou ou que desmarcou. Se ele responder com dia e hora, marque com agenda_visita.`;
     extra = { rotina: 'retomada' };
@@ -2857,7 +2882,7 @@ async function rodarRotina(it) {
   ocupado.add(jid); emitir('digitando', { jid, on: true });
   try {
     await responder({ jid, telefone: c.telefone || '', nome: c.nome || '', dono: false, imagens: [], rotina: instr, extra });
-    if (it.tipo === 'retomada' || it.tipo === 'ordem' || it.tipo === 'retorno' || it.tipo === 'naoveio') rotinas.retomadas++; else rotinas.lembretes++;
+    if (it.tipo === 'retomada' || it.tipo === 'insistir' || it.tipo === 'ordem' || it.tipo === 'retorno' || it.tipo === 'naoveio') rotinas.retomadas++; else rotinas.lembretes++;
     rotinas.ultima = new Date().toISOString();
     log('rotina', it.tipo, c.telefone || jid);
   } catch (e) { log('rotina com erro', it.tipo, e.message); }
@@ -3053,7 +3078,7 @@ function fuPausa(jid) {
   const uc = ultCli(jid) || 0, dias = new Map();
   for (const m of lerEsp(jid)) {
     if (m.autor === 'cliente' || m.autor === 'aviso' || m.tipo === 'reacao') continue;
-    const ts = m.ts || 0; if (ts <= uc + 12 * 3600e3) continue;
+    const ts = m.ts || 0; if (ts <= uc + 7 * 864e5) continue;   // as tentativas dos 7 primeiros dias (automáticas) não contam para a pausa
     const d = new Date(ts - 3 * 3600e3).toISOString().slice(0, 10); dias.set(d, Math.max(dias.get(d) || 0, ts));
   }
   const tent = [...dias.values()].sort((a, b) => a - b), n = tent.length, ult = tent[n - 1] || 0;
