@@ -3459,11 +3459,17 @@ Sua tarefa é SÓ apontar o que pode sair sem mudar nenhuma regra em vigor:
 1. "remover": regra ANTIGA cujo conteúdo foi inteiro substituído ou contrariado por outra mais nova (diga qual, no campo "por"). Só remova se TUDO o que ela manda já está na outra ou foi revogado por ela. Na dúvida, não remova.
 2. "juntar": duas ou mais regras ANTIGAS sobre o mesmo assunto que dizem a mesma coisa: escreva UMA regra com todo o conteúdo delas (campo "texto", começando com "- TÍTULO EM MAIÚSCULAS"), sem perder nenhum detalhe, número, exemplo de frase ou exceção, e sem diminutivos.
 PROIBIDO: tocar em regra marcada RECENTE (nem remover, nem juntar); inventar regra; resumir a ponto de perder conteúdo; remover regra só porque é longa.
-Responda SOMENTE com JSON: {"remover":[{"id":"B12","por":"A40","motivo":"..."}],"juntar":[{"ids":["B5","B88"],"texto":"- ...","motivo":"..."}]}. Motivos com até 12 palavras.`;
-  const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: jsonLimpo({ model: ENX_MODELO, max_tokens: 16000, system: sis, messages: [{ role: 'user', content: 'Regras atuais:' + lista }] }), signal: AbortSignal.timeout(9 * 60e3) });
+Responda SOMENTE com JSON: {"remover":[{"id":"B12","por":"A40","motivo":"..."}],"juntar":[{"ids":["B5","B88"],"texto":"- ...","motivo":"..."}]}. Motivos com até 12 palavras. Escreva primeiro todo o "remover"; no "juntar", no máximo 8 grupos, os mais repetidos. Dentro dos textos use aspas simples, nunca aspas duplas.`;
+  const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: jsonLimpo({ model: ENX_MODELO, max_tokens: 30000, system: sis, messages: [{ role: 'user', content: 'Regras atuais:' + lista }] }), signal: AbortSignal.timeout(9 * 60e3) });
   if (!r.ok) return { erro: 'API ' + r.status + ' ' + (await r.text()).slice(0, 200) };
   const j = await r.json(), bruto = (j.content || []).map(x => x.text || '').join(''); if (j.usage) registrarUso(j.usage);
-  let plano; try { plano = JSON.parse(bruto.slice(bruto.indexOf('{'), bruto.lastIndexOf('}') + 1)); } catch (e) { return { erro: 'a IA não devolveu um plano válido', bruto: bruto.slice(0, 300) }; }
+  let plano; try { plano = JSON.parse(bruto.slice(bruto.indexOf('{'), bruto.lastIndexOf('}') + 1)); }
+  catch (e) {   // resposta cortada ou com aspas soltas: aproveita só as remoções, que têm formato simples
+    plano = { remover: [], juntar: [] }; let mm; const reR = /\{\s*"id"\s*:\s*"([AB]\d+)"\s*,\s*"por"\s*:\s*"([AB]\d+)"\s*,\s*"motivo"\s*:\s*"([^"]*)"\s*\}/g;
+    while ((mm = reR.exec(bruto))) plano.remover.push({ id: mm[1], por: mm[2], motivo: mm[3] });
+    if (!plano.remover.length) return { erro: 'a IA não devolveu um plano válido', parou: j.stop_reason, tamanho: bruto.length, bruto: bruto.slice(0, 300) };
+    log('limpeza das regras: plano cortado, aproveitei só as remoções', plano.remover.length, j.stop_reason);
+  }
   const porId = {}; for (const a of arqs) for (const b of a.blocos) if (b.id) porId[b.id] = b;
   const feito = { remover: [], juntar: [], recusados: [] };
   for (const x of (plano.remover || [])) {
