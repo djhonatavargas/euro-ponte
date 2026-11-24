@@ -2747,6 +2747,32 @@ function visitaSolta(t8) {   // cliente que está na agenda mas já não tem lem
   const c = visitaConfirmacao(jid, { enviados: { l2: base } }), r = visitaResposta(jid, base);
   return { tel8: t8, q: '', solta: true, criado: 0, l1: 0, l2: base, conf: c.conf, confEm: c.em, confTexto: c.texto, resp: r.resp, respEm: r.respEm };
 }
+// 24/11/2026 (Djhonata, caso Ricardo Cardoso: "semana que vem, a partir de terça, vou estar mais tranquilo"): quando o cliente disse QUANDO
+// pode falar, nada de follow-up antes: a assistente marca o retorno para essa data e só chama nela. Sem data clara ("te aviso", "mais pra frente"),
+// também não insiste: fica com o Djhonata.
+const RE_ADIA = /\b(semana que vem|pr[oó]xima semana|m[eê]s que vem|pr[oó]ximo m[eê]s|in[ií]cio do m[eê]s|come[cç]o do m[eê]s|amanh[aã]|depois de amanh[aã]|segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo|fim de semana|final de semana|depois do dia|a partir do dia|dia \d{1,2}\b|daqui a \d+ dias?|depois do feriado|mais pra frente|mais para frente|outro dia|te aviso|eu te aviso|te chamo|eu te chamo|eu chamo|eu falo|te falo|te retorno|quando receber|quando sair|quando der|mais tranquil|estou corrid|t[oô] corrid|t[oô] sem tempo|estou sem tempo)/i;
+function adiamentoDoCliente(jid) {   // { texto, q } se a última fala do cliente adiou a conversa; q = 'AAAA-MM-DDTHH:MM' quando dá para saber o dia
+  const l = lerEsp(jid); const fala = []; let viuCli = false;
+  for (let i = l.length - 1; i >= 0 && fala.length < 4; i--) { const m = l[i]; if (m.autor === 'aviso' || m.tipo === 'reacao') continue; if (m.autor === 'cliente') { viuCli = true; fala.push(String(m.transc || m.texto || '')); } else if (viuCli) break; }
+  const txt = semAcento(fala.reverse().join(' ').toLowerCase()); if (!txt || !RE_ADIA.test(txt)) return null;
+  const hoje = agoraSP(), ymd = (d) => d.toISOString().slice(0, 10), mais = (n) => { const d = new Date(hoje); d.setUTCDate(d.getUTCDate() + n); return d; };
+  const SEM = { domingo: 0, segunda: 1, terca: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6 }; let alvo = null, mm;
+  const proxSemana = /semana que vem|proxima semana/.test(txt);
+  if ((mm = /\b(segunda|terca|quarta|quinta|sexta|sabado|domingo)\b/.exec(txt))) { const w = SEM[mm[1]], hw = hoje.getUTCDay(); const n = proxSemana ? ((8 - hw) % 7 || 7) + ((w + 6) % 7) : ((w - hw + 7) % 7 || 7); alvo = mais(n); }
+  else if (/depois de amanha/.test(txt)) alvo = mais(2);
+  else if (/amanha/.test(txt)) alvo = mais(1);
+  else if ((mm = /daqui a (\d+) dias?/.exec(txt))) alvo = mais(Math.min(60, +mm[1]));
+  else if ((mm = /(?:depois do|a partir do|dia) (\d{1,2})\b/.exec(txt)) && +mm[1] >= 1 && +mm[1] <= 31) { const d = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), +mm[1])); if (d <= hoje) d.setUTCMonth(d.getUTCMonth() + 1); if (/depois do/.test(mm[0])) d.setUTCDate(d.getUTCDate() + 1); alvo = d; }
+  else if (proxSemana) alvo = mais((8 - hoje.getUTCDay()) % 7 || 7);
+  else if (/mes que vem|proximo mes|inicio do mes|comeco do mes/.test(txt)) alvo = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() + 1, 2));
+  if (alvo) { while (alvo.getUTCDay() === 0) alvo.setUTCDate(alvo.getUTCDate() + 1); }
+  return { texto: fala.join(' ').slice(0, 160), q: alvo ? ymd(alvo) + 'T10:00' : '' };
+}
+function adiouEMarca(jid) {   // true = não fazer retomada/follow-up automático agora
+  const a = adiamentoDoCliente(jid); if (!a) return false;
+  if (a.q && !(estado.retornos || {})[jid] && quandoMs(a.q) > Date.now()) { estado.retornos = estado.retornos || {}; estado.retornos[jid] = { q: a.q, assunto: 'o cliente disse: "' + a.texto + '"', criado: Date.now(), auto: true }; salvarEstado(); log('retorno marcado pelo que o cliente disse', jid, a.q, a.texto); }
+  return true;
+}
 function conversaParada(jid) {   // última mensagem (sem contar avisos internos) foi da assistente e o cliente não respondeu
   const l = lerEsp(jid); let ult = null, ultCli = 0, agenda = false, ack = 0;
   for (let i = l.length - 1; i >= 0; i--) {
@@ -2804,6 +2830,7 @@ async function verificarRotinas() {
         const r = (estado.retomadas || {})[jid], diaDe = (ms) => new Date(ms - 3 * 3600e3).toISOString().slice(0, 10);
         if (r && (r.base === p.ultCli || diaDe(r.em || 0) === diaDe(agora))) continue;   // já retomou desde a última mensagem dele, ou já retomou hoje (13/11/2026: o Ge recebeu duas na mesma manhã)
         if (!rotinaPermitida(jid, 'retomada')) continue;
+        if (adiouEMarca(jid)) continue;   // o cliente disse quando pode: chama na data, não antes
         fila.push({ jid, tipo: 'retomada', p });
       }
       // 24/11/2026 (Djhonata, caso Alessandro final 5134): nos 7 dias depois da última fala do cliente, a assistente insiste sozinha para não deixar
@@ -2821,6 +2848,7 @@ async function verificarRotinas() {
         const r = (estado.retomadas || {})[jid], diaDe = (ms) => new Date(ms - 3 * 3600e3).toISOString().slice(0, 10);
         if (r && diaDe(r.em || 0) === diaDe(agora)) continue;                        // já retomou hoje
         if (!rotinaPermitida(jid, 'retomada')) continue;
+        if (adiouEMarca(jid)) continue;   // o cliente disse quando pode: chama na data, não antes
         fila.push({ jid, tipo: 'insistir', p, n: feitas + 1, dias: Math.floor(dias) });
       }
     }
