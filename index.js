@@ -1213,7 +1213,7 @@ function registrarEspelho(jid, m, { silencioso = false } = {}) {
   if (m.telefone) c.telefone = m.telefone;
   if (m.id && (!c.ultKey || m.ts >= (c.ultKeyTs || 0))) { c.ultKey = { id: m.id, fromMe: m.autor !== 'cliente' }; c.ultKeyTs = m.ts; }
   if (!c.ult || m.ts >= c.ult) { c.ult = m.ts; c.ultTexto = resumoMsg(m).slice(0, 120); c.ultAutor = m.autor; }
-  if (m.autor === 'cliente' && m.ts > (c.ultCliente || 0)) c.ultCliente = m.ts;
+  if (m.autor === 'cliente' && !m.auto && m.ts > (c.ultCliente || 0)) c.ultCliente = m.ts;   // 24/11/2026: resposta automática de conta comercial não conta como "o cliente escreveu"
   if (m.autor === 'cliente' && !silencioso) c.naoLidas = (c.naoLidas || 0) + 1;
   salvarChats();
   if (!silencioso) emitir('msg', { jid, msg: m, chat: chatPublico(jid) });
@@ -1766,10 +1766,18 @@ async function revisarSaida(f, t) {
     // (2) cliente disse "vou ver com ele e te retorno" (sem perguntar nada): agradece e espera, sem empurrar horário.
     try { if (!f.rotina) {
       t = String(t).replace(/(quem (?:te )?atende) (?:sou eu(?: mesm[oa])?|[ée] (?:eu|comigo)(?: mesm[oa])?)/gi, '$1 é o próprio Djhonata');
-      const l = lerEsp(f.jid), fala = []; for (let i = l.length - 1; i >= 0 && fala.length < 4; i--) { const m = l[i]; if (m.autor === 'aviso' || m.tipo === 'reacao') continue; if (m.autor === 'cliente') fala.push(String(m.transc || m.texto || '')); else break; }
+      const l = lerEsp(f.jid), fala = []; for (let i = l.length - 1; i >= 0 && fala.length < 4; i--) { const m = l[i]; if (m.autor === 'aviso' || m.tipo === 'reacao') continue; if (m.autor === 'cliente') fala.push(String(m.texto || '')); else break; }   // 24/11/2026: o texto do áudio transcrito está em m.texto (m.transc é só a marca)
       const cli = semAcento(fala.join(' ').toLowerCase());
       if (cli && /\b(vou ver com|vou falar com|vou conversar com|vejo com|vou ver aqui e|te retorno|te dou um retorno|te dou retorno|te aviso|te falo|retorno pra voce|retorno para voce)/.test(cli) && !/\?|que horas|qual horario|horario/.test(cli) && /\b\d{1,2}h\b|\bas \d{1,2}\b/.test(semAcento(String(t).toLowerCase()))) {
         t = 'Combinado ✅ Fico no aguardo do seu retorno. Qualquer dúvida, é só me chamar.'; log('revisor: cliente vai dar retorno, horário segurado', f.telefone || f.jid);
+      }
+      // 24/11/2026 (Djhonata, caso Joseane: "esse valor dá pra fazer direto com a construtora?"): pergunta sobre o PAGAMENTO do imóvel. Direto com a
+      // construtora fica só a entrada; o restante é pela Caixa. Se a IA responder sem falar do financiamento ("é direto com a gente"), sai a resposta certa.
+      // Pergunta sobre com quem é a NEGOCIAÇÃO (sem falar de valor, pagar, parcelar ou financiar) não passa por aqui.
+      if (cli && /\bdiret[oa] (?:com|na|pela|c\/)\s?(?:a |o )?construtora\b/.test(cli) && /\b(valor|pagar|pagamento|parcel\w*|financ\w*|prestac\w*|sem (?:o )?banco)\b/.test(cli) && !/\b(comprei|compramos|fechei|fechamos)\b/.test(cli)) {
+        const st = semAcento(String(t).toLowerCase());
+        if (f._direto) { if (/direto com a gente|intermediari|nao paga comissao/.test(st)) return ''; }
+        else if (!/caixa|banco|financiamento|financiad/.test(st)) { f._direto = true; t = 'Direto com a construtora fica só a entrada. O restante é financiado pela Caixa: todo imóvel nosso passa pelo financiamento em algum momento. Quer que eu te mostre como fica a entrada?'; log('revisor: pagamento direto com a construtora, resposta corrigida', f.telefone || f.jid); }
       } } } catch (e) { }
     if (/📋/.test(t)) return t;
     const ja = jaFalouCom(f.jid), conversando = !!(ja && Date.now() - (ja.ts || 0) < 6 * 3600e3);
@@ -1824,6 +1832,7 @@ async function enviarSaida(jid, texto, autor = 'ia', extra) {   // devolve o que
     if (pedida && autor === 'ia') { const r = await reagir(jid, pedida); if (r) feitos.push('[[reagir:' + r + ']]'); }
     if (!String(texto).trim()) return feitos; }
   if (autor === 'ia') texto = semDiminutivo(generoDoDono(texto));
+  texto = String(texto).replace(/\*\*([^*\n]+)\*\*/g, '*$1*');   // 24/11/2026: "**negrito**" (Markdown) chegava ao cliente com asterisco sobrando
   // 24/11/2026 (caso Ivonildes): marcação interna da IA ("[[bloco da simulação]]") chegou ao cliente como texto. Só [[tts:]], [[cita:]] e [[reagir:]] valem; o resto sai.
   if (autor === 'ia') { texto = String(texto).replace(/\[\[(?!tts:|cita:|reagir:)[^\]\n]{0,80}\]\]/gi, '').replace(/\n{3,}/g, '\n\n'); if (!texto.trim()) return feitos; }
   const proprio = String(texto || '').split('\n').filter(l => !RE_LINK_AGENDA.test(l) && !linhaDaAgenda(l)).join('\n');   // o texto da IA sem o bloco da agenda
@@ -1935,6 +1944,10 @@ function textoDe(x) {
 function jidValido(jid) { return jid && !jid.endsWith('@g.us') && !jid.endsWith('@broadcast') && !jid.endsWith('@newsletter') && jid !== 'status@broadcast'; }
 function tsDe(m) { return (Number(m.messageTimestamp && (m.messageTimestamp.low || m.messageTimestamp)) || Math.floor(Date.now() / 1000)) * 1000; }
 
+// 24/11/2026 (pente fino nos clientes): resposta automática de conta comercial ("Rezende Material de Construção agradece sua mensagem. Não estamos
+// disponíveis no momento.", "Studio X agradece seu contato. Como podemos ajudar?") não é o cliente falando: não conta como "voltou a conversar",
+// não marca o follow-up como respondido e a assistente não responde. O texto chega aqui já sem acento.
+const RE_RESPOSTA_AUTO = /\bagradece (?:a |o )?(?:sua|seu) (?:mensagem|contato)|\bnao estamos em horario de atendimento|\bfora do (?:nosso )?horario de atendimento|\bmensagem automatica\b|\bbem[- ]vind[oa](?:\(a\))? ao nosso atendimento|\b(?:retornaremos|responderemos) (?:assim que|o mais breve|em breve|o quanto antes)|\bassim que possivel (?:retornaremos|responderemos)/;
 // fila por conversa: junta as mensagens do cliente e responde depois de alguns segundos de silêncio
 const filas = new Map();
 
@@ -1953,8 +1966,9 @@ async function aoReceber(m, tipoUpsert) {
   const atrasada = tipoUpsert === 'append';
   const recente = Date.now() - ts < (atrasada ? JANELA_ATRASADA : 180e3);
   const telefone = telefoneDe(m);
+  const autoResp = !m.key.fromMe && !cifrada && RE_RESPOSTA_AUTO.test(semAcento(texto || ''));   // 24/11/2026: resposta automática de conta comercial
   if (!m.key.fromMe && !cifrada && tipoUpsert !== 'historico') marcarOrigem(jid, x, texto, ts);
-  if (!m.key.fromMe && tipoUpsert === 'notify' && !x.reactionMessage && (chats[jid] || {}).arquivado) setTimeout(() => arquivarChat(jid, false).then(() => log('desarquivada: o cliente escreveu de novo', tel8Chat(jid))).catch(e => log('desarquivar', e.message)), 2500);
+  if (!m.key.fromMe && tipoUpsert === 'notify' && !x.reactionMessage && !autoResp && (chats[jid] || {}).arquivado) setTimeout(() => arquivarChat(jid, false).then(() => log('desarquivada: o cliente escreveu de novo', tel8Chat(jid))).catch(e => log('desarquivar', e.message)), 2500);
 
   // espelho: grava tudo (menos o que a própria ponte já gravou ao enviar)
   if (!(m.key.fromMe && enviados.has(m.key.id))) {
@@ -1964,7 +1978,7 @@ async function aoReceber(m, tipoUpsert) {
     registrarEspelho(jid, {
       id: m.key.id, autor: m.key.fromMe ? 'celular' : 'cliente', tipo, texto,
       arquivo: midia ? midia.arquivo : undefined, nomeArquivo: x.documentMessage ? x.documentMessage.fileName : undefined,
-      nome: m.key.fromMe ? undefined : (m.pushName || undefined), telefone: telefone || undefined, ts
+      nome: m.key.fromMe ? undefined : (m.pushName || undefined), telefone: telefone || undefined, ts, auto: autoResp || undefined
     }, { silencioso: tipoUpsert === 'historico' });
     // áudio recebido (do cliente ou mandado pelo celular): transcreve e mostra o texto no CRM
     if (tipo === 'audio' && midia && midia.buf && (ELEVEN_KEY || GEMINI_KEY)) {
@@ -1992,6 +2006,7 @@ async function aoReceber(m, tipoUpsert) {
 
   const dono = telefone && normal(telefone) === normal(DONO);
   if (!dono && telefone && lerBloqueados().has(normal(telefone))) { log('bloqueado, ignorado', telefone); return; }
+  if (autoResp && !dono) { log('resposta automática de conta comercial: não conta como conversa', telefone || jid); return; }
   if (!dono) { try { fuClienteFalou(jid, telefone, ts); } catch (e) { } }
 
   let entrada = texto;
@@ -2530,7 +2545,7 @@ async function responder(f) {
   if (!f.dono && !f.rotina && !ctx.autoTrava && f.jid) {
     try {
       const l = lerEsp(f.jid), fala = []; let viu = false;
-      for (let i = l.length - 1; i >= 0 && fala.length < 4; i--) { const m = l[i]; if (m.autor === 'aviso' || m.tipo === 'reacao') continue; if (m.autor === 'cliente') { viu = true; fala.push(String(m.transc || m.texto || '')); } else if (viu) break; }
+      for (let i = l.length - 1; i >= 0 && fala.length < 4; i--) { const m = l[i]; if (m.autor === 'aviso' || m.tipo === 'reacao') continue; if (m.autor === 'cliente') { viu = true; fala.push(String(m.texto || '')); } else if (viu) break; }
       const tx = fala.reverse().join(' / ');
       if (RE_COMPROU_OUTRO.test(semAcento(tx)) && !/\b(quero|vou|pretendo|queria|penso em|gostaria de) compr/i.test(semAcento(tx))) {
         await executar('registrar_crm', { novoStatus: 'desistiu', resultado: 'Comprou com outro: "' + tx.slice(0, 200) + '"', resumo: 'Cliente disse que já comprou (ou fechou) um imóvel por outro caminho.' }, ctx);
@@ -2544,7 +2559,7 @@ async function responder(f) {
     try {
       const txt = saida.join('\n'), convite = /escrit[oó]rio/i.test(txt) && /(\b\d{1,2}h\b|\bàs \d{1,2}|\bas \d{1,2})/i.test(txt);
       if ((ctx.fotoEscritorio || convite) && !mandouHaPouco(f.jid, m => m.arquivo === 'c/' + FOTO_ESCRITORIO, AGENDA_VALE) && fs.existsSync(path.join(CATALOGO, FOTO_ESCRITORIO))) {
-        if (await enviarArquivo(f.jid, FOTO_ESCRITORIO, 'Esse é o nosso escritório, pra você achar fácil ✅', 'ia', f.rotina ? { rotina: f.rotina } : undefined) === 'Enviado.') log('foto do escritório enviada', f.telefone || f.jid);
+        if (await enviarArquivo(f.jid, FOTO_ESCRITORIO, 'Esse é o nosso escritório, pra você achar fácil ✅', 'ia', f.extra) === 'Enviado.') log('foto do escritório enviada', f.telefone || f.jid);
       }
     } catch (e) { log('foto do escritório: falhou', e.message); }
   }
@@ -2772,7 +2787,7 @@ function visitaConfirmacao(jid, v) {
 function visitaResposta(jid, base) {   // tudo que o cliente escreveu depois do último lembrete, em uma linha
   if (!base) return { resp: '', respEm: 0 };
   const p = []; let em = 0;
-  for (const m of lerEsp(jid)) { if (m.autor !== 'cliente' || (m.ts || 0) <= base) continue; const t = String(m.transc || m.texto || '').replace(/\s+/g, ' ').trim(); if (!t || m.tipo === 'image' && !m.transc && t.length < 3) continue; p.push(t); em = m.ts; }
+  for (const m of lerEsp(jid)) { if (m.autor !== 'cliente' || (m.ts || 0) <= base) continue; const t = String(m.texto || '').replace(/\s+/g, ' ').trim(); if (!t || m.tipo === 'image' && !m.transc && t.length < 3) continue; p.push(t); em = m.ts; }
   return { resp: p.slice(-4).join(' · ').slice(0, 220), respEm: em };
 }
 function visitaSolta(t8) {   // cliente que está na agenda mas já não tem lembrete ativo aqui (a assistente liberou depois da resposta dele): acha o último lembrete dos últimos 2 dias
@@ -2785,25 +2800,50 @@ function visitaSolta(t8) {   // cliente que está na agenda mas já não tem lem
 // 24/11/2026 (Djhonata, caso Ricardo Cardoso: "semana que vem, a partir de terça, vou estar mais tranquilo"): quando o cliente disse QUANDO
 // pode falar, nada de follow-up antes: a assistente marca o retorno para essa data e só chama nela. Sem data clara ("te aviso", "mais pra frente"),
 // também não insiste: fica com o Djhonata.
-const RE_ADIA = /\b(semana que vem|pr[oó]xima semana|m[eê]s que vem|pr[oó]ximo m[eê]s|in[ií]cio do m[eê]s|come[cç]o do m[eê]s|amanh[aã]|depois de amanh[aã]|segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo|fim de semana|final de semana|depois do dia|a partir do dia|dia \d{1,2}\b|daqui a \d+ dias?|depois do feriado|mais pra frente|mais para frente|outro dia|te aviso|eu te aviso|te chamo|eu te chamo|eu chamo|eu falo|te falo|te retorno|quando receber|quando sair|quando der|mais tranquil|estou corrid|t[oô] corrid|t[oô] sem tempo|estou sem tempo|d[aá] uma segurad|segura a[ií]|terminar de receber|quando (?:eu )?receber|receber (?:uma|um|o|a|meu|minha) |grana)/i;   // 24/11/2026: Leonardo "dá uma segurada, deixa eu terminar de receber uma grana"
-function adiamentoDoCliente(jid) {   // { texto, q } se a última fala do cliente adiou a conversa; q = 'AAAA-MM-DDTHH:MM' quando dá para saber o dia
-  const l = lerEsp(jid); const fala = []; let viuCli = false;
-  for (let i = l.length - 1; i >= 0 && fala.length < 4; i--) { const m = l[i]; if (m.autor === 'aviso' || m.tipo === 'reacao') continue; if (m.autor === 'cliente') { viuCli = true; fala.push(String(m.transc || m.texto || '')); } else if (viuCli) break; }
-  const txt = semAcento(fala.reverse().join(' ').toLowerCase()); if (!txt || !RE_ADIA.test(txt)) return null;
-  const hoje = agoraSP(), ymd = (d) => d.toISOString().slice(0, 10), mais = (n) => { const d = new Date(hoje); d.setUTCDate(d.getUTCDate() + n); return d; };
+const RE_ADIA = /\b(semana que vem|pr[oó]xima semana|m[eê]s que vem|pr[oó]ximo m[eê]s|in[ií]cio do m[eê]s|come[cç]o do m[eê]s|amanh[aã]|depois de amanh[aã]|segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo|fim de semana|final de semana|depois do dia|a partir do dia|dia \d{1,2}\b|daqui a \d+ dias?|depois do feriado|mais pra frente|mais para frente|outro dia|te aviso|eu te aviso|te chamo|eu te chamo|eu chamo|eu falo|te falo|te retorno|quando receber|quando sair|quando der|mais tranquil|estou corrid|t[oô] corrid|t[oô] sem tempo|estou sem tempo|d[aá] uma segurad|segura a[ií]|terminar de receber|quando (?:eu )?receber|receber (?:uma|um|o|a|meu|minha) |grana|(?:esperar|aguardar|deixar|retomar|voltar a falar|falamos|conversamos|a gente (?:se fala|conversa|ve))[^.?!]{0,40}\b(?:janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\b|s[oó] (?:em|l[aá] (?:pra|para|por|em)|depois de|a partir de) (?:janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\b|l[aá] (?:pra|para|por) (?:janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\b|ano que vem|pr[oó]ximo ano|depois d[ao]s? (?:festas|natal|ano novo|virada))/i;   // 24/11/2026: Leonardo "dá uma segurada, deixa eu terminar de receber uma grana"
+// 24/11/2026 (pente fino nos clientes): (1) caso Ricardo: depois de "semana que vem, a partir de terça" ele ainda mandou "Blz" e "Obrigado", e o
+// retorno não foi marcado porque só a última fala era lida. Agora procura a fala de adiamento nas últimas falas do cliente (até 3 dias antes da
+// última) e só desiste dela se depois veio assunto novo. (2) A data conta a partir do dia em que o cliente falou, não de hoje (antes, "amanhã"
+// virava um retorno novo a cada dia). (3) Entende mês pelo nome (caso Taty: "esperar até janeiro... depois do dia 20" tinha virado 21/12).
+// (4) Áudio transcrito: o texto fica em m.texto (m.transc é só a marca de que foi transcrito); antes o áudio era lido como "true".
+// (5) Quem está combinando visita ("pode ser quinta", "posso ir sábado?") não está adiando.
+const RE_LEVE = /^(?:muito |ok,? |ta,? |blz,? |certo,? )?(?:obrigad[oa]o?|obg|obgd[oa]?|brigad[oa]|valeu|vlw|tmj|agradeco|agradecid[oa]|amem|deus (?:te )?abencoe|ate (?:mais|logo)|abraco|boa (?:tarde|noite)|bom dia|kk+|rs+)[\s.!,\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}]*$/iu;
+const RE_COMBINANDO = /\b(pode ser|posso ir|podemos ir|consigo ir|conseguimos ir|vou ir|vou ai|passo ai|quero ir|queria ir|vamos marcar|pode marcar|quero marcar|marca pra|agenda pra|confirmad[oa]|ta marcado|fica marcado)\b/;
+const MESES_NOME = { janeiro: 0, fevereiro: 1, marco: 2, abril: 3, maio: 4, junho: 5, julho: 6, agosto: 7, setembro: 8, outubro: 9, novembro: 10, dezembro: 11 };
+function adiamentoDoCliente(jid) {   // { texto, q } se o cliente adiou a conversa; q = 'AAAA-MM-DDTHH:MM' quando dá para saber o dia
+  const cli = lerEsp(jid).filter(m => m.autor === 'cliente' && m.tipo !== 'reacao' && !m.auto); if (!cli.length) return null;
+  const fim = cli[cli.length - 1].ts, rec = cli.filter(m => fim - m.ts < 3 * 864e5).slice(-8);
+  const tx = (m) => semAcento(String(m.texto || '')).trim();
+  let k = -1; for (let i = rec.length - 1; i >= 0; i--) { if (RE_ADIA.test(tx(rec[i]))) { k = i; break; } }
+  if (k < 0 || RE_COMBINANDO.test(tx(rec[k]))) return null;
+  for (let i = k + 1; i < rec.length; i++) { const s = tx(rec[i]); if (s && !RE_SO_OK.test(s) && !RE_LEVE.test(s)) return null; }   // depois veio assunto novo: a conversa seguiu
+  const txt = semAcento(rec.slice(Math.max(0, k - 3), k + 1).filter(m => rec[k].ts - m.ts < 6 * 3600e3).map(m => String(m.texto || '')).join(' '));
+  const sp = new Date(rec[k].ts - 3 * 3600e3), hoje = new Date(Date.UTC(sp.getUTCFullYear(), sp.getUTCMonth(), sp.getUTCDate(), 12));   // o dia em que o cliente falou (horário de Brasília)
+  const ymd = (d) => d.toISOString().slice(0, 10), mais = (n) => { const d = new Date(hoje); d.setUTCDate(d.getUTCDate() + n); return d; };
   const SEM = { domingo: 0, segunda: 1, terca: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6 }; let alvo = null, mm;
   const proxSemana = /semana que vem|proxima semana/.test(txt);
-  if ((mm = /\b(segunda|terca|quarta|quinta|sexta|sabado|domingo)\b/.exec(txt))) { const w = SEM[mm[1]], hw = hoje.getUTCDay(); const n = proxSemana ? ((8 - hw) % 7 || 7) + ((w + 6) % 7) : ((w - hw + 7) % 7 || 7); alvo = mais(n); }
+  const mesNome = /\b(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\b/.exec(txt);
+  const anoQueVem = /ano que vem|proximo ano|depois d[ao]s? (?:festas|natal|ano novo|virada)/.test(txt);
+  const diaM = /(?:(depois d[oe]|a partir d[oe]) (?:dia )?|\bdia )(\d{1,2})\b(?! ?(?:dias?\b|h\b|horas?\b|mil\b|x\b|%|parcelas?\b|reais\b|anos?\b))/.exec(txt);
+  const diaOk = diaM && +diaM[2] >= 1 && +diaM[2] <= 31 ? +diaM[2] : 0, depois = !!(diaM && diaM[1] && /depois/.test(diaM[1]));
+  if (mesNome || anoQueVem) {
+    const mes = mesNome ? MESES_NOME[mesNome[1]] : 0;
+    const dia = diaOk ? diaOk + (depois ? 1 : 0) : (/quinzena|meados|metade d|meio d/.test(txt) ? 15 : /\b(?:fim|final) d/.test(txt) ? 25 : 5);
+    let ano = hoje.getUTCFullYear(); if (!mesNome || mes < hoje.getUTCMonth() || (mes === hoje.getUTCMonth() && dia <= hoje.getUTCDate())) ano++;
+    alvo = new Date(Date.UTC(ano, mes, dia, 12));
+  }
+  else if ((mm = /\b(segunda|terca|quarta|quinta|sexta|sabado|domingo)\b/.exec(txt))) { const w = SEM[mm[1]], hw = hoje.getUTCDay(); const n = proxSemana ? ((8 - hw) % 7 || 7) + ((w + 6) % 7) : ((w - hw + 7) % 7 || 7); alvo = mais(n); }
   else if (/depois de amanha/.test(txt)) alvo = mais(2);
   else if (/amanha/.test(txt)) alvo = mais(1);
-  else if ((mm = /daqui a (\d+) dias?/.exec(txt))) alvo = mais(Math.min(60, +mm[1]));
-  else if ((mm = /(?:depois do|a partir do|dia) (\d{1,2})\b/.exec(txt)) && +mm[1] >= 1 && +mm[1] <= 31) { const d = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), +mm[1])); if (d <= hoje) d.setUTCMonth(d.getUTCMonth() + 1); if (/depois do/.test(mm[0])) d.setUTCDate(d.getUTCDate() + 1); alvo = d; }
+  else if ((mm = /(?:daqui a|daqui uns|depois de|em uns) (\d+) dias?\b/.exec(txt))) alvo = mais(Math.min(60, +mm[1]));
+  else if (diaOk) { const d = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), diaOk, 12)); if (d <= hoje) d.setUTCMonth(d.getUTCMonth() + 1); if (depois) d.setUTCDate(d.getUTCDate() + 1); alvo = d; }
   else if (proxSemana) alvo = mais((8 - hoje.getUTCDay()) % 7 || 7);
-  else if (/mes que vem|proximo mes|inicio do mes|comeco do mes/.test(txt)) alvo = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() + 1, 2));
+  else if (/mes que vem|proximo mes|inicio do mes|comeco do mes/.test(txt)) alvo = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() + 1, 2, 12));
   if (alvo) { while (alvo.getUTCDay() === 0) alvo.setUTCDate(alvo.getUTCDate() + 1); }
-  return { texto: fala.join(' ').slice(0, 160), q: alvo ? ymd(alvo) + 'T10:00' : '' };
+  return { texto: String(rec[k].texto || '').replace(/\s+/g, ' ').slice(0, 160), q: alvo ? ymd(alvo) + 'T10:00' : '' };
 }
 function adiouEMarca(jid) {   // true = não fazer retomada/follow-up automático agora
+  if ((estado.visitas || {})[jid]) return false;   // 24/11/2026: com visita marcada vale o fluxo da visita (lembretes), não o adiamento
   const a = adiamentoDoCliente(jid); if (!a) return false;
   if (a.q && !(estado.retornos || {})[jid] && quandoMs(a.q) > Date.now()) { estado.retornos = estado.retornos || {}; estado.retornos[jid] = { q: a.q, assunto: 'o cliente disse: "' + a.texto + '"', criado: Date.now(), auto: true }; salvarEstado(); log('retorno marcado pelo que o cliente disse', jid, a.q, a.texto); }
   return true;
@@ -2811,7 +2851,7 @@ function adiouEMarca(jid) {   // true = não fazer retomada/follow-up automátic
 function conversaParada(jid) {   // última mensagem (sem contar avisos internos) foi da assistente e o cliente não respondeu
   const l = lerEsp(jid); let ult = null, ultCli = 0, agenda = false, ack = 0;
   for (let i = l.length - 1; i >= 0; i--) {
-    const m = l[i];
+    const m = l[i]; if (m.auto) continue;   // resposta automática de conta comercial não é fala do cliente
     if (m.autor === 'cliente') { if (!ult && !ack && RE_SO_OK.test(semAcento(String(m.texto || '')).trim())) { ack = m.ts; continue; } ultCli = m.ts; break; }   // 17/11/2026: "Certo" da Antonia ficou sem resposta e sem retomada
     if (m.autor === 'aviso') continue;
     if (!ult) ult = m;
@@ -3033,7 +3073,7 @@ setTimeout(() => { try { fuVarrer(); } catch (e) { } }, 90e3);
 // 24/11/2026 (Djhonata): na lista do follow-up o que importa é quando o CLIENTE escreveu pela última vez (e o que ele escreveu).
 function fuJid(x) { const j = x.jid && chats[x.jid] ? x.jid : acharJid(fuNumero(x.tel) + '@s.whatsapp.net'); return chats[j] ? j : ''; }
 function fuCliEm(x) { const j = fuJid(x); return j ? ultCli(j) : 0; }
-function fuCliTexto(x) { const j = fuJid(x); if (!j) return ''; const l = lerEsp(j); for (let i = l.length - 1; i >= 0; i--) { const m = l[i]; if (m.autor !== 'cliente') continue; const s = String(m.transc || m.texto || '').replace(/\s+/g, ' ').trim(); return s ? s.slice(0, 160) : (m.tipo === 'audio' ? '(áudio)' : m.tipo === 'image' ? '(foto)' : '(mensagem)'); } return ''; }
+function fuCliTexto(x) { const j = fuJid(x); if (!j) return ''; const l = lerEsp(j); for (let i = l.length - 1; i >= 0; i--) { const m = l[i]; if (m.autor !== 'cliente') continue; const s = String(m.texto || '').replace(/\s+/g, ' ').trim(); return s ? s.slice(0, 160) : (m.tipo === 'audio' ? '(áudio)' : m.tipo === 'image' ? '(foto)' : '(mensagem)'); } return ''; }
 function fuPublico(x, prev) {
   const u = fuUltima(x);
   return { cliEm: fuCliEm(x), cliTexto: fuCliTexto(x), ultimaEm: u.em, ultimaAutor: u.autor, ultimaTexto: u.texto, velho: !!(u.em && u.em > (x.geradoEm || x.criadoEm || 0) + 1000 && u.autor !== 'followup'), tel8: x.tel8, tel: x.tel, id: x.id, nome: x.nome, status: x.status, decisao: x.decisao || '', motivo: x.motivo || '', analise: x.analise || '', mensagem: x.mensagem || '', prioridade: x.prioridade || 0, imovel: x.imovel || '', criadoEm: x.criadoEm, geradoEm: x.geradoEm || 0, aprovadoEm: x.aprovadoEm || 0, enviadoEm: x.enviadoEm || 0, respondeuEm: x.respondeuEm || 0, erro: x.erro || '', jid: x.jid || '', previsao: (prev && prev[x.tel8]) || 0 };
@@ -3835,7 +3875,7 @@ Na dúvida entre "cliente" e outra categoria, escolha "cliente". Responda SOMENT
 // Arquiva: comprou / pedido finalizado, perdido (+7 dias sem falar), corretor, construtor/captação, pessoal.
 function ultCli(jid) {   // última mensagem do cliente (calcula do espelho para conversas que vieram do histórico)
   const c = chats[jid] || {};
-  if (c.ultCliente === undefined) { const l = lerEsp(jid); let t = 0; for (const m of l) if (m.autor === 'cliente' && m.ts > t) t = m.ts; c.ultCliente = t; salvarChats(); }
+  if (c.ultCliente === undefined) { const l = lerEsp(jid); let t = 0; for (const m of l) if (m.autor === 'cliente' && !m.auto && m.ts > t) t = m.ts; c.ultCliente = t; salvarChats(); }
   return c.ultCliente || 0;
 }
 async function classificarTudo(compradores, refazer, crm = {}) {
@@ -4151,7 +4191,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           catch (e) { return json(res, { erro: e.message }, 502); }
         }
         if (ac === 'enviar') {
-          const texto = semDiminutivo(String(b.texto || '').trim());
+          const texto = semDiminutivo(String(b.texto || '').trim()).replace(/\*\*([^*\n]+)\*\*/g, '*$1*');   // 24/11/2026: negrito do WhatsApp é com um asterisco só
           { const pr = problemaNoRascunho(texto); if (pr && !b.forcar) return json(res, { erro: pr }, 422); }
           if (jid && !chats[jid] && jid.endsWith('@s.whatsapp.net') && sock && conectado) { try { const [r] = await sock.onWhatsApp(jid.split('@')[0]); if (r && r.exists && r.jid) jid = r.jid; } catch (e) { } }
           if (!jidValido(jid) || !texto) return json(res, { erro: 'conversa ou texto inválido' }, 400);
@@ -4461,7 +4501,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const ok = new Set(estado.eventosOk || []);
           const pend = linhas.filter(e => e.rid && !ok.has(e.rid)).slice(-100);
           const ult = {}; for (const jid of Object.keys(chats)) { const c = chats[jid]; const t = (c.telefone || '').replace(/\D/g, '').slice(-8); const u = ultCli(jid); if (t.length === 8 && u) ult[t] = Math.max(ult[t] || 0, u); }
-          const ag = {}; for (const jid of Object.keys(chats)) { const c = chats[jid]; const t = (c.telefone || '').replace(/\D/g, '').slice(-8); if (t.length === 8 && c.ultAutor === 'cliente' && Date.now() - (c.ult || 0) < 30 * 864e5) ag[t] = c.ult; }   // 24/11/2026: escreveu por último e está sem resposta
+          const ag = {}; for (const jid of Object.keys(chats)) { const c = chats[jid]; const t = (c.telefone || '').replace(/\D/g, '').slice(-8); if (t.length !== 8 || c.ultAutor !== 'cliente' || Date.now() - (c.ult || 0) >= 30 * 864e5) continue; const ut = semAcento(c.ultTexto || '').trim(); if (ut && !RE_RESPOSTA_AUTO.test(ut) && !RE_SO_OK.test(ut) && !RE_LEVE.test(ut)) ag[t] = c.ult; }   // 24/11/2026: escreveu por último e está sem resposta (mensagem vazia de empresa, resposta automática e só "ok" ou "obrigado" não contam)
           return json(res, { eventos: pend, ultimaMsgCliente: ult, aguardando: ag });
         }
         else if (ac === 'eventos_ok') {
