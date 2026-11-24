@@ -3344,6 +3344,7 @@ function vidTextos(pasta) {
   };
 }
 async function vidMontar(fotos, tx, saida, dir) {
+  // 24/11/2026 (Djhonata: imagem tremendo): o zoompan arredonda a posição em pixel inteiro; ampliar para 4K antes do zoom deixa o movimento liso.
   const D = 3.2, T = 0.5, DF = 4.4, FPS = 30, n = fotos.length, total = n * (D - T) + DF;
   const seq = fotos.concat([fotos[0]]), args = ['-hide_banner', '-loglevel', 'error', '-y'];
   seq.forEach((f, i) => args.push('-loop', '1', '-framerate', String(FPS), '-t', String(i === n ? DF : D), '-i', f));
@@ -3351,7 +3352,7 @@ async function vidMontar(fotos, tx, saida, dir) {
   let fc = '';
   seq.forEach((f, i) => {
     const fr = Math.round((i === n ? DF : D) * FPS), z = i % 2 === 0 ? `1+0.06*on/${fr}` : `1.06-0.06*on/${fr}`;
-    fc += `[${i}:v]split[sa${i}][sb${i}];[sa${i}]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=24:4,eq=brightness=-0.12[bg${i}];[sb${i}]scale=1920:1080:force_original_aspect_ratio=decrease[fg${i}];[bg${i}][fg${i}]overlay=(W-w)/2:(H-h)/2,zoompan=z='${z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1280x720:fps=${FPS},setsar=1,format=yuv420p[v${i}];`;
+    fc += `[${i}:v]split[sa${i}][sb${i}];[sa${i}]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=24:4,eq=brightness=-0.12[bg${i}];[sb${i}]scale=1920:1080:force_original_aspect_ratio=decrease[fg${i}];[bg${i}][fg${i}]overlay=(W-w)/2:(H-h)/2,scale=3840:2160,zoompan=z='${z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1280x720:fps=${FPS},setsar=1,format=yuv420p[v${i}];`;
   });
   let ant = 'v0';
   for (let i = 1; i <= n; i++) { fc += `[${ant}][v${i}]xfade=transition=fade:duration=${T}:offset=${(i * (D - T)).toFixed(2)}[x${i}];`; ant = 'x' + i; }
