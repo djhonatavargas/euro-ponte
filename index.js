@@ -2807,8 +2807,9 @@ async function verificarRotinas() {
         fila.push({ jid, tipo: 'retomada', p });
       }
       // 24/11/2026 (Djhonata, caso Alessandro final 5134): nos 7 dias depois da última fala do cliente, a assistente insiste sozinha para não deixar
-      // esfriar: dia 1, dia 3 e dia 6 (uma mensagem por dia, cada uma com algo novo). Depois de 7 dias vira perdido e entra o follow-up com aprovação.
-      const INSISTIR_DIAS = [1, 3, 6];
+      // esfriar. Correção dele no mesmo dia: são 3 tentativas seguidas e pronto: a retomada do mesmo dia (~3 h), o dia seguinte e o outro dia.
+      // Sem resposta, para: daí em diante é com ele (CRM, oferta e, depois de 7 dias, o follow-up com aprovação).
+      const INSISTIR_DIAS = [1, 2];
       for (const jid of Object.keys(chats)) {
         const c = chats[jid]; if (!c || !c.ult || !['ia', 'aviso'].includes(c.ultAutor)) continue;
         if ((estado.visitas || {})[jid] || (estado.retornos || {})[jid]) continue;
@@ -2843,8 +2844,8 @@ async function rodarRotina(it) {
     for (const [k, r] of Object.entries(estado.retomadas)) if (Date.now() - (r.em || 0) > 7 * 864e5) delete estado.retomadas[k];
     salvarEstado();
   } else if (it.tipo === 'insistir') {
-    const foco = it.n === 1 ? 'retome a última dúvida ou pergunta dele, de um jeito diferente do que já mandou' : it.n === 2 ? 'traga um fato novo do imóvel que ele viu (ou o vídeo dele, se ainda não mandou), ou a conta com o sinal, e uma pergunta' : 'convide para vir ao escritório (ou ver o imóvel) com dois horários livres de agenda_visita a partir de amanhã';
-    instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Follow-up automático ${it.n} de 3: o cliente parou de responder há ${it.dias} dia${it.dias === 1 ? '' : 's'}. Releia a conversa inteira. Mande UMA mensagem curta (até 2 frases), natural, na voz do Djhonata: ${foco}. Nunca repita frase, pergunta, dia ou horário que já mandou (os horários antigos já passaram), nunca "e aí, pensou?", nunca cobre resposta. Responda só NO_REPLY se: ele disse que não quer, desistiu, comprou com outro, está sem perfil, combinou de retornar numa data, ou a conversa terminou com despedida.`;
+    const foco = it.n === 1 ? 'retome de onde parou com algo novo: a resposta da dúvida dele, um fato do imóvel que ele viu (ou o vídeo, se ainda não mandou) ou a conta com o sinal, e uma pergunta' : 'convide para vir ao escritório (ou ver o imóvel) com dois horários livres de agenda_visita a partir de amanhã; é a última tentativa automática, sem dizer isso a ele';
+    instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Follow-up automático ${it.n} de 2 (depois da retomada do primeiro dia): o cliente parou de responder há ${it.dias} dia${it.dias === 1 ? '' : 's'}. Releia a conversa inteira. Mande UMA mensagem curta (até 2 frases), natural, na voz do Djhonata: ${foco}. Nunca repita frase, pergunta, dia ou horário que já mandou (os horários antigos já passaram), nunca "e aí, pensou?", nunca cobre resposta. Responda só NO_REPLY se: ele disse que não quer, desistiu, comprou com outro, está sem perfil, combinou de retornar numa data, ou a conversa terminou com despedida.`;
     extra = { rotina: 'retomada' };
     estado.insistir = estado.insistir || {}; estado.insistir[jid] = { base: it.p.ultCli, n: it.n, em: Date.now() };
     for (const [k, r] of Object.entries(estado.insistir)) if (Date.now() - (r.em || 0) > 10 * 864e5) delete estado.insistir[k];
