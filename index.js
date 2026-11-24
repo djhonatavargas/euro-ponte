@@ -2717,7 +2717,8 @@ function rotinaPermitida(jid, tipo) {
   if (t8 && [...lerBloqueados()].some(n => n.endsWith(t8))) return false;
   if (t8 && (estado.equipe || []).includes(t8)) return false;
   const st = t8 ? (estado.crmStatus || {})[t8] || '' : '';
-  if (['negociacao', 'fechado', 'pausado', 'perdido', 'desistiu', 'corretor', 'corretor_euro', 'construtor', 'pessoal'].includes(st)) return false;
+  if (['negociacao', 'fechado', 'pausado', 'desistiu', 'semperfil', 'sem_perfil', 'corretor', 'corretor_euro', 'construtor', 'pessoal'].includes(st)) return false;   // 24/11/2026: Sem perfil agora também não recebe nada automático
+  if (st === 'perdido' && tipo !== 'retorno') return false;   // perdido é com o Djhonata; só o retorno que o próprio cliente pediu sai
   if (tipo === 'retomada' && st === 'visita') return false;
   const cl = (estado.classes || {})[jid]; if (cl && ['comprou', 'corretor', 'construtor', 'pessoal'].includes(cl.cat)) return false;
   if (etiquetasDe(jid).some(e => /pausad|perdid|desist|fechad|finaliz|comprou|corretor|constru|capta|pessoa|negocia/.test(semAcento(e.nome)))) return false;
@@ -2815,7 +2816,7 @@ async function verificarRotinas() {
       const T = quandoMs(r.q), uc = ultCli(jid);
       if (!T || agora > T + 6 * 3600e3) { delete estado.retornos[jid]; salvarEstado(); continue; }                                   // passou muito da hora: desiste
       if (agora >= T - 30 * 60e3 && uc > (r.criado || 0) + 10 * 60e3 && agora - uc < 2 * 3600e3) { delete estado.retornos[jid]; salvarEstado(); continue; }   // ele já voltou a falar por conta própria
-      if (agora < T || !janela || !rotinaPermitida(jid, 'retomada')) continue;
+      if (agora < T || !janela || !rotinaPermitida(jid, 'retorno')) continue;
       fila.push({ jid, tipo: 'retorno', r });
     }
     if (janela && dentroRetomada()) {
@@ -2843,6 +2844,7 @@ async function verificarRotinas() {
         const p = conversaParada(jid); if (!p) continue;
         const dias = (agora - p.ultCli) / 864e5; if (dias < 1 || dias >= 3) continue;   // só nos 2 dias seguintes; quem já passou disso é com o Djhonata
         if (agora - p.ultIa < 20 * 3600e3) continue;                                  // já mandamos algo nas últimas 20 horas
+        if (Object.values(estado.insistir || {}).filter(r => agora - (r.em || 0) < 864e5).length >= 60) break;   // trava: no máximo 60 tentativas automáticas por dia
         const reg = (estado.insistir || {})[jid], feitas = reg && reg.base === p.ultCli ? reg.n || 0 : 0;
         if (feitas >= INSISTIR_DIAS.length || dias < INSISTIR_DIAS[feitas]) continue;
         const r = (estado.retomadas || {})[jid], diaDe = (ms) => new Date(ms - 3 * 3600e3).toISOString().slice(0, 10);
@@ -3135,6 +3137,7 @@ async function fuEnviar(x) {   // devolve 'enviado', 'cancelado' ou 'erro'
   // 16/11/2026 (Djhonata): a NOSSA mensagem também conta. Quem recebeu qualquer mensagem deste WhatsApp (sua, da assistente ou outro follow-up) há menos de 7 dias não recebe follow-up agora.
   if (!remarcar) try { let un = 0; if (chats[jid]) for (const m of lerEsp(jid)) if (m.autor !== 'cliente' && m.autor !== 'aviso' && m.tipo !== 'reacao' && (m.ts || 0) > un) un = m.ts; if (un && Date.now() - un < 7 * 864e5) return fim('cancelado', 'já recebeu mensagem nossa nos últimos 7 dias'); } catch (e) { }
   const st = (estado.crmStatus || {})[x.tel8]; if (st && st !== 'perdido' && st !== 'novo') return fim('cancelado', 'saiu de Perdido no CRM');
+  { const rt = (estado.retornos || {})[jid]; if (rt && quandoMs(rt.q) > Date.now() - 6 * 3600e3) return fim('cancelado', 'o cliente pediu para ser chamado ' + descreverQuando(rt.q) + ': a assistente chama nesse dia'); }   // 24/11/2026
   // Mensagem não entregue (17/11/2026): as últimas mensagens para este número ficaram só com um tique por 2 dias ou mais. Pode ter bloqueado, trocado de número ou estar sem WhatsApp: não gasta envio.
   { const dse = semEntregaDias(jid); if (dse) return fim('cancelado', 'as últimas mensagens não foram entregues há ' + dse + ' dias (pode ter bloqueado ou trocado de número)'); }
   if (lerBloqueados().has(num) || (estado.equipe || []).includes(x.tel8) || ehDono(num)) return fim('cancelado', 'número bloqueado para a assistente');
