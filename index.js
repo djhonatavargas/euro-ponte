@@ -2761,16 +2761,19 @@ function rotinaPermitida(jid, tipo) {
   if (!jidValido(jid) || ehDono(pnDe(jid) || jid)) return false;
   const c = chats[jid] || {}, t8 = tel8Chat(jid);
   if (!podeResponder(jid, c.telefone)) return false;           // assistente ligada (ou teste com este número) e não pausada nesta conversa
-  if (c.arquivado || filas.has(jid) || ocupado.has(jid)) return false;
+  // 24/11/2026: retorno que o cliente pediu ("me chama em janeiro") e ordem do Djhonata valem mesmo com a conversa arquivada ou em Perdido:
+  // quem fica 7 dias sem falar vira Perdido e é arquivado à noite, e o retorno marcado para depois ficava preso.
+  const pedido = tipo === 'retorno' || tipo === 'ordem';
+  if ((c.arquivado && !pedido) || filas.has(jid) || ocupado.has(jid)) return false;
   if (t8 && t8 === String(DONO).slice(-8) && !(estado.teste && estado.teste.ativo)) return false;
   if (t8 && [...lerBloqueados()].some(n => n.endsWith(t8))) return false;
   if (t8 && (estado.equipe || []).includes(t8)) return false;
   const st = t8 ? (estado.crmStatus || {})[t8] || '' : '';
   if (['negociacao', 'fechado', 'pausado', 'desistiu', 'semperfil', 'sem_perfil', 'corretor', 'corretor_euro', 'construtor', 'pessoal'].includes(st)) return false;   // 24/11/2026: Sem perfil agora também não recebe nada automático
-  if (st === 'perdido' && tipo !== 'retorno') return false;   // perdido é com o Djhonata; só o retorno que o próprio cliente pediu sai
+  if (st === 'perdido' && !pedido) return false;   // perdido é com o Djhonata; só sai o retorno que o próprio cliente pediu ou o que o Djhonata mandar
   if (tipo === 'retomada' && st === 'visita') return false;
   const cl = (estado.classes || {})[jid]; if (cl && ['comprou', 'corretor', 'construtor', 'pessoal'].includes(cl.cat)) return false;
-  if (etiquetasDe(jid).some(e => /pausad|perdid|desist|fechad|finaliz|comprou|corretor|constru|capta|pessoa|negocia/.test(semAcento(e.nome)))) return false;
+  if (etiquetasDe(jid).some(e => (pedido ? /pausad|desist|fechad|finaliz|comprou|corretor|constru|capta|pessoa|negocia/ : /pausad|perdid|desist|fechad|finaliz|comprou|corretor|constru|capta|pessoa|negocia/).test(semAcento(e.nome)))) return false;
   return true;
 }
 const RE_SO_OK = /^(certo|ok+|okay|blz|beleza|ta|ta bom|ta certo|tudo bem|entendi|hum+|uhum|aham|show|top|legal|sim|isso|\p{Extended_Pictographic}+)[\s.!]*$/iu;   // resposta de uma palavra que não pede nada
