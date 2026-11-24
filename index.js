@@ -4324,6 +4324,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
             return json(res, { ok: true, fazendo: pr });
           }
           const falta = vidFaltando();
+          if (pv.com) return json(res, { com: pastasImoveis().filter(x => fs.existsSync(path.join(CATALOGO, x, 'video-whatsapp.mp4'))).map(x => (/ref (\d+)\)$/.exec(x) || [0, x])[1]), sem: falta.map(x => (/ref (\d+)\)$/.exec(x) || [0, x])[1]) });   // 24/11/2026: o CRM mostra quais imóveis têm vídeo no servidor
           return json(res, { ligado: fs.existsSync(VID_LIGADO), ffmpeg: temFfmpeg(), rodando: vid.rodando, feitos: vid.feitos.length, faltam: falta.length, lista: falta.slice(0, 160).map(x => (/ref (\d+)\)$/.exec(x) || [0, x])[1]).join(' '), erros: vid.erros, ultimoPedido: vid.ultimoPedido || null, drawtext: vid.drawtext, fonte: path.basename(vid.fonte || ''), musica: vid.musica });
         }
         else if (ac === 'semana') {   // 24/11/2026 (pente fino do Djhonata): conversas com a assistente desde uma data, em texto curto. texto = JSON { desde (ms), pular, limite, max }
