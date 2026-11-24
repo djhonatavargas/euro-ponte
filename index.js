@@ -2814,7 +2814,7 @@ async function verificarRotinas() {
         const c = chats[jid]; if (!c || !c.ult || !['ia', 'aviso'].includes(c.ultAutor)) continue;
         if ((estado.visitas || {})[jid] || (estado.retornos || {})[jid]) continue;
         const p = conversaParada(jid); if (!p) continue;
-        const dias = (agora - p.ultCli) / 864e5; if (dias < 1 || dias >= 7) continue;
+        const dias = (agora - p.ultCli) / 864e5; if (dias < 1 || dias >= 3) continue;   // só nos 2 dias seguintes; quem já passou disso é com o Djhonata
         if (agora - p.ultIa < 20 * 3600e3) continue;                                  // já mandamos algo nas últimas 20 horas
         const reg = (estado.insistir || {})[jid], feitas = reg && reg.base === p.ultCli ? reg.n || 0 : 0;
         if (feitas >= INSISTIR_DIAS.length || dias < INSISTIR_DIAS[feitas]) continue;
