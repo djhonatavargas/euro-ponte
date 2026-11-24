@@ -4499,6 +4499,21 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const prev = fuPrevisoes();
           return json(res, Object.assign({ ok: true, alterados: n, itens: tels.map(t => fuPublico(fu[t], prev)) }, fuResumo()));
         }
+        else if (ac === 'pulso') {   // 24/11/2026 (Djhonata, economia no Make): eventos + quem escreveu por último + sem resposta + mapa do follow-up + últimas mensagens numa chamada só
+          let linhas = []; try { linhas = fs.readFileSync(path.join(DADOS, 'eventos-crm.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean); } catch (e) { }
+          const okEv = new Set(estado.eventosOk || []);
+          const pend = linhas.filter(e => e.rid && !okEv.has(e.rid)).slice(-100);
+          const ult = {}, ag = {}, ultimas = {};
+          for (const jid of Object.keys(chats)) {
+            const c = chats[jid]; const t = (c.telefone || '').replace(/\D/g, '').slice(-8);
+            if (t.length !== 8) continue;
+            const u = ultCli(jid); if (u) ult[t] = Math.max(ult[t] || 0, u);
+            if (c.ultAutor === 'cliente' && Date.now() - (c.ult || 0) < 30 * 864e5) { const ut = semAcento(c.ultTexto || '').trim(); if (ut && !RE_RESPOSTA_AUTO.test(ut) && !RE_SO_OK.test(ut) && !RE_LEVE.test(ut)) ag[t] = c.ult; }
+            if (jidValido(jid) && !jid.endsWith('@g.us') && c.ult) { const t2 = tel8Chat(jid); if (t2) ultimas[t2] = Math.max(ultimas[t2] || 0, c.ult); }
+          }
+          const mapa = {}; for (const v of Object.values(fu)) if (!(v.status === 'enviado' && Date.now() - (v.enviadoEm || 0) >= 7 * 864e5) && !(v.status === 'pausado' && Date.now() >= (v.ate || 0))) mapa[v.tel8] = v.status;
+          return json(res, Object.assign(fuResumo(), { pulso: true, eventos: pend, ultimaMsgCliente: ult, aguardando: ag, mapa, ultimas }));
+        }
         else if (ac === 'eventos') {
           let linhas = []; try { linhas = fs.readFileSync(path.join(DADOS, 'eventos-crm.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean); } catch (e) { }
           const ok = new Set(estado.eventosOk || []);
