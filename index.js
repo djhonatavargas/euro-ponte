@@ -553,7 +553,7 @@ function simularFluxo(e) {
         if (resto >= 1 && resto < parcela && posTxt) { naEntrega = cent(naEntrega + resto); resto = 0; entregaMin = true; }   // sobra menor que uma parcela: fica na entrega das chaves, para a conta fechar
       }
     }
-    if (naEntrega >= 1) L.push(`✅ Reforço na entrega das chaves: ${brl(naEntrega)} (${mesRot(meses)})`);
+    if (naEntrega >= 1) L.push(`✅ Reforço na entrega das chaves: ${brl(naEntrega)} (até ${mesRot(meses + 3)})`);   // 24/11/2026 (Djhonata): entrega + 3 meses, prazo para entrar com o financiamento
     if (posLinha) L.push(posLinha);   // na ordem em que o cliente paga: entrega das chaves e, depois, as parcelas pós-chaves
     if (resto >= 1) { L.push(`✅ Falta combinar: ${brl(resto)} (${posTxt ? 'a gente vê junto como fica' : 'dá para parcelar depois das chaves'})`); falta = resto; }
     q = nBal + (naEntrega >= 1 ? 1 : 0);
@@ -1762,6 +1762,15 @@ async function revisarSaida(f, t) {
         estado.avisos = [...(estado.avisos || []), { id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), ts: Date.now(), jid: f.jid, nome: f.nome || '', telefone: f.telefone || '', texto: ('Ela prometeu confirmar e não anotou a dúvida. O que ela disse: "' + pm[0].trim().slice(0, 220) + '". Última mensagem do cliente: "' + String((uc || {}).texto || '').replace(/\s+/g, ' ').slice(0, 220) + '"').slice(0, 600), tipo: 'duvida', auto: true }].slice(-80); salvarEstado(); log('revisor: promessa de confirmar anotada para o CRM', f.telefone || f.jid); } } catch (e) { }
     // Retorno prometido sem marcar (17/11/2026, caso da Elaine: "te chamo no fim da tarde" e ninguém chamou; e da Daiane: "quando achar um horário, me chama"). Se ela prometeu chamar, ou deixou para o cliente chamar, e não usou agendar_retorno, o servidor marca o retorno.
     try { if (!f.rotina && !(estado.retornos || {})[f.jid] && !(estado.visitas || {})[f.jid]) { const q = retornoDaFrase(t); if (q) { estado.retornos = estado.retornos || {}; estado.retornos[f.jid] = { q, assunto: 'Retorno marcado pelo servidor: ela disse "' + String(t).replace(/\s+/g, ' ').slice(0, 140) + '"', criado: Date.now(), auto: true }; salvarEstado(); log('revisor: retorno marcado pelo servidor', f.telefone || f.jid, q); } } } catch (e) { }
+    // 24/11/2026 (Djhonata, caso Maxsuéli): (1) "no escritório quem te atende sou eu mesmo" confunde: quem atende é o Djhonata.
+    // (2) cliente disse "vou ver com ele e te retorno" (sem perguntar nada): agradece e espera, sem empurrar horário.
+    try { if (!f.rotina) {
+      t = String(t).replace(/(quem (?:te )?atende) (?:sou eu(?: mesm[oa])?|[ée] (?:eu|comigo)(?: mesm[oa])?)/gi, '$1 é o próprio Djhonata');
+      const l = lerEsp(f.jid), fala = []; for (let i = l.length - 1; i >= 0 && fala.length < 4; i--) { const m = l[i]; if (m.autor === 'aviso' || m.tipo === 'reacao') continue; if (m.autor === 'cliente') fala.push(String(m.transc || m.texto || '')); else break; }
+      const cli = semAcento(fala.join(' ').toLowerCase());
+      if (cli && /\b(vou ver com|vou falar com|vou conversar com|vejo com|vou ver aqui e|te retorno|te dou um retorno|te dou retorno|te aviso|te falo|retorno pra voce|retorno para voce)/.test(cli) && !/\?|que horas|qual horario|horario/.test(cli) && /\b\d{1,2}h\b|\bas \d{1,2}\b/.test(semAcento(String(t).toLowerCase()))) {
+        t = 'Combinado ✅ Fico no aguardo do seu retorno. Qualquer dúvida, é só me chamar.'; log('revisor: cliente vai dar retorno, horário segurado', f.telefone || f.jid);
+      } } } catch (e) { }
     if (/📋/.test(t)) return t;
     const ja = jaFalouCom(f.jid), conversando = !!(ja && Date.now() - (ja.ts || 0) < 6 * 3600e3);
     const r = revisorFixo(t, conversando); let novo = r.texto; const feitos = r.feitos.slice();
