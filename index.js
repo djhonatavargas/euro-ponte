@@ -1025,6 +1025,7 @@ async function executar(nome, entrada, ctx) {
       if (!/^ok/i.test(resp)) return `Esse horário acabou de ser ocupado. ${livres.filter(x => x !== h).length ? `Ainda livres em ${diaTxt(data)}: ${livres.filter(x => x !== h).map(hh).join(', ')}.` : `Próximos livres: ${proximos(data, 3)}.`} Ofereça esses ao cliente.` + segue;
       const trocou = !!minha && minha !== pedida;
       guardarVisita(ctx.jid, data, hh(h), 'assistente', local);
+      if (!local) ctx.fotoEscritorio = true;   // 24/11/2026: visita marcada no escritório leva a foto da fachada
       try { fs.appendFileSync(path.join(DADOS, 'eventos-crm.jsonl'), JSON.stringify(Object.assign({ rid: 'ag' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), telefone: ctx.telefone ? formatoBR(ctx.telefone) : '', nome: ctx.nome || '', novoStatus: 'visita_marcada', data, hora: hh(h), agendaValer: pedida, resultado: trocou ? `Visita REMARCADA pela assistente: de ${minhaTxt} para ${diaTxt(data)} às ${hh(h)} (vale só a nova)` + noImovel : `Visita marcada pela assistente na agenda: ${diaTxt(data)} às ${hh(h)}` + noImovel }, entrada.nome ? { nomeReal: nomeCli } : {})) + '\n'); } catch (e) { }
       if (ctx.jid) aplicarEtiquetaStatus(ctx.jid, 'visita_marcada').catch(() => { });
       if (ctx.notas) ctx.notas.push(trocou ? `[visita remarcada na agenda: de ${minha.replace('T', ' ')} para ${data} ${hh(h)}; a antiga foi cancelada]` : `[visita marcada na agenda: ${data} ${hh(h)}${noImovel}]`);
@@ -2527,6 +2528,16 @@ async function responder(f) {
         log('comprou com outro: card movido pelo código', f.telefone || f.jid, tx.slice(0, 80));
       }
     } catch (e) { log('comprou com outro: falhou', e.message); }
+  }
+  // 24/11/2026 (Djhonata: "você está esquecendo de encaminhar a foto do escritório para os clientes"): o convite agora sai com dois horários (sem o link
+  // da agenda), e a foto só ia junto com o link. Agora vai no convite com horários e quando a visita é marcada; uma vez a cada 7 dias por conversa.
+  if (!f.dono && f.jid && saida.length) {
+    try {
+      const txt = saida.join('\n'), convite = /escrit[oó]rio/i.test(txt) && /(\b\d{1,2}h\b|\bàs \d{1,2}|\bas \d{1,2})/i.test(txt);
+      if ((ctx.fotoEscritorio || convite) && !mandouHaPouco(f.jid, m => m.arquivo === 'c/' + FOTO_ESCRITORIO, AGENDA_VALE) && fs.existsSync(path.join(CATALOGO, FOTO_ESCRITORIO))) {
+        if (await enviarArquivo(f.jid, FOTO_ESCRITORIO, 'Esse é o nosso escritório, pra você achar fácil ✅', 'ia', f.rotina ? { rotina: f.rotina } : undefined) === 'Enviado.') log('foto do escritório enviada', f.telefone || f.jid);
+      }
+    } catch (e) { log('foto do escritório: falhou', e.message); }
   }
   log('respondido', f.telefone || f.jid, saida.length, 'mensagens');
   if (saida.length && !f.dono) { try { cardAutomatico(f.jid); } catch (e) { } }
