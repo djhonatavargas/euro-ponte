@@ -1775,6 +1775,8 @@ async function enviarSaida(jid, texto, autor = 'ia', extra) {   // devolve o que
     if (pedida && autor === 'ia') { const r = await reagir(jid, pedida); if (r) feitos.push('[[reagir:' + r + ']]'); }
     if (!String(texto).trim()) return feitos; }
   if (autor === 'ia') texto = semDiminutivo(generoDoDono(texto));
+  // 24/11/2026 (caso Ivonildes): marcação interna da IA ("[[bloco da simulação]]") chegou ao cliente como texto. Só [[tts:]], [[cita:]] e [[reagir:]] valem; o resto sai.
+  if (autor === 'ia') { texto = String(texto).replace(/\[\[(?!tts:|cita:|reagir:)[^\]\n]{0,80}\]\]/gi, '').replace(/\n{3,}/g, '\n\n'); if (!texto.trim()) return feitos; }
   const proprio = String(texto || '').split('\n').filter(l => !RE_LINK_AGENDA.test(l) && !linhaDaAgenda(l)).join('\n');   // o texto da IA sem o bloco da agenda
   for (const p of partesResposta(String(texto || ''))) {
     if (p.tipo === 'audio') {
