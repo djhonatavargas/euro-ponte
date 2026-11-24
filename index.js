@@ -900,6 +900,14 @@ async function executar(nome, entrada, ctx) {
       if (pasta && !extra && !EXT_VID.test(caminho.split('?')[0])) {
         ctx.fotosTodas = ctx.fotosTodas || {};
         if (ctx.fotosTodas[pasta]) return 'Não enviado: todas as fotos deste imóvel já foram agora. Não chame enviar_arquivo de novo para fotos dele.';
+        // 24/11/2026 (Djhonata): cliente pediu fotos = vai primeiro o VÍDEO do imóvel (ele junta todas as fotos). Só se o cliente insistir nas fotos depois do vídeo é que vão todas as fotos.
+        { const vRel = pasta + '/video-whatsapp.mp4', vRef = 'c/' + vRel;
+          if (fs.existsSync(path.join(CATALOGO, vRel)) && !lerEsp(ctx.jid).some(m => m.arquivo === vRef)) {
+            let rv = ''; try { rv = await enviarArquivo(ctx.jid, vRel, '', 'ia'); } catch (e) { rv = 'erro: ' + e.message; }
+            if (rv === 'Enviado.') { ctx.fotosTodas[pasta] = 1; ctx.notas.push(`[enviei o vídeo do imóvel ${pasta} no lugar das fotos]`); log('fotos: foi o vídeo', ctx.jid, pasta);
+              return 'Enviado o VÍDEO deste imóvel (ele mostra todas as fotos). Diga em uma frase curta que mandou o vídeo com as fotos dele e siga com a pergunta do próximo passo. Não descreva o que aparece. Se o cliente disser que o vídeo não abre ou insistir nas fotos, chame enviar_arquivo de novo com uma foto e o sistema manda todas.'; }
+            log('fotos: o vídeo não foi, seguem as fotos', pasta, rv);
+          } }
         const jaFoi = new Set(lerEsp(ctx.jid).map(m => m.arquivo)), refDe = c => /^https?:\/\//i.test(c) ? c : 'c/' + c.replace(/^[\\/]+/, '').replace(/\\/g, '/');
         const falta = fotosDoImovel(pasta).filter(c => !jaFoi.has(refDe(c))).slice(0, 30);
         ctx.fotosTodas[pasta] = 1;
