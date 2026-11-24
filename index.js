@@ -3042,6 +3042,23 @@ function fuTrabalhar() {   // prepara 2 por vez
 }
 setInterval(fuTrabalhar, 30e3);
 setTimeout(fuTrabalhar, 20e3);
+// 24/11/2026 (Djhonata): cliente que não responde não fica recebendo mensagem para sempre. Conta as tentativas nossas (dias diferentes, 12 horas ou mais
+// depois da última fala do cliente) desde que ele falou pela última vez. 3 sem resposta = pausa de 60 dias; depois 1 tentativa com novidade e, sem
+// resposta, pausa de 90 dias; depois disso só volta se ele chamar. Respondeu = zera.
+function fuPausa(jid) {
+  if (!jid || !chats[jid]) return null;
+  const uc = ultCli(jid) || 0, dias = new Map();
+  for (const m of lerEsp(jid)) {
+    if (m.autor === 'cliente' || m.autor === 'aviso' || m.tipo === 'reacao') continue;
+    const ts = m.ts || 0; if (ts <= uc + 12 * 3600e3) continue;
+    const d = new Date(ts - 3 * 3600e3).toISOString().slice(0, 10); dias.set(d, Math.max(dias.get(d) || 0, ts));
+  }
+  const tent = [...dias.values()].sort((a, b) => a - b), n = tent.length, ult = tent[n - 1] || 0;
+  if (n >= 5) return { n, ate: Infinity, motivo: n + ' tentativas sem resposta desde ' + (uc ? quandoFoi(uc) : 'sempre') + ': só volta se o cliente chamar' };
+  if (n === 4) return { n, ate: ult + 90 * 864e5, motivo: '4 tentativas sem resposta (a última depois da pausa): pausa de 90 dias' };
+  if (n === 3) return { n, ate: ult + 60 * 864e5, motivo: '3 tentativas sem resposta: pausa de 60 dias' };
+  return { n, ate: 0 };
+}
 async function fuEnviar(x) {   // devolve 'enviado', 'cancelado' ou 'erro'
   const fim = (status, erro) => { Object.assign(x, { status, erro }); salvarFu(); return status; };
   const num = fuNumero(x.tel); if (num.length < 12) return fim('erro', 'telefone inválido');
@@ -3049,6 +3066,7 @@ async function fuEnviar(x) {   // devolve 'enviado', 'cancelado' ou 'erro'
   if (chats[jid] && ultCli(jid) > (x.geradoEm || x.criadoEm || 0)) return fim('cancelado', 'o cliente voltou a escrever antes do envio');
   // Remarcar visita (17/11/2026, Djhonata): já agendou uma vez, está mais quente. Aprovou, sai: fica fora das duas regras dos 7 dias e sai antes dos perdidos.
   const remarcar = (estado.crmStatus || {})[x.tel8] === 'novo';
+  { const pz = fuPausa(jid); if (pz && pz.ate > Date.now()) return fim('cancelado', 'pausado até ' + (pz.ate === Infinity ? 'o cliente chamar' : new Date(pz.ate - 3 * 3600e3).toISOString().slice(0, 10).split('-').reverse().join('/')) + ': ' + pz.motivo); }
   // follow-up em massa é só para quem está há 7 dias ou mais sem interagir (mensagem ou reação) — regra do Djhonata, 16/11/2026
   if (!remarcar) { const ultInter = Math.max(chats[jid] ? ultCli(jid) : 0, ((estado.reacoesCli || {})[jid]) || 0); if (ultInter && Date.now() - ultInter < 7 * 864e5) return fim('cancelado', 'o cliente interagiu nos últimos 7 dias'); }
   // Você (ou a assistente) já falou com o cliente depois que este texto foi preparado: o follow-up pronto ficou velho e sairia como mensagem repetida (pedido do Djhonata, 13/11/2026).
@@ -4289,7 +4307,8 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
             if (num.length < 12 || t8.length !== 8 || ehDono(num)) { ignorados++; continue; }
             const v = fu[t8];
             // quem recebeu follow-up há 7 dias ou mais e não respondeu pode receber outro (16/11/2026); antes disso, não refaz
-            const deNovo = v && v.status === 'enviado' && Date.now() - (v.enviadoEm || 0) >= 7 * 864e5;
+            const deNovo = v && ((v.status === 'enviado' && Date.now() - (v.enviadoEm || 0) >= 7 * 864e5) || (v.status === 'pausado' && Date.now() >= (v.ate || 0)));
+            { const pz = fuPausa(acharJid(num + '@s.whatsapp.net')); if (pz && pz.ate > Date.now()) { fu[t8] = Object.assign({}, v || {}, { tel8: t8, tel: num, id: String(c.id || ''), nome: String(c.nome || '').slice(0, 80), status: 'pausado', ate: pz.ate === Infinity ? 9e15 : pz.ate, motivo: pz.motivo, pausadoEm: Date.now() }); ignorados++; continue; } }
             if (v && !deNovo && (['enviado', 'respondeu', 'aprovado', 'gerando'].includes(v.status) || (!p.refazer && v.status !== 'erro'))) { ignorados++; continue; }   // já tem (ou já foi): não refaz
             fu[t8] = { tel8: t8, tel: num, id: String(c.id || ''), nome: String(c.nome || '').slice(0, 80), status: 'fila', criadoEm: Date.now(), tent: 0,
               rodada: deNovo ? (v.rodada || 1) + 1 : 1, anteriorEm: deNovo ? v.enviadoEm : 0,
@@ -4303,7 +4322,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           let p = {}; try { p = JSON.parse(b.texto || '{}'); } catch (e) { }
           const prev = fuPrevisoes(), out = fuResumo();
           if (p.tel) { const x = fu[fuT8(p.tel)]; out.item = x ? fuPublico(x, prev) : null; }
-          if (p.mapa) { out.mapa = {}; for (const v of Object.values(fu)) if (!(v.status === 'enviado' && Date.now() - (v.enviadoEm || 0) >= 7 * 864e5)) out.mapa[v.tel8] = v.status; }   // enviado há 7 dias ou mais sem resposta volta a poder ser preparado
+          if (p.mapa) { out.mapa = {}; for (const v of Object.values(fu)) if (!(v.status === 'enviado' && Date.now() - (v.enviadoEm || 0) >= 7 * 864e5) && !(v.status === 'pausado' && Date.now() >= (v.ate || 0))) out.mapa[v.tel8] = v.status; }   // enviado há 7 dias ou mais sem resposta volta a poder ser preparado
           if (Array.isArray(p.status) && p.status.length) {
             const ord = { aprovado: (a, z) => (prev[a.tel8] || 0) - (prev[z.tel8] || 0), enviado: (a, z) => (z.enviadoEm || 0) - (a.enviadoEm || 0), respondeu: (a, z) => (z.respondeuEm || 0) - (a.respondeuEm || 0) };
             const sel = Object.values(fu).filter(v => p.status.includes(v.status)).sort(ord[p.status[0]] || ((a, z) => (z.prioridade || 0) - (a.prioridade || 0) || (z.geradoEm || 0) - (a.geradoEm || 0)));
