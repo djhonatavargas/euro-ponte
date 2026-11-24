@@ -4360,6 +4360,12 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           if (novos.length) for (const j of Object.keys(chats)) { const t8 = tel8De(j); if (t8 && novos.includes(t8) && filas.has(j)) { filas.delete(j); cortadas++; } }
           if (novos.length) log('trava do CRM: travou', novos.length, 'telefone(s)', cortadas ? '(' + cortadas + ' resposta(s) na fila cancelada(s))' : '');
           return json(res, { ok: true, travados: l.length, novos: novos.length, cortadas });
+        } else if (ac === 'retorno_marcar') {   // 24/11/2026: retorno marcado pelo Djhonata (texto JSON {q:'AAAA-MM-DDTHH:MM', assunto})
+          if (!jidValido(jid)) return json(res, { erro: 'conversa inválida' }, 400);
+          let o = {}; try { o = JSON.parse(String(b.texto || '{}')); } catch (e) { return json(res, { erro: 'texto inválido' }, 400); }
+          if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(String(o.q || '')) || !(quandoMs(o.q) > Date.now())) return json(res, { erro: 'data inválida' }, 400);
+          estado.retornos = estado.retornos || {}; estado.retornos[jid] = { q: o.q, assunto: String(o.assunto || 'retorno marcado pelo Djhonata').slice(0, 200), criado: Date.now() }; salvarEstado();
+          log('retorno marcado pelo Djhonata', jid, o.q); return json(res, { ok: true, retorno: estado.retornos[jid] });
         } else if (ac === 'ia_conversa') {
           if (!jidValido(jid)) return json(res, { erro: 'conversa inválida' }, 400);
           if (b.on) delete estado.pausas[jid]; else { estado.pausas[jid] = Date.now() + 3650 * 864e5; filas.delete(jid); }
