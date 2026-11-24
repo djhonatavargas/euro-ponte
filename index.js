@@ -2997,7 +2997,7 @@ O QUE FAZER
 - "nao_cliente": é corretor, construtor, fornecedor, contato pessoal, ou a conversa não é sobre comprar imóvel. Não escreva mensagem.
 - "enviar": nos outros casos.
 2) Se for "enviar", escreva UMA mensagem de WhatsApp curta (no máximo 3 frases), na voz do Djhonata, em primeira pessoa, retomando de onde parou, com o gancho que mais pode converter este cliente:
- REGRA PRINCIPAL (23/11/2026, Djhonata; caso Nilza): se o cliente demonstrou interesse num imóvel que já recebeu (achou bom, perguntou do financiamento, da entrada ou da visita desse imóvel) e não disse que desistiu dele, a mensagem é sobre ESSE imóvel: retome de onde parou (a dúvida dele, a conta ou o dia de vir), pelo gancho c). NÃO ofereça outro imóvel, para não confundir o cliente. Imóvel novo (gancho a) é só para quem não demonstrou interesse em nenhum, ou disse que não gostou do que recebeu. Se o que travou foi o horário (trabalha direto, não sabia se conseguia vir), pergunte que horas ele sai do trabalho, para você ver um horário depois disso; não afirme nada sobre o horário de trabalho dele que ele não disse.
+ REGRA PRINCIPAL (23/11/2026, Djhonata; caso Nilza): se o cliente demonstrou interesse num imóvel que já recebeu (achou bom, perguntou do financiamento, da entrada ou da visita desse imóvel) e não disse que desistiu dele, a mensagem é sobre ESSE imóvel: retome de onde parou (a dúvida dele, a conta ou o dia de vir), pelo gancho c). NÃO ofereça outro imóvel, para não confundir o cliente. Imóvel novo (gancho a) é só para quem não demonstrou interesse em nenhum, ou disse que não gostou do que recebeu. Se o que travou foi o horário (trabalha direto, não sabia se conseguia vir), pergunte que horas ele sai do trabalho, para você ver um horário depois disso; não afirme nada sobre o horário de trabalho dele que ele não disse. Nunca repita dias ou horários oferecidos antes na conversa: eles já passaram (24/11/2026: o follow-up do Fabricio ofereceu de novo "quarta, dia 18" e "quinta, dia 19" uma semana depois). Para convidar, pergunte qual dia da semana fica melhor para ele vir.
  a) um imóvel do catálogo atual (CATALOGO.md) que encaixa no que ele procurava (bairro, valor, tipo, quartos, pronto ou na planta), citando o nome ou a rua e o bairro, só com dados do catálogo. O imóvel TEM que ter foto para mandar: nunca cite um da lista IMÓVEL COM CADASTRO INCOMPLETO (sem foto ou sem dormitórios), porque se o cliente pedir as fotos a gente precisa mandar na hora (23/11/2026: o follow-up do Jean citou o Samara III, que não tem foto, e ele pediu as fotos); ou
  b) se a dificuldade foi a entrada ou o valor: que agora dá para montar com entrada menor (sinal flexível, entrada parcelada até a entrega, FGTS, financiamento pela avaliação do banco), sem números que não estejam no catálogo e sem prometer aprovação; ou
  c) se ele já tinha gostado de um imóvel e só faltou marcar: um convite para passar no escritório tirar as dúvidas.
@@ -3011,7 +3011,7 @@ async function fuGerarUm(x) {
   try {
     const jid = acharJid(fuNumero(x.tel) + '@s.whatsapp.net'), temChat = !!chats[jid];
     const system = sistema({ jid: temChat ? jid : '', telefone: x.tel, nome: x.nome, dono: false, notas: [] });
-    const txt = await claudeTexto(system, fuTarefa(x, temChat ? fuConversa(jid) : ''), 1500);
+    const txt = await claudeTexto(system, fuTarefa(x, temChat ? fuConversa(jid) : '') + (x.erro && x.tent > 1 ? '\n\nATENÇÃO: a mensagem anterior foi recusada por este motivo: ' + x.erro + ' Escreva outra sem esse problema.' : ''), 1500);
     const i = txt.indexOf('{'), j = txt.lastIndexOf('}'); if (i < 0 || j < i) { log('follow-up: resposta sem JSON', x.tel, JSON.stringify(String(txt).slice(0, 160))); throw new Error('a IA não devolveu o JSON'); }
     const r = JSON.parse(txt.slice(i, j + 1));
     if (x.status !== 'gerando') return;   // cancelado enquanto a IA pensava (ex.: o cliente voltou a escrever)
@@ -3019,6 +3019,7 @@ async function fuGerarUm(x) {
     Object.assign(x, { decisao: dec, motivo: String(r.motivo || '').slice(0, 300), analise: String(r.analise || '').slice(0, 700), prioridade: Math.max(1, Math.min(5, Math.round(Number(r.prioridade) || 1))), imovel: String(r.imovel || '').slice(0, 120), geradoEm: Date.now(), erro: '', jid: temChat ? jid : '' });
     if (dec === 'enviar') {
       const msg = String(r.mensagem || '').trim(); if (!msg) throw new Error('a IA não escreveu a mensagem');
+      { const pr = problemaNoRascunho(msg); if (pr) throw new Error(pr.replace(/^Não enviei: /, '').replace(/ Ajuste e envie de novo\.$/, '')); }   // 24/11/2026: data que já passou, colchetes ou terceira pessoa: refaz
       x.mensagem = semDiminutivo(msg).slice(0, 1200); x.status = 'pronto';
     } else {
       x.mensagem = ''; x.status = dec;
@@ -3041,6 +3042,8 @@ function fuTrabalhar() {   // prepara 2 por vez
   }
 }
 setInterval(fuTrabalhar, 30e3);
+// 24/11/2026: follow-up pronto (ou aprovado e ainda não enviado) com data que já passou, colchetes ou terceira pessoa volta para a IA refazer.
+setTimeout(() => { let n = 0; for (const v of Object.values(fu)) { if (!['pronto', 'aprovado'].includes(v.status) || !v.mensagem) continue; const pr = problemaNoRascunho(v.mensagem); if (!pr) continue; Object.assign(v, { status: 'fila', tent: 1, erro: pr.replace(/^Não enviei: /, '').replace(/ Ajuste e envie de novo\.$/, ''), aprovadoEm: 0 }); n++; } if (n) { salvarFu(); log('follow-up: ' + n + ' mensagens prontas com data vencida ou marcação voltaram para a IA refazer'); } }, 25e3);
 setTimeout(fuTrabalhar, 20e3);
 // 24/11/2026 (Djhonata): cliente que não responde não fica recebendo mensagem para sempre. Conta as tentativas nossas (dias diferentes, 12 horas ou mais
 // depois da última fala do cliente) desde que ele falou pela última vez. 3 sem resposta = pausa de 60 dias; depois 1 tentativa com novidade e, sem
