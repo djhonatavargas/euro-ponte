@@ -2966,9 +2966,13 @@ function fuVarrer() {   // pronto ou programado que ficou velho: o cliente escre
 }
 setInterval(() => { try { fuVarrer(); } catch (e) { log('follow-up varrer', e.message); } }, 10 * 60e3);
 setTimeout(() => { try { fuVarrer(); } catch (e) { } }, 90e3);
+// 24/11/2026 (Djhonata): na lista do follow-up o que importa é quando o CLIENTE escreveu pela última vez (e o que ele escreveu).
+function fuJid(x) { const j = x.jid && chats[x.jid] ? x.jid : acharJid(fuNumero(x.tel) + '@s.whatsapp.net'); return chats[j] ? j : ''; }
+function fuCliEm(x) { const j = fuJid(x); return j ? ultCli(j) : 0; }
+function fuCliTexto(x) { const j = fuJid(x); if (!j) return ''; const l = lerEsp(j); for (let i = l.length - 1; i >= 0; i--) { const m = l[i]; if (m.autor !== 'cliente') continue; const s = String(m.transc || m.texto || '').replace(/\s+/g, ' ').trim(); return s ? s.slice(0, 160) : (m.tipo === 'audio' ? '(áudio)' : m.tipo === 'image' ? '(foto)' : '(mensagem)'); } return ''; }
 function fuPublico(x, prev) {
   const u = fuUltima(x);
-  return { ultimaEm: u.em, ultimaAutor: u.autor, ultimaTexto: u.texto, velho: !!(u.em && u.em > (x.geradoEm || x.criadoEm || 0) + 1000 && u.autor !== 'followup'), tel8: x.tel8, tel: x.tel, id: x.id, nome: x.nome, status: x.status, decisao: x.decisao || '', motivo: x.motivo || '', analise: x.analise || '', mensagem: x.mensagem || '', prioridade: x.prioridade || 0, imovel: x.imovel || '', criadoEm: x.criadoEm, geradoEm: x.geradoEm || 0, aprovadoEm: x.aprovadoEm || 0, enviadoEm: x.enviadoEm || 0, respondeuEm: x.respondeuEm || 0, erro: x.erro || '', jid: x.jid || '', previsao: (prev && prev[x.tel8]) || 0 };
+  return { cliEm: fuCliEm(x), cliTexto: fuCliTexto(x), ultimaEm: u.em, ultimaAutor: u.autor, ultimaTexto: u.texto, velho: !!(u.em && u.em > (x.geradoEm || x.criadoEm || 0) + 1000 && u.autor !== 'followup'), tel8: x.tel8, tel: x.tel, id: x.id, nome: x.nome, status: x.status, decisao: x.decisao || '', motivo: x.motivo || '', analise: x.analise || '', mensagem: x.mensagem || '', prioridade: x.prioridade || 0, imovel: x.imovel || '', criadoEm: x.criadoEm, geradoEm: x.geradoEm || 0, aprovadoEm: x.aprovadoEm || 0, enviadoEm: x.enviadoEm || 0, respondeuEm: x.respondeuEm || 0, erro: x.erro || '', jid: x.jid || '', previsao: (prev && prev[x.tel8]) || 0 };
 }
 function fuEvento(x, novoStatus, resultado) {   // vai para o CRM pelo mesmo caminho dos eventos da assistente
   try { fs.appendFileSync(path.join(DADOS, 'eventos-crm.jsonl'), JSON.stringify({ rid: 'fu' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), telefone: formatoBR(fuNumero(x.tel)), nome: x.nome || '', novoStatus, resultado }) + '\n'); } catch (e) { }
@@ -4354,6 +4358,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           if (p.mapa) { out.mapa = {}; for (const v of Object.values(fu)) if (!(v.status === 'enviado' && Date.now() - (v.enviadoEm || 0) >= 7 * 864e5) && !(v.status === 'pausado' && Date.now() >= (v.ate || 0))) out.mapa[v.tel8] = v.status; }   // enviado há 7 dias ou mais sem resposta volta a poder ser preparado
           if (Array.isArray(p.status) && p.status.length) {
             const ord = { aprovado: (a, z) => (prev[a.tel8] || 0) - (prev[z.tel8] || 0), enviado: (a, z) => (z.enviadoEm || 0) - (a.enviadoEm || 0), respondeu: (a, z) => (z.respondeuEm || 0) - (a.respondeuEm || 0) };
+            if (p.ordem === 'antigo' || p.ordem === 'novo') { const ce = new Map(); const g = (v) => { if (!ce.has(v.tel8)) ce.set(v.tel8, fuCliEm(v) || 0); return ce.get(v.tel8); }; ord[p.status[0]] = p.ordem === 'antigo' ? (a, z) => (g(a) || 9e15) - (g(z) || 9e15) : (a, z) => g(z) - g(a); }   // 24/11/2026: ordenar pela última mensagem do cliente
             const sel = Object.values(fu).filter(v => p.status.includes(v.status)).sort(ord[p.status[0]] || ((a, z) => (z.prioridade || 0) - (a.prioridade || 0) || (z.geradoEm || 0) - (a.geradoEm || 0)));
             const pular = Math.max(0, Number(p.pular) || 0), lim = Math.min(100, Math.max(1, Number(p.limite) || 40));
             out.total = sel.length; out.itens = sel.slice(pular, pular + lim).map(x => fuPublico(x, prev));
