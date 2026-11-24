@@ -2551,7 +2551,7 @@ async function responder(f) {
   log('respondido', f.telefone || f.jid, saida.length, 'mensagens');
   if (saida.length && !f.dono) { try { cardAutomatico(f.jid); } catch (e) { } }
 }
-const RE_COMPROU_OUTRO = /\b(ja )?(comprei|compramos)\b.{0,40}\b(casa|ap|apto|apartamento|imovel|sobrado|geminad\w*|outr[oa]|kit ?net|lugar)\b|\bja (comprei|compramos|fechei|fechamos|achamos|achei|estou fechando|estamos fechando)\b|\b(fechei|fechamos) com\b|\bestamos fechando\b|\bcomprei com outr|\bcompramos com outr/;
+const RE_COMPROU_OUTRO = /\b(ja )?(comprei|compramos)\b.{0,40}\b(casa|ap|apto|apartamento|imovel|sobrado|geminad\w*|outr[oa]|kit ?net|lugar)\b|\bja (comprei|compramos|fechei|fechamos|achamos|achei|estou fechando|estamos fechando)\b|\b(fechei|fechamos) com\b|\bestamos fechando\b|\bcomprei com outr|\bcompramos com outr|\bja (escolhi|escolhemos)\b|\b(escolhi|escolhemos|peguei|pegamos) outr/;   // 24/11/2026: Rai "Ja escolhi outro imóvel"
 
 // ---------- rascunho das pendências (23/11/2026, Djhonata: "eu preciso que venha a informação, não fique ali o [DADO]") ----------
 // O CRM pede o retorno de uma pendência; a assistente pesquisa com as ferramentas de consulta (ficha, simulação, distância, imóveis perto, FIPE),
