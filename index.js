@@ -2515,9 +2515,23 @@ async function responder(f) {
     // tinha resposta, mas o WhatsApp caiu antes de sair: vira "pendente" e sai quando ele voltar
     if ((!sock || !conectado) && textosIA.some(t => !/^NO_REPLY\b/.test(t) && !/^nada a fazer\W*$/i.test(t))) throw new Error('WhatsApp caiu antes de a resposta sair');
   }
+  // 24/11/2026 (Djhonata, cliente Edemir: "eu comprei uma casa"): a assistente deu parabéns e o card não mudou. Cliente que já comprou ou fechou
+  // com outro vai para Desistiu / comprou com outro na hora, pelo código, mesmo que a IA esqueça de registrar.
+  if (!f.dono && !f.rotina && !ctx.autoTrava && f.jid) {
+    try {
+      const l = lerEsp(f.jid), fala = []; let viu = false;
+      for (let i = l.length - 1; i >= 0 && fala.length < 4; i--) { const m = l[i]; if (m.autor === 'aviso' || m.tipo === 'reacao') continue; if (m.autor === 'cliente') { viu = true; fala.push(String(m.transc || m.texto || '')); } else if (viu) break; }
+      const tx = fala.reverse().join(' / ');
+      if (RE_COMPROU_OUTRO.test(semAcento(tx)) && !/\b(quero|vou|pretendo|queria|penso em|gostaria de) compr/i.test(semAcento(tx))) {
+        await executar('registrar_crm', { novoStatus: 'desistiu', resultado: 'Comprou com outro: "' + tx.slice(0, 200) + '"', resumo: 'Cliente disse que já comprou (ou fechou) um imóvel por outro caminho.' }, ctx);
+        log('comprou com outro: card movido pelo código', f.telefone || f.jid, tx.slice(0, 80));
+      }
+    } catch (e) { log('comprou com outro: falhou', e.message); }
+  }
   log('respondido', f.telefone || f.jid, saida.length, 'mensagens');
   if (saida.length && !f.dono) { try { cardAutomatico(f.jid); } catch (e) { } }
 }
+const RE_COMPROU_OUTRO = /\b(ja )?(comprei|compramos)\b.{0,40}\b(casa|ap|apto|apartamento|imovel|sobrado|geminad\w*|outr[oa]|kit ?net|lugar)\b|\bja (comprei|compramos|fechei|fechamos|achamos|achei|estou fechando|estamos fechando)\b|\b(fechei|fechamos) com\b|\bestamos fechando\b|\bcomprei com outr|\bcompramos com outr/;
 
 // ---------- rascunho das pendências (23/11/2026, Djhonata: "eu preciso que venha a informação, não fique ali o [DADO]") ----------
 // O CRM pede o retorno de uma pendência; a assistente pesquisa com as ferramentas de consulta (ficha, simulação, distância, imóveis perto, FIPE),
