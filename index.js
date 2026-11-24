@@ -905,7 +905,8 @@ async function executar(nome, entrada, ctx) {
         ctx.fotosTodas[pasta] = 1;
         if (!falta.length) return 'Não enviado: este cliente já recebeu todas as fotos deste imóvel nesta conversa. Não reenvie; continue a conversa.';
         let n = 0, erro = '';
-        for (const c of falta) { const rr = await enviarArquivo(ctx.jid, c, '', 'ia'); if (rr === 'Enviado.') n++; else { erro = rr; if (/desconectado|bloqueado|limite/i.test(rr)) break; } }
+        for (const c of falta) { let rr = ''; try { rr = await enviarArquivo(ctx.jid, c, '', 'ia'); } catch (e) { rr = 'foto fora do ar: ' + e.message; log('fotos: pulei uma foto que não abriu', pasta, String(c).slice(-40)); }   // 24/11/2026 (caso Ricardo, Imbuia): uma foto fora do ar no Loft derrubava o envio de todas
+          if (rr === 'Enviado.') n++; else { erro = rr; if (/desconectado|bloqueado|limite/i.test(rr)) break; } }
         log('fotos: todas', ctx.jid, pasta, n + '/' + falta.length, erro);
         if (!n) return erro || 'Não enviado.';
         ctx.notas.push(`[enviei as ${n} fotos do imóvel ${pasta}, sem legenda]`);
