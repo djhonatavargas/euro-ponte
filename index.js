@@ -4446,7 +4446,8 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const ok = new Set(estado.eventosOk || []);
           const pend = linhas.filter(e => e.rid && !ok.has(e.rid)).slice(-100);
           const ult = {}; for (const jid of Object.keys(chats)) { const c = chats[jid]; const t = (c.telefone || '').replace(/\D/g, '').slice(-8); const u = ultCli(jid); if (t.length === 8 && u) ult[t] = Math.max(ult[t] || 0, u); }
-          return json(res, { eventos: pend, ultimaMsgCliente: ult });
+          const ag = {}; for (const jid of Object.keys(chats)) { const c = chats[jid]; const t = (c.telefone || '').replace(/\D/g, '').slice(-8); if (t.length === 8 && c.ultAutor === 'cliente' && Date.now() - (c.ult || 0) < 30 * 864e5) ag[t] = c.ult; }   // 24/11/2026: escreveu por último e está sem resposta
+          return json(res, { eventos: pend, ultimaMsgCliente: ult, aguardando: ag });
         }
         else if (ac === 'eventos_ok') {
           let ids = []; try { ids = JSON.parse(b.texto || '[]'); } catch (e) { }
