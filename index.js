@@ -4842,6 +4842,17 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
         else if (ac === 'retornos') {   // retornos combinados com clientes ("amanhã cedo eu te chamo"), para conferência
           return json(res, { retornos: Object.entries(estado.retornos || {}).map(([jid, r]) => ({ jid, telefone: (chats[jid] || {}).telefone || '', nome: (chats[jid] || {}).nome || '', quando: r.q, assunto: r.assunto || '', criado: r.criado || 0 })) });
         }
+        else if (ac === 'midias') {   // 25/11/2026: lista as mídias guardadas de uma conversa (fotos, PDFs) para o Claude baixar e cadastrar imóvel
+          if (!jidValido(jid)) return json(res, { erro: 'conversa inválida' }, 400);
+          const l = lerEsp(jid).filter(m => m.arquivo).slice(-Math.min(200, Number(b.texto) || 80));
+          return json(res, { midias: l.map(m => { let tam = 0; try { tam = fs.statSync(path.join(MIDIA, path.basename(m.arquivo))).size; } catch (e) { } return { id: m.id, autor: m.autor, tipo: m.tipo, ts: m.ts, texto: m.texto || '', nomeArquivo: m.nomeArquivo || '', arquivo: path.basename(m.arquivo), tam }; }) });
+        }
+        else if (ac === 'midia') {   // 25/11/2026: um arquivo de mídia em base64 (até 8 MB), pelo nome que 'midias' devolveu
+          const f = path.join(MIDIA, path.basename(String(b.texto || '')));
+          if (!b.texto || !fs.existsSync(f)) return json(res, { erro: 'arquivo não encontrado' }, 404);
+          const st = fs.statSync(f); if (st.size > 8e6) return json(res, { erro: 'arquivo grande demais', tam: st.size }, 413);
+          return json(res, { nome: path.basename(f), tam: st.size, b64: fs.readFileSync(f).toString('base64') });
+        }
         else if (ac === 'log') {
           let t = ''; try { t = fs.readFileSync(path.join(DADOS, 'ponte.log'), 'utf8'); } catch (e) { }
           return json(res, { log: t.split('\n').slice(-60).join('\n') });
