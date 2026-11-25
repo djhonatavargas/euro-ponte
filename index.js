@@ -1229,7 +1229,8 @@ function registrarEspelho(jid, m, { silencioso = false } = {}) {
   if (m.telefone) c.telefone = m.telefone;
   if (m.id && (!c.ultKey || m.ts >= (c.ultKeyTs || 0))) { c.ultKey = { id: m.id, fromMe: m.autor !== 'cliente' }; c.ultKeyTs = m.ts; }
   if (!c.ult || m.ts >= c.ult) { c.ult = m.ts; c.ultTexto = resumoMsg(m).slice(0, 120); c.ultAutor = m.autor; }
-  if (m.autor === 'cliente' && !m.auto && m.ts > (c.ultCliente || 0)) c.ultCliente = m.ts;   // 24/11/2026: resposta automática de conta comercial não conta como "o cliente escreveu"
+  if (m.autor === 'cliente' && !m.auto && m.ts > (c.ultCliente || 0)) c.ultCliente = m.ts;
+  if (m.autor !== 'cliente' && c.ultNossa !== undefined && m.ts > c.ultNossa) c.ultNossa = m.ts;   // 25/11/2026: última mensagem nossa (Djhonata, assistente ou aviso) para o cliente   // 24/11/2026: resposta automática de conta comercial não conta como "o cliente escreveu"
   if (m.autor === 'cliente' && !silencioso) c.naoLidas = (c.naoLidas || 0) + 1;
   salvarChats();
   if (!silencioso) emitir('msg', { jid, msg: m, chat: chatPublico(jid) });
@@ -3907,6 +3908,11 @@ Para cada conversa, escolha UMA categoria:
 Na dúvida entre "cliente" e outra categoria, escolha "cliente". Responda SOMENTE com JSON: [{"n":número,"cat":"categoria","motivo":"até 8 palavras"}].`;
 // Regra do Djhonata: nas conversas ficam só os clientes em foco (interagindo, visita marcada, negociando, "Importante").
 // Arquiva: comprou / pedido finalizado, perdido (+7 dias sem falar), corretor, construtor/captação, pessoal.
+function ultNossa(jid) {   // 25/11/2026 (Djhonata): última mensagem que NÓS mandamos ao cliente (calcula do espelho uma vez e depois acompanha)
+  const c = chats[jid] || {};
+  if (c.ultNossa === undefined) { const l = lerEsp(jid); let t = 0; for (const m of l) if (m.autor !== 'cliente' && m.ts > t) t = m.ts; c.ultNossa = t; salvarChats(); }
+  return c.ultNossa || 0;
+}
 function ultCli(jid) {   // última mensagem do cliente (calcula do espelho para conversas que vieram do histórico)
   const c = chats[jid] || {};
   if (c.ultCliente === undefined) { const l = lerEsp(jid); let t = 0; for (const m of l) if (m.autor === 'cliente' && !m.auto && m.ts > t) t = m.ts; c.ultCliente = t; salvarChats(); }
@@ -4538,16 +4544,17 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           let linhas = []; try { linhas = fs.readFileSync(path.join(DADOS, 'eventos-crm.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean); } catch (e) { }
           const okEv = new Set(estado.eventosOk || []);
           const pend = linhas.filter(e => e.rid && !okEv.has(e.rid)).slice(-100);
-          const ult = {}, ag = {}, ultimas = {};
+          const ult = {}, ag = {}, ultimas = {}, nossa = {};
           for (const jid of Object.keys(chats)) {
             const c = chats[jid]; const t = (c.telefone || '').replace(/\D/g, '').slice(-8);
             if (t.length !== 8) continue;
             const u = ultCli(jid); if (u) ult[t] = Math.max(ult[t] || 0, u);
+            const un = ultNossa(jid); if (un) nossa[t] = Math.max(nossa[t] || 0, un);
             if (c.ultAutor === 'cliente' && Date.now() - (c.ult || 0) < 30 * 864e5) { const ut = semAcento(c.ultTexto || '').trim(); if (ut && !RE_RESPOSTA_AUTO.test(ut) && !RE_SO_OK.test(ut) && !RE_LEVE.test(ut)) ag[t] = c.ult; }
             if (jidValido(jid) && !jid.endsWith('@g.us') && c.ult) { const t2 = tel8Chat(jid); if (t2) ultimas[t2] = Math.max(ultimas[t2] || 0, c.ult); }
           }
           const mapa = {}; for (const v of Object.values(fu)) if (!(v.status === 'enviado' && Date.now() - (v.enviadoEm || 0) >= 7 * 864e5) && !(v.status === 'pausado' && Date.now() >= (v.ate || 0))) mapa[v.tel8] = v.status;
-          return json(res, Object.assign(fuResumo(), { pulso: true, eventos: pend, ultimaMsgCliente: ult, aguardando: ag, mapa, ultimas }));
+          return json(res, Object.assign(fuResumo(), { pulso: true, eventos: pend, ultimaMsgCliente: ult, ultimaMsgNossa: nossa, aguardando: ag, mapa, ultimas }));
         }
         else if (ac === 'eventos') {
           let linhas = []; try { linhas = fs.readFileSync(path.join(DADOS, 'eventos-crm.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean); } catch (e) { }
