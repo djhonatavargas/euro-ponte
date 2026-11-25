@@ -1337,11 +1337,22 @@ function semJoinha(t) { return String(t || '').replace(/👍(?:\u{1F3FB}|\u{1F3F
 // (trecho = começo da mensagem do cliente, ou o id dela); o servidor acha essa mensagem na conversa e manda a resposta citando ela.
 const RE_CITA = /\[\[\s*cita\s*:\s*([^\]]{1,200})\]\]/i;
 function acharCitada(jid, alvo) {
+  // 25/11/2026: "trecho A || trecho B" = tenta A; se não achar, B
+  if (/\|\|/.test(String(alvo || ''))) { for (const parte of String(alvo).split('||')) { const r = parte.trim() && acharCitada(jid, parte.trim()); if (r) return r; } return null; }
   const norm = (x) => semAcento(String(x || '')).replace(/[^a-z0-9]+/g, ' ').trim();
   const a = norm(alvo); if (!a) return null;
   let l = lerEsp(jid); if (!l.length) { try { const j2 = acharJid(jid); if (j2 && j2 !== jid) { l = lerEsp(j2); jid = j2; } } catch (e) { } }
   const cli = l.filter(m => m.autor === 'cliente' && m.id && String(m.texto || '').trim()).slice(-60).reverse();
-  const m = cli.find(x => x.id === String(alvo).trim()) || cli.find(x => { const t = norm(x.texto); return t && (t.includes(a.slice(0, 60)) || a.includes(t.slice(0, 60))); });
+  let m = cli.find(x => x.id === String(alvo).trim()) || cli.find(x => { const t = norm(x.texto); return t && (t.includes(a.slice(0, 60)) || a.includes(t.slice(0, 60))); });
+  // 25/11/2026 (Djhonata, caso Ley): resposta de pendência tem que sair citando a mensagem do cliente sobre aquele assunto. Se o trecho não bate
+  // ao pé da letra (a pergunta veio reescrita), vale a mensagem do cliente com mais palavras em comum (pelo menos 2); no empate, a mais recente.
+  if (!m) {
+    const STOP = new Set(['para', 'pela', 'pelo', 'esse', 'essa', 'isso', 'como', 'qual', 'quanto', 'quanta', 'voce', 'dele', 'dela', 'mais', 'tambem', 'ainda', 'sobre', 'quando', 'onde', 'porque', 'fica', 'ficou', 'tenho', 'temos', 'estou', 'aqui', 'entao', 'certo', 'cliente']);
+    const pal = (x) => new Set(norm(x).split(' ').filter(w => w.length >= 4 && !STOP.has(w)));
+    const pa = pal(alvo); let bs = 0;
+    for (const x of cli) { let s = 0; for (const w of pal(x.texto)) if (pa.has(w)) s++; if (s > bs) { bs = s; m = x; } }
+    if (bs < 2) m = null;
+  }
   return m ? { key: { remoteJid: jid, id: m.id, fromMe: false }, message: { conversation: String(m.texto).slice(0, 1000) } } : null;
 }
 async function enviarTexto(jid, texto, autor = 'ia', extra) {
