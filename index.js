@@ -4853,6 +4853,23 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const st = fs.statSync(f); if (st.size > 8e6) return json(res, { erro: 'arquivo grande demais', tam: st.size }, 413);
           return json(res, { nome: path.basename(f), tam: st.size, b64: fs.readFileSync(f).toString('base64') });
         }
+        else if (ac === 'backup') {   // 25/11/2026 (Djhonata): cópia completa no servidor (regras, conversas, estado) + conferência de saúde. Não copia a pasta auth (credenciais do WhatsApp).
+          const quando = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 16).replace('T', '-').replace(':', '');
+          const raiz = path.join(DADOS, 'backups'), dest = path.join(raiz, quando); fs.mkdirSync(path.join(dest, 'regras'), { recursive: true });
+          const feitos = [], problemas = [], regras = {};
+          for (const f of ARQS_REGRAS) { const tx = lerTexto(f); regras[f] = tx; if (!tx) problemas.push('regra vazia: ' + f); else { fs.writeFileSync(path.join(dest, 'regras', f), tx); feitos.push({ nome: 'regras/' + f, tam: tx.length }); } }
+          for (const f of ['chats.json', 'estado.json', 'etiquetas.json', 'followups.json', 'geo.json', 'anuncios-imoveis.json', 'lid-telefone.json', 'contatos.json', 'regras-limpeza.json', 'uso.json', 'eventos-crm.jsonl']) {
+            const o = path.join(DADOS, f); if (!fs.existsSync(o)) continue;
+            try { const raw = fs.readFileSync(o); if (f.endsWith('.json')) { try { JSON.parse(raw.toString('utf8')); } catch (e) { problemas.push('JSON com defeito: ' + f + ' (' + e.message.slice(0, 80) + ')'); } } fs.writeFileSync(path.join(dest, f), raw); feitos.push({ nome: f, tam: raw.length }); } catch (e) { problemas.push('não copiou ' + f + ': ' + e.message); }
+          }
+          const pastas = {};
+          for (const d of ['espelho', 'conversas']) { try { fs.cpSync(path.join(DADOS, d), path.join(dest, d), { recursive: true }); pastas[d] = fs.readdirSync(path.join(dest, d)).length; } catch (e) { problemas.push('não copiou a pasta ' + d + ': ' + e.message); } }
+          let antigos = []; try { antigos = fs.readdirSync(raiz).filter(n => /^\d{4}-\d{2}-\d{2}-\d{4}$/.test(n)).sort(); for (const n of antigos.slice(0, Math.max(0, antigos.length - 10))) fs.rmSync(path.join(raiz, n), { recursive: true, force: true }); } catch (e) { }
+          let disco = null; try { const s = fs.statfsSync(DADOS); disco = { livreGB: Math.round(s.bavail * s.bsize / 1e8) / 10, totalGB: Math.round(s.blocks * s.bsize / 1e8) / 10 }; } catch (e) { }
+          let erros = []; try { erros = fs.readFileSync(path.join(DADOS, 'ponte.log'), 'utf8').split('\n').slice(-600).filter(l => /erro|error|falh|exce/i.test(l)).slice(-25).map(l => l.slice(0, 220)); } catch (e) { }
+          let midia = 0; try { midia = fs.readdirSync(MIDIA).length; } catch (e) { }
+          return json(res, { ok: true, pasta: 'dados/backups/' + quando, copias: antigos.length, feitos, pastas, problemas, regras, saude: { conectado, numero: meuNumero, noArHaMin: Math.round(process.uptime() / 60), memoriaMB: Math.round(process.memoryUsage().rss / 1e6), node: process.version, disco, chats: Object.keys(chats).length, midia, videos: { rodando: vid.rodando || '', faltam: vidFaltando().length }, errosRecentes: erros } });
+        }
         else if (ac === 'log') {
           let t = ''; try { t = fs.readFileSync(path.join(DADOS, 'ponte.log'), 'utf8'); } catch (e) { }
           return json(res, { log: t.split('\n').slice(-60).join('\n') });
