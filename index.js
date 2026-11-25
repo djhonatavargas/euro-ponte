@@ -1730,6 +1730,8 @@ function retornoDaFrase(t, agora) {
   const promete = /\b(te chamo|eu te chamo|te ligo|volto a te chamar|volto a falar (contigo|com voce))\b/.test(s);
   const solta = /\bquando (voce |tu |voces )?(achar|puder|puderem|tiver|tiverem|quiser|quiserem|decidir|decidirem)\b[^.?!]{0,70}\b(me chama|me chamem|me avisa|me fala|e so (me )?chamar)\b/.test(s);
   if (!promete && !solta) return '';
+  // 24/11/2026 (caso James): "não vou chamar agora" é o contrário de prometer retorno
+  if (/\bnao (?:vou|irei) (?:te |lhe )?(?:chamar|incomodar|ligar)\b|\bnao te chamo\b|\bnao (?:precisa|preciso) (?:te )?chamar\b/.test(s)) return '';
   const dia = (d) => { const x = new Date(n.getTime() + d * 864e5); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
   const amanha = /\bamanha\b/.test(s); let d = amanha ? 1 : 0, h = -1, mi = 0;
   const ex = promete && /\b(?:as|a partir das|depois das|la pelas|pelas) (\d{1,2})(?:h|:| horas)(\d{2})?/.exec(s);
@@ -1745,7 +1747,9 @@ function retornoDaFrase(t, agora) {
   else return '';
   if (h < 0 || h > 23) return '';
   const ini = minutos(ROT_INI), fim = minutos(ROT_FIM);
-  if (h * 60 + mi > fim || (d === 0 && h * 60 + mi <= n.getHours() * 60 + n.getMinutes() + 5)) { d += 1; h = 9; mi = 0; }
+  // 24/11/2026 (caso Manoel): "te chamo depois das 18h" dito às 19h39 é amanhã depois das 18h, e não amanhã às 9h
+  if (h * 60 + mi > fim) { d += 1; h = 9; mi = 0; }
+  else if (d === 0 && h * 60 + mi <= n.getHours() * 60 + n.getMinutes() + 5) { d += 1; if (!ex) { h = 9; mi = 0; } }
   if (h * 60 + mi < ini) { h = Math.ceil(ini / 60); mi = 0; }
   if (new Date(n.getTime() + d * 864e5).getDay() === 0) d += 1;   // domingo não chama
   return dia(d) + 'T' + String(h).padStart(2, '0') + ':' + String(mi).padStart(2, '0');
@@ -4403,6 +4407,10 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           if (novos.length) for (const j of Object.keys(chats)) { const t8 = tel8De(j); if (t8 && novos.includes(t8) && filas.has(j)) { filas.delete(j); cortadas++; } }
           if (novos.length) log('trava do CRM: travou', novos.length, 'telefone(s)', cortadas ? '(' + cortadas + ' resposta(s) na fila cancelada(s))' : '');
           return json(res, { ok: true, travados: l.length, novos: novos.length, cortadas });
+        } else if (ac === 'retorno_apagar') {   // 24/11/2026: tira um retorno marcado por engano
+          if (!jidValido(jid)) return json(res, { erro: 'conversa inválida' }, 400);
+          const tinha = !!(estado.retornos || {})[jid]; if (tinha) { delete estado.retornos[jid]; salvarEstado(); log('retorno apagado pelo Djhonata', jid); }
+          return json(res, { ok: true, apagou: tinha });
         } else if (ac === 'retorno_marcar') {   // 24/11/2026: retorno marcado pelo Djhonata (texto JSON {q:'AAAA-MM-DDTHH:MM', assunto})
           if (!jidValido(jid)) return json(res, { erro: 'conversa inválida' }, 400);
           let o = {}; try { o = JSON.parse(String(b.texto || '{}')); } catch (e) { return json(res, { erro: 'texto inválido' }, 400); }
