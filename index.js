@@ -534,7 +534,7 @@ function simularFluxo(e) {
   const fgtsHoje = informado(e.fgts) ? Math.max(0, Number(e.fgts)) : 0;
   const carteira = e.carteira === true || /^(true|sim|s)$/i.test(String(e.carteira || ''));
   const av = avaliacaoUsada(f);
-  const financ = Math.max(0, Math.min(cent(0.8 * av), f.preco - sinal));   // 80% da avaliação (que já vem redonda no milhar)
+  const financ = Math.max(0, Math.min(cent(0.8 * av), f.preco - sinal - fgtsHoje));   // 26/11/2026 (Djhonata, caso Tiago): o que o cliente tem de entrada (sinal + FGTS de hoje) entra todo e o financiamento diminui; nunca deixar ele dar menos do que tem   // 80% da avaliação (que já vem redonda no milhar)
   const entrada = cent(f.preco - financ);                                   // o que o cliente paga fora do financiamento
   const { hoje, meses, obra, n } = prazoDaObra(f);   // parcelas da entrada: até 3 meses depois da entrega, igual ao CRM (decisão do Djhonata, 13/11/2026)
   const mesRot = (k) => { const d = new Date(hoje.getFullYear(), hoje.getMonth() + k, 1); return `${MESES_CURTOS[d.getMonth()]}/${d.getFullYear()}`; };
@@ -3186,7 +3186,8 @@ function fuUltimoEnvio() { let t = 0; for (const v of Object.values(fu)) if ((v.
 function fuEnviadosHoje() { const h = fuDia(Date.now()); return Object.values(fu).filter(v => v.enviadoEm && fuDia(v.enviadoEm) === h).length; }
 // Quem está em "Remarcar visita" no CRM sai antes dos perdidos (pedido do Djhonata, 17/11/2026: já agendaram uma vez, estão mais quentes).
 const fuQuente = (v) => ((estado.crmStatus || {})[String(v.tel8 || v.tel || '').replace(/\D/g, '').slice(-8)] === 'novo' ? 1 : 0);
-function fuFilaAprovada() { return Object.values(fu).filter(v => v.status === 'aprovado').sort((a, b) => fuQuente(b) - fuQuente(a) || (b.prioridade || 0) - (a.prioridade || 0) || (a.aprovadoEm || 0) - (b.aprovadoEm || 0)); }
+function fuEntrada(x) { return Number(((estado.entradas || {})[x.tel8]) || 0); }   // 26/11/2026 (Djhonata): perfil pronto com mais entrada sai primeiro (vem do CRM)
+function fuFilaAprovada() { return Object.values(fu).filter(v => v.status === 'aprovado').sort((a, b) => fuQuente(b) - fuQuente(a) || fuEntrada(b) - fuEntrada(a) || (b.prioridade || 0) - (a.prioridade || 0) || (a.aprovadoEm || 0) - (b.aprovadoEm || 0)); }
 function fuNaJanela(ms) { const d = spDe(ms), m = d.getUTCHours() * 60 + d.getUTCMinutes(); return m >= minutos(FU_INI) && m <= fuFimDoDia(d.getUTCDay()); }
 function fuProximaAbertura(ms) {   // próximo 9h (segunda a sábado) depois de ms
   const d = spDe(ms); let t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 9 + 3, 0);
@@ -3350,7 +3351,7 @@ async function fuGerarUm(x) {
 function fuTrabalhar() {   // prepara 2 por vez
   if (!API_KEY) return;
   while (fuRun.gerando < 2) {
-    const x = Object.values(fu).find(v => v.status === 'fila'); if (!x) return;
+    const x = Object.values(fu).filter(v => v.status === 'fila').sort((a, b) => fuEntrada(b) - fuEntrada(a))[0]; if (!x) return;   // 26/11/2026: prepara primeiro quem tem perfil pronto e mais entrada
     fuRun.gerando++;
     fuGerarUm(x).catch(() => { }).finally(() => { fuRun.gerando--; setTimeout(fuTrabalhar, 300); });
   }
@@ -4436,6 +4437,12 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const arqP = 'projeto-' + (nl.replace(/\.(pdf|jpe?g|png)$/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'do-imovel') + '.' + extP;
           fs.writeFileSync(path.join(CATALOGO, pastaP, arqP), bufP); log('projeto guardado', pastaP, arqP, bufP.length);
           return json(res, { ok: true, pasta: pastaP, arquivo: arqP, bytes: bufP.length });
+        } else if (ac === 'entradas_salvar') {   // 26/11/2026 (Djhonata): CRM manda { tel8: entrada } dos clientes com perfil pronto; a fila do follow-up prepara e envia primeiro quem tem mais entrada
+          let pe = null; try { pe = JSON.parse(String(b.texto || '')); } catch (e) { }
+          if (!pe || typeof pe !== 'object' || Array.isArray(pe)) return json(res, { erro: 'mande texto = JSON { tel8: entrada }' }, 400);
+          const novo = {}; for (const [k, v] of Object.entries(pe)) { if (/^\d{8}$/.test(k) && Number(v) > 0) novo[k] = Math.round(Number(v)); }
+          estado.entradas = novo; salvarEstado();
+          return json(res, { ok: true, clientes: Object.keys(novo).length });
         } else if (ac === 'avaliacoes_salvar') {   // 26/11/2026 (Djhonata): avaliação da Caixa por imóvel (ref -> R$), vinda do CRM. Vale na simulação quando está acima do preço. texto = JSON { ref: valor } (0 tira)
           let pa = null; try { pa = JSON.parse(String(b.texto || '')); } catch (e) { }
           if (!pa || typeof pa !== 'object' || Array.isArray(pa)) return json(res, { erro: 'mande texto = JSON { ref: valor }' }, 400);
