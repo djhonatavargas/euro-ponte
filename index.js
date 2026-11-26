@@ -2209,6 +2209,42 @@ function marcarOrigem(jid, x, texto, ts) {
   if (mudou) salvarChats();
 }
 const ocupado = new Set();
+// ---------- ENSAIO (26/11/2026, Djhonata): roda uma conversa inventada pela assistente, com as regras e ferramentas de verdade, sem mandar nada no WhatsApp ----------
+let ensaio = { rodando: false, saida: [] };
+const ENSAIO_LEITURA = new Set(['ler_ficha', 'simular_fluxo', 'distancia', 'imoveis_perto', 'fipe_veiculo']);
+async function ensaioFerramenta(nome, entrada, ctx) {
+  if (ENSAIO_LEITURA.has(nome)) return executar(nome, entrada, ctx);
+  if (nome === 'enviar_arquivo') return 'Enviado ao cliente (ensaio, nada saiu de verdade).';
+  if (nome === 'agenda_visita') return 'Ensaio: o horário pedido está livre (nada foi gravado na agenda). Confirme ao cliente normalmente.';
+  if (nome === 'mandar_ao_cliente') return 'Mandado (ensaio, nada saiu de verdade).';
+  return 'Feito (ensaio, nada foi gravado).';
+}
+async function rodarEnsaio(p) {
+  const jid = 'ensaio' + Date.now() + '@s.whatsapp.net';
+  const ctx = { jid, telefone: '', nome: String(p.nome || ''), dono: false, notas: [], audioAgora: !!p.audio, rotina: '', ensaio: true };
+  const system = sistema(ctx), messages = [];
+  for (const m of p.msgs.slice(0, 30)) {
+    const txt = String(m); ensaio.saida.push({ autor: 'cliente', texto: txt });
+    const ult = messages[messages.length - 1];
+    if (ult && ult.role === 'user') ult.content.push({ type: 'text', text: txt }); else messages.push({ role: 'user', content: [{ type: 'text', text: txt }] });
+    for (let volta = 0; volta < 9; volta++) {
+      const resp = await claude(system, messages, FERRAMENTAS);
+      messages.push({ role: 'assistant', content: (resp.content || []).length ? resp.content : [{ type: 'text', text: '(sem resposta)' }] });
+      const resultados = [];
+      for (const bl of resp.content || []) {
+        if (bl.type === 'text') { const t = String(bl.text || '').trim(); if (t && !/^NO_REPLY\b/.test(t)) ensaio.saida.push({ autor: 'ia', texto: t }); }
+        else if (bl.type === 'tool_use') {
+          const r = await ensaioFerramenta(bl.name, bl.input || {}, ctx);
+          ensaio.saida.push({ autor: 'ferramenta', texto: bl.name + ' ' + JSON.stringify(bl.input || {}).slice(0, 300) + ' => ' + String(r).slice(0, 400) });
+          resultados.push({ type: 'tool_result', tool_use_id: bl.id, content: String(r).slice(0, 20000) });
+        }
+      }
+      if (!resultados.length) break;
+      messages.push({ role: 'user', content: resultados });
+    }
+  }
+}
+
 async function processar(jid) {
   const f = filas.get(jid);
   if (!f) return;
@@ -4911,6 +4947,16 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           let erros = []; try { erros = fs.readFileSync(path.join(DADOS, 'ponte.log'), 'utf8').split('\n').slice(-600).filter(l => /erro|error|falh|exce/i.test(l)).slice(-25).map(l => l.slice(0, 220)); } catch (e) { }
           let midia = 0; try { midia = fs.readdirSync(MIDIA).length; } catch (e) { }
           return json(res, { ok: true, pasta: 'dados/backups/' + quando, copias: antigos.length, feitos, pastas, problemas, regras, saude: { conectado, numero: meuNumero, noArHaMin: Math.round(process.uptime() / 60), memoriaMB: Math.round(process.memoryUsage().rss / 1e6), node: process.version, disco, chats: Object.keys(chats).length, midia, videos: { rodando: vid.rodando || '', faltam: vidFaltando().length }, errosRecentes: erros } });
+        }
+        else if (ac === 'ensaio') {   // texto = JSON {msgs:[...], nome, audio} começa; sem msgs devolve o andamento
+          let p = {}; try { p = JSON.parse(String(b.texto || '{}')); } catch (e) { }
+          if (Array.isArray(p.msgs) && p.msgs.length) {
+            if (ensaio.rodando) return json(res, { erro: 'já tem um ensaio rodando' }, 409);
+            ensaio = { rodando: true, inicio: Date.now(), saida: [] };
+            rodarEnsaio(p).catch(e => { ensaio.erro = e.message; log('ensaio', e.message); }).finally(() => { ensaio.rodando = false; ensaio.fim = Date.now(); });
+            return json(res, { ok: true, comecou: true });
+          }
+          return json(res, ensaio);
         }
         else if (ac === 'log') {
           let t = ''; try { t = fs.readFileSync(path.join(DADOS, 'ponte.log'), 'utf8'); } catch (e) { }
