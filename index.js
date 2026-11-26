@@ -2229,6 +2229,16 @@ async function ensaioFerramenta(nome, entrada, ctx) {
   if (nome === 'mandar_ao_cliente') return 'Enviado.';
   return 'Feito.';
 }
+async function clienteSimulado(persona) {   // 26/11/2026 (Djhonata): teste de conversa inteira; a IA faz o papel do cliente
+  const conv = ensaio.saida.filter(s => s.autor === 'cliente' || s.autor === 'ia').map(s => (s.autor === 'cliente' ? 'CLIENTE: ' : 'CORRETOR: ') + s.texto).join('\n');
+  const sys = 'Você faz o papel de um CLIENTE no WhatsApp conversando com um corretor de imóveis de Joinville (as mensagens dele entre [[tts: ]] são áudios que você ouviu). Quem é o cliente e como ele é: ' + persona + '\nRegras: responda como esse cliente responderia de verdade, curto (1 a 2 linhas, jeito de WhatsApp), só com o que o personagem sabe. Não facilite: só conte sua situação, seu dinheiro ou seu motivo se o corretor perguntar ou se fizer sentido. Se a mensagem do corretor não tiver pergunta, for repetida, comprida demais ou não te der motivo para responder, perca interesse: responda seco ("ok", "vou ver") e, se acontecer de novo, escreva só SUMIU. Se o corretor te fizer uma boa pergunta ou mostrar algo que resolve teu problema, responda com interesse. Se a visita ficar marcada com dia e hora e você aceitou, escreva só FIM.';
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: jsonLimpo({ model: MODELO, max_tokens: 300, system: sys, messages: [{ role: 'user', content: 'Conversa até agora:\n' + conv + '\n\nEscreva só a próxima mensagem do cliente (ou FIM, ou SUMIU).' }] }) });
+    const j = await r.json(); if (j.usage) { registrarUso(j.usage); ensaio.custo = Math.round(((ensaio.custo || 0) + custoUso(j.usage)) * 1e4) / 1e4; }
+    return ((j.content || []).filter(b => b.type === 'text').map(b => b.text).join(' ') || '').trim().slice(0, 600);
+  } catch (e) { return ''; }
+}
 async function rodarEnsaio(p) {
   const jid = 'ensaio' + Date.now() + '@s.whatsapp.net';
   const ctx = { jid, telefone: '', nome: String(p.nome || ''), dono: false, notas: [], audioAgora: !!p.audio, rotina: '', ensaio: true };
@@ -2236,7 +2246,9 @@ async function rodarEnsaio(p) {
   let ferr = FERRAMENTAS;   // 26/11/2026: teste das regras sob demanda (só o título de cada melhoria vai junto; o texto ela lê com ler_regra)
   if (p.demanda) { ctx.regrasAlt = Object.assign(ctx.regrasAlt || {}, { 'MELHORIAS-APROVADAS.md': indiceDemanda() }); ferr = FERRAMENTAS.concat([FERR_LER_REGRA]); ensaio.demanda = true; ctx.demanda = true; }
   const system = sistema(ctx), messages = [];
-  for (const m of p.msgs.slice(0, 30)) {
+  const filaE = p.msgs.slice(0, 30).concat(p.persona ? Array(Math.min(20, Number(p.turnos) || 10)).fill(null) : []);   // 26/11/2026: cliente simulado (persona) responde a cada fala da assistente
+  for (let m of filaE) {
+    if (m === null) { m = await clienteSimulado(String(p.persona)); if (!m || /^(FIM|SUMIU)\b/.test(m.trim())) { ensaio.saida.push({ autor: 'fim', texto: m || 'SUMIU' }); break; } }
     const txt = String(m); ensaio.saida.push({ autor: 'cliente', texto: txt });
     const ult = messages[messages.length - 1];
     if (ult && ult.role === 'user') ult.content.push({ type: 'text', text: txt }); else messages.push({ role: 'user', content: [{ type: 'text', text: txt }] });
