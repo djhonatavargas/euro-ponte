@@ -287,7 +287,8 @@ function sistema(ctx) {
   const d = agoraSP();
   const dia = d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
   const hora = d.toTimeString().slice(0, 5);
-  let din = `Agora: ${dia}, ${hora} (horário de Joinville).\nConversa com: ${ctx.nome || 'nome não informado'} — WhatsApp ${ctx.telefone ? formatoBR(ctx.telefone) : 'desconhecido'}.`;
+  const comercialEsc = (() => { const dw = d.getDay(), hh = d.getHours(); return (dw >= 1 && dw <= 5 && hh >= 8 && hh < 18) || (dw === 6 && hh >= 8 && hh < 12); })();   // 26/11/2026 (Djhonata): tu é o Djhonata; no horário comercial ele está no escritório
+  let din = `Agora: ${dia}, ${hora} (horário de Joinville). ${comercialEsc ? 'Horário comercial: fale "aqui no escritório".' : 'Fora do horário comercial: fale "lá no escritório eu te mostro", nunca "aqui no escritório".'} Tu é o Djhonata: nunca fale dele em terceira pessoa (nada de "avisei o Djhonata").\nConversa com: ${ctx.nome || 'nome não informado'} — WhatsApp ${ctx.telefone ? formatoBR(ctx.telefone) : 'desconhecido'}.`;
   din += `\nRegra de segurança do número: escreva cada resposta com suas palavras para este cliente; não copie textos prontos idênticos aos de outras conversas (varie saudação e frases). Mensagens curtas, uma ideia por mensagem, sem excesso de links.`;
   if (!ELEVEN_KEY) din += `\nÁudio com a voz do Djhonata: indisponível agora. Responda só em texto (não use [[tts:...]]).`;
   else if (!ctx.dono) {
@@ -846,6 +847,8 @@ async function executar(nome, entrada, ctx) {
     if (nome === 'simular_fluxo') {
       const r = simularFluxo(entrada);
       if (r.erro) return r.erro;
+      // 26/11/2026 (Djhonata, teste com clientes simulados): a conta só sai depois que o cliente viu o imóvel nesta conversa (uma trava por imóvel)
+      try { if (!ctx.dono && r.pasta && !(ctx.ofertas && ctx.ofertas[r.pasta]) && !lerEsp(ctx.jid).some(m => m.oferta === r.pasta)) { ctx.travaSim = ctx.travaSim || {}; if (!ctx.travaSim[r.pasta]) { ctx.travaSim[r.pasta] = 1; return 'NÃO MANDE A CONTA AINDA (regra do Djhonata, 26/11/2026): o cliente ainda não viu este imóvel nesta conversa. Primeiro mande a oferta dele (ler_ficha e enviar_arquivo com o vídeo e a descrição) e, se ainda não sabe, pergunte numa pergunta só o bairro que ele quer ou por que quer mudar. A conta vem depois que ele mostrar interesse.'; } } } catch (e) { }
       ctx.notas.push('[simulação montada: ' + r.resumo + ']');
       log('simulação', ctx.telefone || ctx.jid, r.resumo);
       // Memória da simulação nesta conversa (12/11/2026): o bloco completo vai UMA vez por imóvel; depois dele, uma pergunta aberta (13/11/2026) e, nos ajustes, uma pergunta por vez.
@@ -858,7 +861,7 @@ async function executar(nome, entrada, ctx) {
       // Depois do fluxo (decisão do Djhonata, 13/11/2026): UMA pergunta aberta; nos ajustes, mexe só no que o cliente falou, uma pergunta por vez.
       const comoAjustar = ' Se ele disser que ficou pesado, descubra O QUE pesa (a parcela, o reforço de fim de ano ou o valor na entrega das chaves) e refaça mexendo só nisso: parcela = o que ele consegue por mês; balao = 0 se não consegue reforço no fim do ano; reforco = 0 (ou o valor que consegue) e pos_chaves = 24 se não consegue o valor na entrega das chaves.';
       let depois;
-      if (!repetida) depois = 'mande a CONFERÊNCIA DEPOIS DO FLUXO (regra das melhorias, 25/11/2026), de preferência em ÁUDIO ([[tts:...]]) porque é muita coisa para ler: pergunte se o imóvel é o que ele gostou e se a localização ficou boa, se o fluxo faz sentido e fica dentro da realidade dele, diga que ajusta o que ele quiser (sinal, parcela, valor das chaves) quantas vezes precisar porque quer montar uma condição que ele consiga comprar, e que se ficou tudo certo a gente marca para ele vir no escritório tirar as dúvidas com calma (e ver outras opções, se precisar). NÃO pergunte "O que pesa mais, o sinal ou a parcela?" nem "O que você achou desse fluxo?". Não pergunte de renda, FGTS, carteira assinada nem onde ele mora';
+      if (!repetida) depois = 'mande a CONFERÊNCIA DEPOIS DO FLUXO (mudança do Djhonata, 26/11/2026): em TEXTO curto, sem emoji, com UMA pergunta só, usando o nome dele, mais ou menos assim: "essa conta cabe pra ti? Se quiser mexer no sinal, na parcela ou nas chaves, me fala que eu ajusto." Sem horários nessa mensagem e sem áudio comprido. NÃO pergunte "O que pesa mais, o sinal ou a parcela?" nem "O que você achou desse fluxo?". Não pergunte de renda, FGTS, carteira assinada nem onde ele mora';
       else if (r.falta >= 1 && !r.temPos) depois = `diga que ficam faltando ${brl(r.falta)} e proponha parcelar esse valor depois das chaves (ex.: "Vamos fazer um pós-chaves então?"). Se ele topar, chame simular_fluxo de novo com os mesmos números e pos_chaves = 24 (a ferramenta usa só as parcelas que precisar)`;
       else if (r.falta >= 1) depois = `diga que ainda ficam ${brl(r.falta)} para combinar e pergunte SÓ como ele prefere acertar esse valor: um pouco mais de sinal, um reforço no fim do ano ou um valor na entrega das chaves`;
       else if (r.entregaMin) depois = `explique que, para a conta fechar, ficam ${brl(r.naEntrega)} na entrega das chaves (é o mínimo: "pelo menos ${brl(r.naEntrega)} você precisa dar na entrega das chaves") e pergunte SÓ se assim fica bom para ele`;
@@ -2224,7 +2227,7 @@ async function ensaioFerramenta(nome, entrada, ctx) {
   if (nome === 'enviar_arquivo' && ctx.demanda) { const c = String((entrada || {}).caminho || ''); if (/\.mp4$/i.test(c)) { ctx.videos = ctx.videos || new Set(); if (ctx.videos.has(c)) return 'Esse vídeo já foi enviado nesta conversa: não mande de novo. Siga a conversa só com texto.'; ctx.videos.add(c); } }
   if (ENSAIO_LEITURA.has(nome)) return executar(nome, entrada, ctx);
   // 26/11/2026: no ensaio a resposta tem que ser igual à de verdade; antes dizia "nada saiu de verdade" e a IA achava que o vídeo tinha falhado
-  if (nome === 'enviar_arquivo') return 'Enviado.';
+  if (nome === 'enviar_arquivo') { try { const pz = pastaDoCaminho(String((entrada || {}).caminho || '')); if (pz) { ctx.ofertas = ctx.ofertas || {}; ctx.ofertas[pz] = 'o vídeo'; } } catch (e) { } return 'Enviado.'; }
   if (nome === 'agenda_visita') return /consult|livre|ver/i.test(String((entrada || {}).acao || '')) ? 'Horários livres nesse dia: 9h, 10h, 13h, 14h, 15h, 16h e 17h.' : 'Horário livre e marcado na agenda. Confirme ao cliente.';
   if (nome === 'mandar_ao_cliente') return 'Enviado.';
   return 'Feito.';
