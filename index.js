@@ -4060,6 +4060,13 @@ async function definirEtiqueta(jid, cat, ids) {
     quer ? tem.add(id) : tem.delete(id); mudou = true;
     await dorme(acaso(350, 700));
   }
+  // 26/11/2026 (Djhonata): as etiquetas antigas "Corretor 1" e "Corretor 2" saem de todas as conversas; corretor da Euro fica só com "Corretor Euro"
+  for (const id of [...tem]) {
+    if (!/^corretor\s*\d+$/i.test(String((etq.labels[id] || {}).nome || '').trim())) continue;
+    meusRotulos.set(jid + '|' + id, Date.now());
+    await sock.removeChatLabel(jid, id); tem.delete(id); mudou = true;
+    await dorme(acaso(350, 700));
+  }
   etq.chats[jid] = [...tem]; salvarEtq();
   return mudou;
 }
