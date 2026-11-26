@@ -4091,7 +4091,10 @@ async function etiquetarTudo() {
   if (etiquetando.rodando || !sock || !conectado) return;
   await lerEquipe();
   const ids = await garantirEtiquetas();
-  const lista = Object.keys(chats).filter(j => catEtiqueta(j));
+  // 26/11/2026: também os contatos que só têm etiqueta (sem conversa guardada no servidor), para "Corretor 1/2" virar "Corretor parceiro"
+  const comEtq = Object.keys(etq.chats).filter(j => jidValido(j) && !chats[j] && (etq.chats[j] || []).some(id => /^corretor\s*\d+$/i.test(String((etq.labels[id] || {}).nome || '').trim())));
+  const lista = [...Object.keys(chats), ...comEtq].filter(j => catEtiqueta(j));
+  if (comEtq.length) log('etiquetar: contatos só com Corretor 1/2', comEtq.length);
   Object.assign(etiquetando, { rodando: true, feitos: 0, total: lista.length });
   try { for (const jid of lista) { if (!sock || !conectado) break; try { await definirEtiqueta(jid, catEtiqueta(jid), ids); } catch (e) { log('etiquetar', jid, e.message); } etiquetando.feitos++; } }
   finally { etiquetando.rodando = false; log('etiquetas aplicadas', etiquetando.feitos, 'conversas'); }
