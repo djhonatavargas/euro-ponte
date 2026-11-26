@@ -445,7 +445,7 @@ function dadosDaFicha(pasta) {
   return {
     nome: nome.replace(/\s+—\s+/, ' – ').trim(), preco, entrega: d ? { mes: Number(d[2]), ano: Number(d[3]) } : null, pronto: /pronto/i.test(ent) || (!d && /entregue|pronto/i.test(t)),
     area: areas.length ? Math.min(...areas) : 0, terreno: /terreno|\blote\b/i.test(tipo), tipo: (/^[^\[]/.test(constr) ? constr : tipo).split(/[,(]/)[0].trim().toLowerCase().slice(0, 30),
-    aval: avaliacaoDaFicha(t, preco), naoAceitaSuperior: /n[aã]o aceita avalia[çc][ãa]o superior/i.test(t)
+    aval: avalDaRef(pasta) || avaliacaoDaFicha(t, preco), naoAceitaSuperior: /n[aã]o aceita avalia[çc][ãa]o superior/i.test(t)
   };
 }
 // m² de avaliação pela entrega (tabela do Djhonata, 13/11/2026: o imóvel vale mais lá na frente): pronto ou até junho de 2027 = 6.300;
@@ -2113,7 +2113,10 @@ async function aoReceber(m, tipoUpsert) {
 // O WhatsApp manda o código do anúncio junto da 1ª mensagem. O CRM diz de qual imóvel é cada anúncio (ou se é genérico)
 // e a assistente já abre o atendimento com o imóvel certo, sem mexer nos anúncios.
 const ADS_ARQ = path.join(DADOS, 'anuncios-imoveis.json');
-let adsMapa = lerJson(ADS_ARQ, null) || {};   // { código do anúncio: { nome, pasta, generico, em } }
+let adsMapa = lerJson(ADS_ARQ, null) || {};
+const AVAL_ARQ = path.join(DADOS, 'avaliacoes.json');   // 26/11/2026: avaliação da Caixa por imóvel, gravada pelo CRM
+let avalRef = lerJson(AVAL_ARQ, null) || {};
+function avalDaRef(pasta) { const m = /\(ref (\d+)/.exec(String(pasta || '')); return (m && Number(avalRef[m[1]])) || 0; }   // { código do anúncio: { nome, pasta, generico, em } }
 function adsVistos() {   // anúncios que já trouxeram cliente (pelo que está guardado nas conversas), do mais recente para o mais antigo
   const v = {}; let semCodigo = 0;
   for (const c of Object.values(chats)) {
@@ -4432,6 +4435,12 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const arqP = 'projeto-' + (nl.replace(/\.(pdf|jpe?g|png)$/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'do-imovel') + '.' + extP;
           fs.writeFileSync(path.join(CATALOGO, pastaP, arqP), bufP); log('projeto guardado', pastaP, arqP, bufP.length);
           return json(res, { ok: true, pasta: pastaP, arquivo: arqP, bytes: bufP.length });
+        } else if (ac === 'avaliacoes_salvar') {   // 26/11/2026 (Djhonata): avaliação da Caixa por imóvel (ref -> R$), vinda do CRM. Vale na simulação quando está acima do preço. texto = JSON { ref: valor } (0 tira)
+          let pa = null; try { pa = JSON.parse(String(b.texto || '')); } catch (e) { }
+          if (!pa || typeof pa !== 'object' || Array.isArray(pa)) return json(res, { erro: 'mande texto = JSON { ref: valor }' }, 400);
+          let n = 0; for (const [r, v] of Object.entries(pa)) { if (!/^\d{2,5}$/.test(r)) continue; const x = Math.round(Number(v) || 0); if (x > 0) avalRef[r] = x; else delete avalRef[r]; n++; }
+          fs.writeFileSync(AVAL_ARQ, JSON.stringify(avalRef)); log('avaliações salvas', n);
+          return json(res, { ok: true, gravadas: n, total: Object.keys(avalRef).length });
         } else if (ac === 'foto_receber') {   // 26/11/2026 (Djhonata): foto que faltava (ex.: fachada) vai para a pasta do imóvel e entra em primeiro na lista de fotos. texto = JSON { ref, nome, b64 }
           let pf = null; try { pf = JSON.parse(String(b.texto || '')); } catch (e) { }
           if (!pf || typeof pf !== 'object' || !pf.b64) return json(res, { erro: 'mande texto = JSON { ref, nome, b64 }' }, 400);
