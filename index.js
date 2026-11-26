@@ -4432,6 +4432,20 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const arqP = 'projeto-' + (nl.replace(/\.(pdf|jpe?g|png)$/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'do-imovel') + '.' + extP;
           fs.writeFileSync(path.join(CATALOGO, pastaP, arqP), bufP); log('projeto guardado', pastaP, arqP, bufP.length);
           return json(res, { ok: true, pasta: pastaP, arquivo: arqP, bytes: bufP.length });
+        } else if (ac === 'foto_receber') {   // 26/11/2026 (Djhonata): foto que faltava (ex.: fachada) vai para a pasta do imóvel e entra em primeiro na lista de fotos. texto = JSON { ref, nome, b64 }
+          let pf = null; try { pf = JSON.parse(String(b.texto || '')); } catch (e) { }
+          if (!pf || typeof pf !== 'object' || !pf.b64) return json(res, { erro: 'mande texto = JSON { ref, nome, b64 }' }, 400);
+          const pastaF = /^\d{2,5}$/.test(String(pf.ref || '')) && acharPasta(String(pf.ref));
+          if (!pastaF) return json(res, { erro: 'imóvel não encontrado' }, 404);
+          const bufF = Buffer.from(String(pf.b64), 'base64');
+          if (bufF.length < 500 || bufF.length > 15e6) return json(res, { erro: 'tamanho inválido' }, 400);
+          const extF = (bufF[0] === 0xff && bufF[1] === 0xd8) ? 'jpg' : (bufF[0] === 0x89 && bufF.subarray(1, 4).toString('latin1') === 'PNG') ? 'png' : '';
+          if (!extF) return json(res, { erro: 'não é imagem' }, 400);
+          const arqF = (semAcento(String(pf.nome || 'foto')).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/projeto|planta/g, 'foto').slice(0, 40) || 'foto') + '.' + extF;
+          fs.writeFileSync(path.join(CATALOGO, pastaF, arqF), bufF);
+          let naFicha = false; try { const fp = path.join(CATALOGO, pastaF, 'ficha.md'); const fx = lerTexto(fp); const mm = /^- Fotos[^\n]*\n/m.exec(fx); if (mm && !fx.includes(pastaF + '/' + arqF)) { fs.writeFileSync(fp, fx.slice(0, mm.index + mm[0].length) + '  - ' + pastaF + '/' + arqF + '\n' + fx.slice(mm.index + mm[0].length)); naFicha = true; } } catch (e) { }
+          log('foto guardada', pastaF, arqF, bufF.length, naFicha ? 'primeira na ficha' : '');
+          return json(res, { ok: true, pasta: pastaF, arquivo: arqF, caminho: pastaF + '/' + arqF, primeiraNaFicha: naFicha, bytes: bufF.length });
         } else if (ac === 'projeto_receber') {   // 26/11/2026 (Djhonata): projeto anexado no CRM (PDF ou imagem) vai para a pasta do imóvel; a assistente manda sozinha. texto = JSON { ref, pasta, nome, b64 }
           let pj = null; try { pj = JSON.parse(String(b.texto || '')); } catch (e) { }
           if (!pj || typeof pj !== 'object' || !pj.b64) return json(res, { erro: 'mande texto = JSON { ref, pasta, nome, b64 }' }, 400);
