@@ -2213,10 +2213,11 @@ const ocupado = new Set();
 let ensaio = { rodando: false, saida: [] };
 const ENSAIO_LEITURA = new Set(['ler_ficha', 'simular_fluxo', 'distancia', 'imoveis_perto', 'fipe_veiculo']);
 async function ensaioFerramenta(nome, entrada, ctx) {
+  if (nome === 'ler_regra') return lerRegraDemanda(entrada || {});
   if (ENSAIO_LEITURA.has(nome)) return executar(nome, entrada, ctx);
   // 26/11/2026: no ensaio a resposta tem que ser igual à de verdade; antes dizia "nada saiu de verdade" e a IA achava que o vídeo tinha falhado
   if (nome === 'enviar_arquivo') return 'Enviado.';
-  if (nome === 'agenda_visita') return 'Horário livre e marcado na agenda. Confirme ao cliente.';
+  if (nome === 'agenda_visita') return /consult|livre|ver/i.test(String((entrada || {}).acao || '')) ? 'Horários livres nesse dia: 9h, 10h, 13h, 14h, 15h, 16h e 17h.' : 'Horário livre e marcado na agenda. Confirme ao cliente.';
   if (nome === 'mandar_ao_cliente') return 'Enviado.';
   return 'Feito.';
 }
@@ -2224,14 +2225,16 @@ async function rodarEnsaio(p) {
   const jid = 'ensaio' + Date.now() + '@s.whatsapp.net';
   const ctx = { jid, telefone: '', nome: String(p.nome || ''), dono: false, notas: [], audioAgora: !!p.audio, rotina: '', ensaio: true };
   if (p.alt) { ctx.regrasAlt = {}; for (const f of ARQS_REGRAS) { try { ctx.regrasAlt[f] = fs.readFileSync(path.join(REGRAS_TESTE, f), 'utf8'); } catch (e) { } } ensaio.alt = Object.keys(ctx.regrasAlt); }
+  let ferr = FERRAMENTAS;   // 26/11/2026: teste das regras sob demanda (só o título de cada melhoria vai junto; o texto ela lê com ler_regra)
+  if (p.demanda) { ctx.regrasAlt = Object.assign(ctx.regrasAlt || {}, { 'MELHORIAS-APROVADAS.md': indiceDemanda() }); ferr = FERRAMENTAS.concat([FERR_LER_REGRA]); ensaio.demanda = true; }
   const system = sistema(ctx), messages = [];
   for (const m of p.msgs.slice(0, 30)) {
     const txt = String(m); ensaio.saida.push({ autor: 'cliente', texto: txt });
     const ult = messages[messages.length - 1];
     if (ult && ult.role === 'user') ult.content.push({ type: 'text', text: txt }); else messages.push({ role: 'user', content: [{ type: 'text', text: txt }] });
     for (let volta = 0; volta < 9; volta++) {
-      const resp = await claude(system, messages, FERRAMENTAS);
-      { const u = resp.usage || {}; (ensaio.tokens = ensaio.tokens || []).push((u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0)); }
+      const resp = await claude(system, messages, ferr);
+      { const u = resp.usage || {}; (ensaio.tokens = ensaio.tokens || []).push((u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0)); ensaio.custo = Math.round(((ensaio.custo || 0) + custoUso(u)) * 1e4) / 1e4; }
       messages.push({ role: 'assistant', content: (resp.content || []).length ? resp.content : [{ type: 'text', text: '(sem resposta)' }] });
       const resultados = [];
       for (const bl of resp.content || []) {
@@ -2252,6 +2255,19 @@ async function rodarEnsaio(p) {
 // Nada muda no atendimento: a versão vai para dados/regras-teste e só é usada no ensaio com alt: true. Só entra no ar com { aplicar: true }, com cópia antes.
 const REGRAS_TESTE = path.join(DADOS, 'regras-teste'), CONS_MODELO = ENV.MODELO_CONSOLIDAR || 'claude-opus-5-5';
 let consolidacao = { rodando: false };
+const FERR_LER_REGRA = { name: 'ler_regra', description: 'Lê o texto completo das regras aprovadas pelo Djhonata sobre um assunto. Chame ANTES de responder sempre que a conversa tocar num assunto da lista de títulos (entrada, sinal, simulação, parcela, FGTS, visita, agenda, horário, fotos, vídeo, objeção, nome, outra cidade, casal, permuta, crédito aprovado etc.). Pode passar várias palavras ou os números [R..] da lista.', input_schema: { type: 'object', properties: { assunto: { type: 'string' } }, required: ['assunto'] } };
+function regrasDemanda() { return enxBlocos(lerTexto('MELHORIAS-APROVADAS.md')).filter(b => b.regra).map((b, i) => ({ id: 'R' + i, titulo: enxTitulo(b.texto), texto: b.texto })); }
+function indiceDemanda() {
+  return 'REGRAS APROVADAS PELO DJHONATA (valem tanto quanto as regras principais e, quando são mais novas, valem acima delas). Aqui vai só o TÍTULO de cada uma. Antes de responder, chame ler_regra com o assunto da mensagem do cliente (pode chamar mais de uma vez) e siga o texto completo que voltar.\n' + regrasDemanda().map(r => `- [${r.id}] ${r.titulo}`).join('\n');
+}
+function lerRegraDemanda(e) {
+  const rs = regrasDemanda(), q = semAcento(String(e.assunto || '')).toLowerCase();
+  const ids = q.match(/r\d+/g) || [], pal = q.split(/[^a-z0-9]+/).filter(w => w.length > 3);
+  const pont = rs.map(r => { const tt = semAcento(r.titulo).toLowerCase(), tx = semAcento(r.texto).toLowerCase(); let s = ids.includes(r.id.toLowerCase()) ? 100 : 0; for (const w of pal) { if (tt.includes(w)) s += 5; else if (tx.includes(w)) s += 1; } return { r, s }; }).filter(x => x.s > 0).sort((a, b) => b.s - a.s).slice(0, 8);
+  if (!pont.length) return 'Nenhuma regra com esse assunto. Siga as regras principais.';
+  let out = ''; for (const { r } of pont) { if (out.length > 15000) break; out += `[${r.id}] ${r.texto}\n\n`; }
+  return out;
+}
 async function regrasConsolidar() {
   const f = 'MELHORIAS-APROVADAS.md', txt = lerTexto(f), principais = lerTexto('REGRAS-ATENDIMENTO.md');
   if (txt.length < 5000) throw new Error('arquivo vazio');
