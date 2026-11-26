@@ -356,8 +356,23 @@ const FERRAMENTAS = [
 // Só quando quem escreve é o Djhonata (WhatsApp pessoal, modo teste desligado): seção 13 do AGENTS.md
 const FERRAMENTA_DONO = { name: 'mandar_ao_cliente', description: 'Manda uma mensagem a um cliente a pedido do Djhonata, falando como o Djhonata. cliente = nome ou telefone do cliente, como o Djhonata citou (ou o do último aviso). texto = a mensagem para o cliente (pode ter [[tts:...]] para áudio e linhas com --- para separar mensagens). combinado = resumo curto da orientação do Djhonata sobre esse cliente, para seguir nas próximas conversas com ele.', input_schema: { type: 'object', properties: { cliente: { type: 'string' }, texto: { type: 'string' }, combinado: { type: 'string' } }, required: ['cliente', 'texto'] } };
 
-function pastasImoveis() {
+function pastasTodas() {
   try { return fs.readdirSync(CATALOGO, { withFileTypes: true }).filter(d => d.isDirectory() && !d.name.startsWith('_')).map(d => d.name); } catch (e) { return []; }
+}
+// 26/11/2026 (check-up): só valem as pastas que estão na tabela do CATALOGO.md. Pasta de imóvel vendido, suspenso ou indisponível
+// (ex.: ref 832, Coronel Vieira no Jardim Iririú) continua no disco, mas não pode ser achada nem oferecida. Sem CATALOGO.md legível, vale tudo.
+let catPastasCache = { em: 0, set: null };
+function pastasDoCatalogo() {
+  if (Date.now() - catPastasCache.em > 5 * 60000) {
+    const s = new Set(); const re = /catalogo\\(.+?)\\ficha\.md/gi; let m;
+    const t = lerTexto('CATALOGO.md'); while ((m = re.exec(t))) s.add(m[1].trim());
+    catPastasCache = { em: Date.now(), set: s.size >= 20 ? s : null };
+  }
+  return catPastasCache.set;
+}
+function pastasImoveis() {
+  const todas = pastasTodas(), cat = pastasDoCatalogo();
+  return cat ? todas.filter(n => cat.has(n)) : todas;
 }
 // 25/11/2026 (Djhonata): a assistente só oferece imóvel em Joinville. Imóvel de Araquari ou São Francisco do Sul (a cidade vem entre parênteses
 // no bairro da tabela do CATALOGO.md, ex.: "Itinga (Araquari)") fica fora da oferta certa, dos imóveis perto e da tabela que vai para a IA.
