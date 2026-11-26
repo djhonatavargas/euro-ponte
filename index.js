@@ -1124,6 +1124,18 @@ const ETQ_F = path.join(DADOS, 'etiquetas.json');
 const etq = Object.assign({ labels: {}, chats: {} }, lerJson(ETQ_F, {}));   // labels: id -> {nome, cor}; chats: jid -> [ids]
 let salvarEtqTimer = null;
 function salvarEtq() { clearTimeout(salvarEtqTimer); salvarEtqTimer = setTimeout(() => gravarJson(ETQ_F, etq), 1000); }
+// 26/11/2026: uma vez só, recupera do backup das 9h15 quem tinha "Corretor 1" ou "Corretor 2" (essas etiquetas saíram antes de virar "Corretor parceiro")
+if (!estado.parceirosDoBackup) {
+  try {
+    const b = lerJson(path.join(DADOS, 'backups', '2026-11-26-0915', 'etiquetas.json'), null);
+    if (b && b.labels && b.chats) {
+      const ids = new Set(Object.entries(b.labels).filter(([, l]) => /^corretor\s*\d+$/i.test(String((l || {}).nome || '').trim())).map(([id]) => id));
+      estado.parceiros = estado.parceiros || {}; let n = 0;
+      for (const [j, l] of Object.entries(b.chats)) if ((l || []).some(id => ids.has(String(id))) && !estado.parceiros[j]) { estado.parceiros[j] = Date.now(); n++; }
+      estado.parceirosDoBackup = n; gravarJson(ESTADO_F, estado);
+    }
+  } catch (e) { }
+}
 function etiquetasDe(jid) { const pn = pnDe(jid); const ids = new Set([...(etq.chats[jid] || []), ...(pn ? etq.chats[pn] || [] : [])]); return [...ids].filter(i => etq.labels[i] && !etq.labels[i].apagada).map(i => ({ id: i, nome: etq.labels[i].nome, cor: etq.labels[i].cor })); }
 function pnDe(jid) { return jid && jid.endsWith('@lid') ? (lidPn[jid] || '') : jid; }
 function guardarContato(c) {
@@ -4043,6 +4055,9 @@ function catEtiqueta(jid) {    // status do CRM manda; sem CRM, usa a organizaç
   const t = String((chats[jid] || {}).telefone || pnDe(jid).split('@')[0] || '').replace(/\D/g, '').slice(-8);
   const st = (estado.crmStatus || {})[t] || '';
   if (t && (estado.equipe || []).includes(t)) return 'corretor_euro';
+  // 26/11/2026 (Djhonata): quem estava em "Corretor 1" ou "Corretor 2" (e não é da Euro) é corretor parceiro; fica guardado mesmo depois que a etiqueta antiga sai
+  if ((etq.chats[jid] || []).some(id => /^corretor\s*\d+$/i.test(String((etq.labels[id] || {}).nome || '').trim())) && !(estado.parceiros || {})[jid]) { (estado.parceiros = estado.parceiros || {})[jid] = Date.now(); salvarEstado(); }
+  if ((estado.parceiros || {})[jid]) return 'corretor';
   if (CATS_ETQ.some(c => c.cat === st)) return st;
   const cl = (estado.classes || {})[jid]; const cat = cl ? cl.cat : '';
   return { comprou: 'fechado', cliente: 'atendimento', duvida: 'atendimento', perdido: 'perdido', corretor: 'corretor', construtor: 'construtor', pessoal: 'pessoal' }[cat] || '';
