@@ -4420,6 +4420,20 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           const arqP = 'projeto-' + (nl.replace(/\.(pdf|jpe?g|png)$/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'do-imovel') + '.' + extP;
           fs.writeFileSync(path.join(CATALOGO, pastaP, arqP), bufP); log('projeto guardado', pastaP, arqP, bufP.length);
           return json(res, { ok: true, pasta: pastaP, arquivo: arqP, bytes: bufP.length });
+        } else if (ac === 'projeto_receber') {   // 26/11/2026 (Djhonata): projeto anexado no CRM (PDF ou imagem) vai para a pasta do imóvel; a assistente manda sozinha. texto = JSON { ref, pasta, nome, b64 }
+          let pj = null; try { pj = JSON.parse(String(b.texto || '')); } catch (e) { }
+          if (!pj || typeof pj !== 'object' || !pj.b64) return json(res, { erro: 'mande texto = JSON { ref, pasta, nome, b64 }' }, 400);
+          const pastaP = (/^\d{2,5}$/.test(String(pj.ref || '')) && acharPasta(String(pj.ref))) || (pj.pasta && acharPasta(String(pj.pasta)));
+          if (!pastaP) return json(res, { erro: 'imóvel não encontrado' }, 404);
+          const bufP = Buffer.from(String(pj.b64), 'base64');
+          if (bufP.length < 500 || bufP.length > 15e6) return json(res, { erro: 'tamanho inválido' }, 400);
+          const cab = bufP.subarray(0, 4), extP = cab.toString('latin1') === '%PDF' ? 'pdf' : (bufP[0] === 0xff && bufP[1] === 0xd8) ? 'jpg' : (bufP[0] === 0x89 && cab.subarray(1, 4).toString('latin1') === 'PNG') ? 'png' : '';
+          if (!extP) return json(res, { erro: 'não é PDF nem imagem' }, 400);
+          const nl = semAcento(String(pj.nome || 'projeto')).toLowerCase().replace(/[^a-z0-9 .]/g, ' ');
+          if (/autoriza|contrato|procura|matricula|certid|\brg\b|\bcpf\b|\bcnh\b|identidade|comprovante|iptu|escritura|proposta|recibo|boleto|declara|termo|ficha|cadastr|documento|laudo|avalia|habite|alvara|vistoria|financ|extrato|tabela|preco|memorial/.test(nl)) return json(res, { erro: 'esse anexo não é projeto ou planta' }, 400);
+          const arqP = 'projeto-' + (nl.replace(/\.(pdf|jpe?g|png)$/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/^projeto-?/, '').slice(0, 50) || 'do-imovel') + '.' + extP;
+          fs.writeFileSync(path.join(CATALOGO, pastaP, arqP), bufP); log('projeto guardado (CRM)', pastaP, arqP, bufP.length);
+          return json(res, { ok: true, pasta: pastaP, arquivo: arqP, bytes: bufP.length });
         } else if (ac === 'saldos') {   // aba Pagamentos do CRM
           await lerEleven(!!b.on);
           return json(res, { saldos: dadosSaldos(), baixos: saldosBaixos() });
