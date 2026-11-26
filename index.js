@@ -3280,7 +3280,7 @@ function fuTarefa(x, conversa) {
   const c = x.crm || {};
   const dados = [c.nome && `Nome no CRM: ${c.nome}${c.nomeProvisorio ? ' (veio do perfil do WhatsApp: pode não ser o nome real)' : ''}`, c.bairro && `Bairro de interesse: ${c.bairro}`, c.imovel && `Imóvel de interesse: ${c.imovel}`, c.proximo && `Próximo passo anotado: ${c.proximo}`, c.resumo && `Resumo da conversa (CRM): ${c.resumo}`, c.historico && `Histórico do WhatsApp (CRM): ${c.historico}`, c.obs && `Observações (CRM): ${c.obs}`].filter(Boolean).join('\n');
   return `[TAREFA INTERNA DO SISTEMA — não é mensagem do cliente e nada disto vai para ele]
-FOLLOW-UP DE CLIENTE PERDIDO. O Djhonata quer retomar o contato com este cliente, que parou de responder há mais de 7 dias (está em "Perdido" no CRM). A mensagem só sai depois que o Djhonata aprovar.
+${(estado.crmStatus || {})[x.tel8] === 'novo' ? 'FOLLOW-UP DE CLIENTE EM "REMARCAR VISITA". Este cliente já marcou visita no escritório e não veio ou desmarcou. O objetivo é ele marcar de novo. Leia na conversa por que não veio (se disse) e quando foi isso.' : 'FOLLOW-UP DE CLIENTE PERDIDO. O Djhonata quer retomar o contato com este cliente, que parou de responder há mais de 7 dias (está em "Perdido" no CRM).'} A mensagem só sai depois que o Djhonata aprovar.
 
 DADOS DO CRM
 ${dados || '(nada anotado)'}
@@ -3300,9 +3300,17 @@ O QUE FAZER
  b) se a dificuldade foi a entrada ou o valor: que agora dá para montar com entrada menor (sinal flexível, entrada parcelada até a entrega, FGTS, financiamento pela avaliação do banco), sem números que não estejam no catálogo e sem prometer aprovação; ou
  c) se ele já tinha gostado de um imóvel e só faltou marcar: um convite para passar no escritório tirar as dúvidas.
  NÃO PODE PARECER ROBÔ (25/11/2026, Djhonata): a primeira frase muda sempre e soa como ele escrevendo na hora. Leia as mensagens nossas na conversa acima e NUNCA comece igual ou parecido com uma delas. Proibido "Lembrei de você porque", "acabou de entrar um imóvel novo", "que é a região que você procurava" e lista de dados do imóvel (quartos, vagas, preço, entrega todos juntos): fale o essencial em linguagem de conversa. Se já conversamos com ele antes neste WhatsApp, não se apresente de novo nem comece com "Oi! Tudo bem? Aqui é o Djhonata, da Euro": entre direto, pelo nome se tiver (ex.: "Gabriel, olha esse que entrou no Comasa: 2 quartos, 2 vagas e a entrada parcelada até 2028."). Termine com uma pergunta simples que convide a responder. Não prometa mandar nada depois ("vou separar as fotos", "confirmo e te falo"): se citar um imóvel, as fotos dele precisam existir para mandar quando ele pedir. Não diga que ele sumiu, que parou de responder ou que é um follow-up. Não mande link nem agenda nesta mensagem (se ele responder, a conversa continua). Só use 🙏🏼 (agradecer) ou ✅ (confirmar) como emoji, nunca 👍, sem negrito e sem lista. Chame pelo primeiro nome só se for nome de pessoa (do CRM ou dito na conversa). Se nunca conversaram neste WhatsApp, apresente-se em poucas palavras ("aqui é o Djhonata, da Euro Consultoria"). Se a última mensagem da conversa já é do Djhonata e ficou sem resposta (ex.: "Estou com imóveis novos em Joinville. Qual bairro você busca?"), não repita a mesma ideia: traga algo concreto e novo.
+EM DIA COM O WHATSAPP (26/11/2026, Djhonata: "o follow-up tem que estar em sintonia com o que está acontecendo no WhatsApp"; caso Inês):
+ - O que está na conversa do WhatsApp vale acima das anotações do CRM, que podem estar velhas. A data de hoje está no começo das instruções, e cada mensagem da conversa mostra quando foi: leia as datas.
+ - Nunca responda a uma mensagem antiga do cliente como se ela tivesse chegado agora. Erro: a Inês disse em 07/11 que não vinha por causa da chuva, e o follow-up de 26/11 começou com "sem problema com a chuva". O que ele disse há dias pode ser lembrado, mas como passado.
+ - Se a nossa última mensagem ficou sem resposta, a nova NÃO pode repetir a ideia dela nem com outras palavras (erro: em 17/11 mandamos "quando quiser, a gente vê com calma no escritório a troca do seu sobrado... qual dia da semana fica melhor?" e o follow-up novo repetia isso). Traga um ângulo novo e concreto: uma pergunta curta e fácil de responder (sim ou não), resolver um passo por aqui mesmo (ex.: "quer que eu te mande a conta da troca por aqui?"), uma informação nova e verdadeira do imóvel que ele gostou, ou perguntar se ele ainda está procurando.
 3) Prioridade de 1 a 5: 5 = muito quente (marcou visita, pediu simulação, perguntou de entrada ou financiamento com os dados dele, gostou de um imóvel); 3 = pediu informações e conversou; 1 = só a primeira mensagem do anúncio, sem conversa.
 Responda SOMENTE com um JSON válido, sem texto antes ou depois:
 {"decisao": "enviar|desistiu|sem_perfil|nao_cliente", "motivo": "frase curta", "analise": "1 ou 2 frases: o que ele procurava, onde parou e qual gancho você usou", "prioridade": 1, "imovel": "imóvel citado ou vazio", "mensagem": "texto da mensagem ou vazio"}`;
+}
+function fuParecido(a, b) {   // 26/11/2026: quanto das palavras da mensagem nova já estava numa mensagem nossa (0 a 1)
+  const w = (s) => new Set(semAcento(String(s || '')).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(p => p.length > 3));
+  const A = w(a), B = w(b); if (A.size < 4 || B.size < 4) return 0; let i = 0; for (const p of A) if (B.has(p)) i++; return i / Math.min(A.size, B.size);
 }
 async function fuGerarUm(x) {
   x.status = 'gerando'; x.tent = (x.tent || 0) + 1;
@@ -3317,7 +3325,8 @@ async function fuGerarUm(x) {
     Object.assign(x, { decisao: dec, motivo: String(r.motivo || '').slice(0, 300), analise: String(r.analise || '').slice(0, 700), prioridade: Math.max(1, Math.min(5, Math.round(Number(r.prioridade) || 1))), imovel: String(r.imovel || '').slice(0, 120), geradoEm: Date.now(), erro: '', jid: temChat ? jid : '' });
     if (dec === 'enviar') {
       const msg = String(r.mensagem || '').trim(); if (!msg) throw new Error('a IA não escreveu a mensagem');
-      { const pr = problemaNoRascunho(msg); if (pr) throw new Error(pr.replace(/^Não enviei: /, '').replace(/ Ajuste e envie de novo\.$/, '')); }   // 24/11/2026: data que já passou, colchetes ou terceira pessoa: refaz
+      { const pr = problemaNoRascunho(msg); if (pr) throw new Error(pr.replace(/^Não enviei: /, '').replace(/ Ajuste e envie de novo\.$/, '')); }
+      if (temChat) { const nossas = lerEsp(jid).filter(m => m.autor !== 'cliente' && m.autor !== 'aviso' && String(m.texto || '').length > 40).slice(-4); const igual = nossas.find(m => fuParecido(msg, m.texto) >= 0.6); if (igual) throw new Error('ficou parecida demais com uma mensagem que já mandamos ("' + String(igual.texto).slice(0, 90) + '"): escreva com um ângulo novo'); }   // 26/11/2026 (caso Inês)   // 24/11/2026: data que já passou, colchetes ou terceira pessoa: refaz
       x.mensagem = semDiminutivo(msg).slice(0, 1200); x.status = 'pronto';
     } else {
       x.mensagem = ''; x.status = dec;
