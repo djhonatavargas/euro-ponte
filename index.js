@@ -272,7 +272,7 @@ function sistema(ctx) {
   if (ctx.dono && !(estado.teste && estado.teste.ativo)) return sistemaDono(ctx);
   const partes = [ADAPTADOR];
   for (const f of ARQS_REGRAS) {
-    let t = lerTexto(f);
+    let t = (ctx.regrasAlt && typeof ctx.regrasAlt[f] === 'string') ? ctx.regrasAlt[f] : lerTexto(f);   // ensaio com a versão de teste das regras
     if (f === 'AGENTS.md') t = t.replace(/<!--\s*REGRAS-FIM\s*-->[\s\S]*$/, '');   // a lista de números "não atender" já é bloqueada pelo servidor
     // Economia (pedido do Djhonata, 16/11/2026): acima de 100 mil tokens de entrada o Haiku cobra 5x. Não vai para a IA o que está repetido:
     // as 51 perguntas do AGENTS.md (estão na BASE-RESPOSTAS.md, que vale mais), os gatilhos do sistema antigo e as seções 13 a 19, que são cópia mais velha das do REGRAS-ATENDIMENTO.md.
@@ -2214,14 +2214,16 @@ let ensaio = { rodando: false, saida: [] };
 const ENSAIO_LEITURA = new Set(['ler_ficha', 'simular_fluxo', 'distancia', 'imoveis_perto', 'fipe_veiculo']);
 async function ensaioFerramenta(nome, entrada, ctx) {
   if (ENSAIO_LEITURA.has(nome)) return executar(nome, entrada, ctx);
-  if (nome === 'enviar_arquivo') return 'Enviado ao cliente (ensaio, nada saiu de verdade).';
-  if (nome === 'agenda_visita') return 'Ensaio: o horário pedido está livre (nada foi gravado na agenda). Confirme ao cliente normalmente.';
-  if (nome === 'mandar_ao_cliente') return 'Mandado (ensaio, nada saiu de verdade).';
-  return 'Feito (ensaio, nada foi gravado).';
+  // 26/11/2026: no ensaio a resposta tem que ser igual à de verdade; antes dizia "nada saiu de verdade" e a IA achava que o vídeo tinha falhado
+  if (nome === 'enviar_arquivo') return 'Enviado.';
+  if (nome === 'agenda_visita') return 'Horário livre e marcado na agenda. Confirme ao cliente.';
+  if (nome === 'mandar_ao_cliente') return 'Enviado.';
+  return 'Feito.';
 }
 async function rodarEnsaio(p) {
   const jid = 'ensaio' + Date.now() + '@s.whatsapp.net';
   const ctx = { jid, telefone: '', nome: String(p.nome || ''), dono: false, notas: [], audioAgora: !!p.audio, rotina: '', ensaio: true };
+  if (p.alt) { ctx.regrasAlt = {}; for (const f of ARQS_REGRAS) { try { ctx.regrasAlt[f] = fs.readFileSync(path.join(REGRAS_TESTE, f), 'utf8'); } catch (e) { } } ensaio.alt = Object.keys(ctx.regrasAlt); }
   const system = sistema(ctx), messages = [];
   for (const m of p.msgs.slice(0, 30)) {
     const txt = String(m); ensaio.saida.push({ autor: 'cliente', texto: txt });
@@ -2229,6 +2231,7 @@ async function rodarEnsaio(p) {
     if (ult && ult.role === 'user') ult.content.push({ type: 'text', text: txt }); else messages.push({ role: 'user', content: [{ type: 'text', text: txt }] });
     for (let volta = 0; volta < 9; volta++) {
       const resp = await claude(system, messages, FERRAMENTAS);
+      { const u = resp.usage || {}; (ensaio.tokens = ensaio.tokens || []).push((u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0)); }
       messages.push({ role: 'assistant', content: (resp.content || []).length ? resp.content : [{ type: 'text', text: '(sem resposta)' }] });
       const resultados = [];
       for (const bl of resp.content || []) {
@@ -2243,6 +2246,49 @@ async function rodarEnsaio(p) {
       messages.push({ role: 'user', content: resultados });
     }
   }
+}
+
+// ---------- CONSOLIDAÇÃO DAS REGRAS (26/11/2026, Djhonata): versão enxuta SÓ DE TESTE do MELHORIAS-APROVADAS ----------
+// Nada muda no atendimento: a versão vai para dados/regras-teste e só é usada no ensaio com alt: true. Só entra no ar com { aplicar: true }, com cópia antes.
+const REGRAS_TESTE = path.join(DADOS, 'regras-teste'), CONS_MODELO = ENV.MODELO_CONSOLIDAR || 'claude-opus-5-5';
+let consolidacao = { rodando: false };
+async function regrasConsolidar() {
+  const f = 'MELHORIAS-APROVADAS.md', txt = lerTexto(f), principais = lerTexto('REGRAS-ATENDIMENTO.md');
+  if (txt.length < 5000) throw new Error('arquivo vazio');
+  const partes = []; let cur = '';
+  for (const b of enxBlocos(txt)) { if (cur.length + b.texto.length > 26000 && cur.trim()) { partes.push(cur); cur = ''; } cur += b.texto + '\n'; }
+  if (cur.trim()) partes.push(cur);
+  consolidacao.total = partes.length; consolidacao.feitas = 0; consolidacao.mantidas = [];
+  const sis = `Você reescreve UMA PARTE do arquivo MELHORIAS-APROVADAS.md (regras da assistente de WhatsApp do corretor de imóveis Djhonata, da Euro Consultoria) para ficar MAIS CURTA SEM MUDAR NADA DO COMPORTAMENTO dela. O corretor prefere pagar mais caro a perder qualquer regra.
+1. MANTENHA toda instrução que ainda vale: cada ação, ordem de passos, número, valor, percentual, prazo, horário, nome de ferramenta (simular_fluxo, agenda_visita, enviar_arquivo, registrar_crm etc.), status do CRM, exceção, condição ("só se", "nunca", "sempre"), frase de exemplo que a assistente deve usar (entre aspas, igual) e frase proibida.
+2. PODE TIRAR: histórico e justificativa ("caso da cliente X", "sugerida pela avaliação das conversas de...", "revisada com ele contra as regras novas", "escrito por ele no CRM"), repetição dentro da mesma regra, listas do tipo "reforça X, Y e Z", e exemplos de erro longos (deixe no máximo um exemplo curto do erro, se ajudar).
+3. Regra INTEIRAMENTE substituída por outra mais nova (do arquivo completo ou das regras principais), que diz o oposto ou já contém tudo dela: troque por uma linha "- (saiu: TÍTULO; vale TÍTULO DA NOVA)". Se a mais nova muda só uma parte, mantenha a parte que ainda vale. Na dúvida, MANTENHA a regra inteira.
+4. Mantenha o TÍTULO EM MAIÚSCULAS de cada regra e a data entre parênteses, curta (ex.: "(Djhonata, 23/11/2026)"), porque outras regras citam pelo título e a data decide qual vale. Mantenha também "vale acima de TAL" quando existir, de forma curta.
+5. Mantenha a ordem, os títulos de seção (#) e o formato: cada regra começa com "- " numa linha nova.
+6. Não invente regra, não junte com regras de outras partes, não mude o sentido, não use diminutivos.
+Responda SÓ com o texto reescrito da parte, sem comentário antes ou depois.
+
+===== REGRAS PRINCIPAIS (REGRAS-ATENDIMENTO.md), só para consulta =====
+${principais}
+
+===== ARQUIVO COMPLETO MELHORIAS-APROVADAS.md, só para consulta =====
+${txt}`;
+  const saida = [];
+  for (let i = 0; i < partes.length; i++) {
+    let novo = '';
+    try {
+      const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: jsonLimpo({ model: CONS_MODELO, max_tokens: 16000, system: [{ type: 'text', text: sis, cache_control: { type: 'ephemeral' } }], messages: [{ role: 'user', content: `Reescreva só esta parte (${i + 1} de ${partes.length}):\n\n${partes[i]}` }] }), signal: AbortSignal.timeout(9 * 60e3) });
+      if (!r.ok) throw new Error('API ' + r.status + ' ' + (await r.text()).slice(0, 200));
+      const j = await r.json(); if (j.usage) registrarUso(j.usage);
+      novo = (j.content || []).map(x => x.text || '').join('').trim();
+      if (j.stop_reason === 'max_tokens') novo = '';
+    } catch (e) { log('consolidação parte', i + 1, e.message); novo = ''; }
+    if (!novo || novo.length < partes[i].length * 0.2 || novo.length > partes[i].length * 1.05) { novo = partes[i].trim(); consolidacao.mantidas.push(i + 1); }   // deu errado: fica a parte original
+    saida.push(novo); consolidacao.feitas = i + 1;
+  }
+  const final = saida.join('\n\n') + '\n';
+  fs.mkdirSync(REGRAS_TESTE, { recursive: true }); fs.writeFileSync(path.join(REGRAS_TESTE, f), final);
+  return { antes: txt.length, depois: final.length, partes: partes.length, mantidas: consolidacao.mantidas, quando: Date.now() };
 }
 
 async function processar(jid) {
@@ -4957,6 +5003,28 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
             return json(res, { ok: true, comecou: true });
           }
           return json(res, ensaio);
+        }
+        else if (ac === 'regras_consolidar') {   // texto = JSON {comecar:true} faz a versão de teste; {aplicar:true} põe no ar (com cópia); {desfazer:true} volta a cópia; {ver:'trecho'} procura na versão de teste; sem nada: andamento
+          let p = {}; try { p = JSON.parse(String(b.texto || '{}')) || {}; } catch (e) { }
+          const f = 'MELHORIAS-APROVADAS.md', teste = path.join(REGRAS_TESTE, f), dia = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10), copia = 'MELHORIAS-APROVADAS-backup-consolidacao-' + dia + '.md';
+          if (p.comecar) {
+            if (consolidacao.rodando) return json(res, { erro: 'já está rodando' }, 409);
+            consolidacao = { rodando: true, inicio: Date.now() };
+            regrasConsolidar().then(r => { consolidacao.resultado = r; log('consolidação de teste pronta', JSON.stringify(r)); }).catch(e => { consolidacao.erro = e.message; log('consolidação', e.message); }).finally(() => { consolidacao.rodando = false; consolidacao.fim = Date.now(); });
+            return json(res, { ok: true, comecou: true });
+          }
+          if (p.aplicar) {
+            if (!fs.existsSync(teste)) return json(res, { erro: 'não tem versão de teste' }, 400);
+            fs.writeFileSync(path.join(CATALOGO, copia), lerTexto(f)); fs.copyFileSync(teste, path.join(CATALOGO, f));
+            log('consolidação aplicada; cópia', copia); return json(res, { ok: true, copia, tamanho: lerTexto(f).length });
+          }
+          if (p.desfazer) {
+            const c = path.join(CATALOGO, p.copia || copia); if (!fs.existsSync(c)) return json(res, { erro: 'cópia não encontrada', copia: p.copia || copia }, 400);
+            fs.copyFileSync(c, path.join(CATALOGO, f)); log('consolidação desfeita', p.copia || copia); return json(res, { ok: true, voltou: p.copia || copia });
+          }
+          if (p.ver) { let t = ''; try { t = fs.readFileSync(teste, 'utf8'); } catch (e) { } const i = t.indexOf(String(p.ver)); return json(res, { tamanho: t.length, achou: i >= 0, trecho: i >= 0 ? t.slice(Math.max(0, i - 200), i + (Number(p.n) || 3000)) : '' }); }
+          if (p.texto) { let t = ''; try { t = fs.readFileSync(teste, 'utf8'); } catch (e) { } const de = Number(p.de) || 0; return json(res, { tamanho: t.length, de, texto: t.slice(de, de + (Number(p.n) || 20000)) }); }
+          return json(res, consolidacao);
         }
         else if (ac === 'log') {
           let t = ''; try { t = fs.readFileSync(path.join(DADOS, 'ponte.log'), 'utf8'); } catch (e) { }
