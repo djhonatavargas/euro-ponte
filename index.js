@@ -2057,6 +2057,8 @@ async function aoReceber(m, tipoUpsert) {
     // escrito no celular ou em outro aparelho conectado
     if (/^#bot\b/i.test(texto.trim())) { delete estado.pausas[jid]; salvarEstado(); emitir('chat', chatPublico(jid)); log('assistente reativada em', jid); return; }
     if (/^#pausa\b/i.test(texto.trim())) { estado.pausas[jid] = Date.now() + 3650 * 864e5; salvarEstado(); emitir('chat', chatPublico(jid)); return; }
+    // 26/11/2026 (Djhonata): #zerar escrito pelo WhatsApp da Euro numa conversa = a assistente esquece tudo dessa conversa e atende como cliente novo (para testar o atendimento do zero)
+    if (/^#zerar\b/i.test(texto.trim())) { esquecerConversa(jid); filas.delete(jid); quitarResposta(jid); delete estado.pausas[jid]; salvarEstado(); emitir('chat', chatPublico(jid)); log('conversa zerada pelo #zerar', jid); return; }
     if (texto || tipo !== 'text') anotar(jid, 'assistant', `(Djhonata escreveu) ${texto || (m._transc ? '[mandou um áudio] ' + m._transc : '[' + tipo + ']')}`);
     if (PAUSA_HORAS > 0) { estado.pausas[jid] = Date.now() + PAUSA_HORAS * 3600e3; salvarEstado(); filas.delete(jid); emitir('chat', chatPublico(jid)); }
     return;
