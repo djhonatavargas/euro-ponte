@@ -1788,6 +1788,18 @@ function revisorFixo(t, jaConversando) {   // consertos que não precisam da IA;
   const tira = (re, nome) => emPartes((x) => { const y = x.replace(re, '$1'); if (y !== x && y.trim().length >= 8) { if (!feitos.includes(nome)) feitos.push(nome); return RV_MAIUSC(y); } return x; });
   if (jaConversando) tira(RV_OI, 'cumprimento repetido');
   tira(RV_ABRE, 'abertura "entendi"');
+  // 27/11/2026 (Djhonata): quem escreve é o Djhonata: nada de falar dele em terceira pessoa, nem de deixar na mão do cliente ("é só me chamar")
+  const CONJ = { mostra: 'mostro', explica: 'explico', responde: 'respondo', retorna: 'retorno', liga: 'ligo', chama: 'chamo', passa: 'passo', confirma: 'confirmo', manda: 'mando', fala: 'falo', atende: 'atendo', ve: 'vejo', 've': 'vejo' };
+  const marca = (nome) => { if (!feitos.includes(nome)) feitos.push(nome); };
+  emPartes((x) => { let y = x;
+    y = y.replace(/(?:j[aá] )?(?:deixei anotado|anotei|passei|repassei|avisei)(?: isso| (?:a )?tua d[uú]vida| (?:a )?tua pergunta| tudo)? (?:pro|pra o|para o|ao) Djhonata,? e ele (?:j[aá] )?(?:te |lhe )?(responde|retorna|chama|liga|passa|confirma|explica|manda|fala)(?: direto| por aqui| contigo)?/giu, (m, v) => { marca('terceira pessoa'); return 'Já anotei aqui e te ' + (CONJ[v.toLowerCase()] || v) + ' por aqui'; });
+    y = y.replace(/(?:j[aá] )?(?:deixei anotado|anotei|passei|repassei|avisei)(?: isso| (?:a )?tua d[uú]vida| (?:a )?tua pergunta| tudo)? (?:pro|pra o|para o|ao) Djhonata\b/giu, () => { marca('terceira pessoa'); return 'Já anotei aqui'; });
+    y = y.replace(/\b(?:vou|deixa eu|preciso) (?:ver|confirmar|checar|conferir|falar|conversar)(?: isso)? com o Djhonata\b/giu, () => { marca('terceira pessoa'); return 'vou ver isso'; });
+    y = y.replace(/(?<!pr[oó]pri[oa] )\b(?:o )?Djhonata (?:j[aá] )?(te |lhe )?(mostra|explica|responde|retorna|liga|chama|passa|confirma|manda|fala|atende|v[eê])(?!\p{L})/giu, (m, te, v) => { marca('terceira pessoa'); return 'eu ' + (te ? 'te ' : '') + (CONJ[semAcento(v).toLowerCase()] || v); });
+    y = y.replace(/(?<!pr[oó]pri[oa] )\b(?:o )?Djhonata vai (te |lhe )?/giu, (m, te) => { marca('terceira pessoa'); return 'eu vou ' + (te ? 'te ' : ''); });
+    const semChamar = y.replace(/[^.!?\n]*(?<!\p{L})[eé] s[oó] (?:me )?(?:chamar|falar|avisar|mandar mensagem)\b[^.!?\n]*[.!?]*[ \t]*/giu, '');
+    if (semChamar !== y && semChamar.trim().length >= 8) { y = semChamar.trimEnd(); if (!/\?/.test(y)) y += ' Que dia eu te chamo pra saber o que achou?'; marca('"é só me chamar"'); }
+    return y !== x ? RV_MAIUSC(y) : x; });
   return { texto: t, feitos };
 }
 const rvPerguntas = (t) => (String(t).split('\n').filter(l => !RE_LINK_AGENDA.test(l) && !linhaDaAgenda(l)).join('\n').match(/\?/g) || []).length;
@@ -2966,7 +2978,9 @@ function rotinaPermitida(jid, tipo) {
   if (etiquetasDe(jid).some(e => (pedido ? /pausad|desist|fechad|finaliz|comprou|corretor|constru|capta|pessoa|negocia/ : /pausad|perdid|desist|fechad|finaliz|comprou|corretor|constru|capta|pessoa|negocia/).test(semAcento(e.nome)))) return false;
   return true;
 }
-const RE_SO_OK = /^(certo|ok+|okay|blz|beleza|ta|ta bom|ta certo|tudo bem|entendi|hum+|uhum|aham|show|top|legal|sim|isso|\p{Extended_Pictographic}+)[\s.!]*$/iu;   // resposta de uma palavra que não pede nada
+const RE_SO_OK = /^(certo|ok+|okay|blz|beleza|ta|ta bom|ta certo|tudo bem|entendi|hum+|uhum|aham|show|top|legal|sim|isso|\p{Extended_Pictographic}+)[\s.!]*$/iu;
+// 27/11/2026 (Djhonata): "obrigado", "vou dar uma lida" e parecidos também não encerram a conversa: a retomada e o follow-up dos dias seguintes continuam
+const RE_ACK = (s) => RE_SO_OK.test(s) || /^(?:(?:muito |mt )?(?:obrigad[oa]s?|obg|brigad[oa]|valeu|vlw|agradeco|grat[ao])(?: (?:pelo|pela|o) (?:retorno|atencao|informac\w*))?|vou (?:dar uma )?(?:lida|ler|olhar|analisar|ver)(?: (?:com )?calma| aqui| direitinho)?)[\s.!\p{Extended_Pictographic}]*$/iu.test(s);   // resposta de uma palavra que não pede nada
 // O cliente confirmou a visita? Vale o que ele escreveu DEPOIS do último lembrete: "sim", "confirmo", "combinado" = confirmou; "não vou conseguir", "desmarcar", "imprevisto" = disse que não vem.
 const RE_VIS_NAO = /\b(nao (vou|vamos|consigo|conseguimos|posso|podemos|vai dar|da pra|poderei)|desmarc|remarc|cancel|imprevisto|outro dia|deixa pra)\b/, RE_VIS_SIM = /\b(confirm\w*|sim|ok+|okay|certo|combinado|blz|beleza|estarei|estaremos|vou sim|vamos sim|pode deixar|fechado|ta bom|to indo|estou indo|ate la|show|perfeito|com certeza|pode ser)\b|\u{1F44D}|\u{2705}|\u{1F64F}/u;
 function visitaConfirmacao(jid, v) {
@@ -3038,14 +3052,16 @@ function adiamentoDoCliente(jid) {   // { texto, q } se o cliente adiou a conver
 function adiouEMarca(jid) {   // true = não fazer retomada/follow-up automático agora
   if ((estado.visitas || {})[jid]) return false;   // 24/11/2026: com visita marcada vale o fluxo da visita (lembretes), não o adiamento
   const a = adiamentoDoCliente(jid); if (!a) return false;
+  // 27/11/2026 (Djhonata): "vou ver com a minha mulher e te retorno" sem dia não trava o follow-up para sempre: espera ~1 dia e o follow-up automático pergunta se conseguiu ver
+  if (!a.q) { const uc = lerEsp(jid).filter(m => m.autor === 'cliente' && !m.auto).pop(); return !!uc && Date.now() - (uc.ts || 0) < 20 * 3600e3; }
   if (a.q && !(estado.retornos || {})[jid] && quandoMs(a.q) > Date.now()) { estado.retornos = estado.retornos || {}; estado.retornos[jid] = { q: a.q, assunto: 'o cliente disse: "' + a.texto + '"', criado: Date.now(), auto: true }; salvarEstado(); log('retorno marcado pelo que o cliente disse', jid, a.q, a.texto); }
-  return true;
+  return quandoMs(a.q) > Date.now();   // 27/11/2026: data que já passou não segura mais o follow-up
 }
 function conversaParada(jid) {   // última mensagem (sem contar avisos internos) foi da assistente e o cliente não respondeu
   const l = lerEsp(jid); let ult = null, ultCli = 0, agenda = false, ack = 0;
   for (let i = l.length - 1; i >= 0; i--) {
     const m = l[i]; if (m.auto) continue;   // resposta automática de conta comercial não é fala do cliente
-    if (m.autor === 'cliente') { if (!ult && !ack && RE_SO_OK.test(semAcento(String(m.texto || '')).trim())) { ack = m.ts; continue; } ultCli = m.ts; break; }   // 17/11/2026: "Certo" da Antonia ficou sem resposta e sem retomada
+    if (m.autor === 'cliente') { if (!ult && !ack && RE_ACK(semAcento(String(m.texto || '')).trim())) { ack = m.ts; continue; } ultCli = m.ts; break; }   // 17/11/2026: "Certo" da Antonia ficou sem resposta e sem retomada
     if (m.autor === 'aviso') continue;
     if (!ult) ult = m;
     if (m.autor === 'ia' && /make\.com|marque seu hor[aá]rio/i.test(m.texto || '')) agenda = true;
@@ -3089,7 +3105,7 @@ async function verificarRotinas() {
     if (janela && dentroRetomada()) {
       for (const jid of Object.keys(chats)) {
         const c = chats[jid];
-        if (!(['ia', 'aviso'].includes(c.ultAutor) || (c.ultAutor === 'cliente' && RE_SO_OK.test(semAcento(String(c.ultTexto || '')).trim()))) || !c.ult || agora - c.ult > 22 * 3600e3 || agora - c.ult < 2 * 3600e3) continue;
+        if (!(['ia', 'aviso'].includes(c.ultAutor) || (c.ultAutor === 'cliente' && RE_ACK(semAcento(String(c.ultTexto || '')).trim()))) || !c.ult || agora - c.ult > 22 * 3600e3 || agora - c.ult < 2 * 3600e3) continue;
         if ((estado.visitas || {})[jid]) continue;            // tem visita marcada: quem cuida são os lembretes
         if ((estado.retornos || {})[jid]) continue;           // tem retorno combinado: ela chama na hora marcada, não antes
         const p = conversaParada(jid); if (!p || p.jaRetomou) continue;
@@ -3106,7 +3122,7 @@ async function verificarRotinas() {
       // Sem resposta, para: daí em diante é com ele (CRM, oferta e, depois de 7 dias, o follow-up com aprovação).
       const INSISTIR_DIAS = [1, 2];
       for (const jid of Object.keys(chats)) {
-        const c = chats[jid]; if (!c || !c.ult || !['ia', 'aviso'].includes(c.ultAutor)) continue;
+        const c = chats[jid]; if (!c || !c.ult || !(['ia', 'aviso'].includes(c.ultAutor) || (c.ultAutor === 'cliente' && RE_ACK(semAcento(String(c.ultTexto || '')).trim())))) continue;   // 27/11/2026: "obrigado" do cliente não encerra o follow-up
         if ((estado.visitas || {})[jid] || (estado.retornos || {})[jid]) continue;
         const p = conversaParada(jid); if (!p) continue;
         const dias = (agora - p.ultCli) / 864e5; if (dias < 1 || dias >= 3) continue;   // só nos 2 dias seguintes; quem já passou disso é com o Djhonata
@@ -3130,19 +3146,21 @@ async function verificarRotinas() {
   } catch (e) { log('rotinas', e.message); }
   finally { rotinas.rodando = false; }
 }
+// 27/11/2026 (Djhonata): o follow-up começa entendendo por que o cliente parou e corrige o que a gente errou
+const RET_ANALISE = 'ANTES DE ESCREVER, VEJA O QUE DEU ERRADO (Djhonata, 27/11/2026): releia as nossas últimas mensagens e veja por que o cliente parou. Se nós erramos alguma regra (ofereceu imóvel fora dos bairros ou do tipo que ele pediu, mandou conta que ele não entendeu, parcela da Caixa que não cabe sem mostrar a conta por escrito, perguntou coisa demais numa mensagem só, falou do Djhonata em terceira pessoa, deixou uma pergunta dele sem resposta), a mensagem de agora corrige isso: responde o que ficou sem resposta, oferece o imóvel certo pelo perfil de interesse dele (bairros e quartos que pediu, regra OUTRO IMÓVEL PELO PERFIL DE INTERESSE, com ler_ficha e enviar_arquivo) ou mostra a conta por escrito (regra PARCELA DA CAIXA NÃO CABE NO IMÓVEL QUE ELE GOSTOU). Não peça desculpa e não diga que errou: só faça certo. Se nada deu errado, retome do ponto exato em que parou.';
 async function rodarRotina(it) {
   const jid = it.jid, c = chats[jid] || {};
   let instr, extra;
   if (it.tipo === 'retomada') {
     const h = Math.max(2, Math.round((Date.now() - it.p.ultIa) / 3600e3));
-    instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Retomada: o cliente não responde desde a sua última mensagem (há umas ${h} horas). Releia a conversa. Se fizer sentido, mande UMA mensagem curta e natural retomando de onde parou (uma pergunta simples que convide a responder), sem repetir o que já mandou e sem pressionar.${it.p.agenda ? ' Você já mandou a agenda: se ele combinou dia ou horário e ainda não mandou o comprovante, consulte a agenda com agenda_visita e, se o horário estiver livre, marque e confirme; se não estiver, ofereça os livres.' : ''} Responda só NO_REPLY se: ele disse que não quer agora ou desistiu; a conversa terminou naturalmente (agradeceu e se despediu); ele disse que ia ver e retornar em outro dia; ou não há o que retomar. É a única retomada: não prometa mandar outras mensagens.`;
+    instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Retomada: o cliente não responde desde a sua última mensagem (há umas ${h} horas). Releia a conversa. Se fizer sentido, mande UMA mensagem curta e natural retomando de onde parou (uma pergunta simples que convide a responder), sem repetir o que já mandou e sem pressionar.${it.p.agenda ? ' Você já mandou a agenda: se ele combinou dia ou horário e ainda não mandou o comprovante, consulte a agenda com agenda_visita e, se o horário estiver livre, marque e confirme; se não estiver, ofereça os livres.' : ''} ${RET_ANALISE} Responda só NO_REPLY se: ele disse que não quer agora ou desistiu; ele disse que ia ver (com o marido, a esposa, a família) e retornar, porque aí quem chama é o follow-up de amanhã; ou não há o que retomar. Um "obrigado" ou "vou dar uma lida" não é fim de conversa: retome com uma pergunta leve. É a única retomada: não prometa mandar outras mensagens.`;
     extra = { rotina: 'retomada' };
     estado.retomadas = estado.retomadas || {}; estado.retomadas[jid] = { base: it.p.ultCli, em: Date.now() };
     for (const [k, r] of Object.entries(estado.retomadas)) if (Date.now() - (r.em || 0) > 7 * 864e5) delete estado.retomadas[k];
     salvarEstado();
   } else if (it.tipo === 'insistir') {
     const foco = it.n === 1 ? 'retome de onde parou com algo novo: a resposta da dúvida dele, um fato do imóvel que ele viu (ou o vídeo, se ainda não mandou) ou a conta com o sinal, e uma pergunta' : 'convide para vir ao escritório (ou ver o imóvel) com dois horários livres de agenda_visita a partir de amanhã; é a última tentativa automática, sem dizer isso a ele';
-    instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Follow-up automático ${it.n} de 2 (depois da retomada do primeiro dia): o cliente parou de responder há ${it.dias} dia${it.dias === 1 ? '' : 's'}. Releia a conversa inteira. Mande UMA mensagem curta (até 2 frases), natural, na voz do Djhonata: ${foco}. Nunca repita frase, pergunta, dia ou horário que já mandou (os horários antigos já passaram), nunca "e aí, pensou?", nunca cobre resposta. Responda só NO_REPLY se: ele disse que não quer, desistiu, comprou com outro, está sem perfil, combinou de retornar numa data, ou a conversa terminou com despedida.`;
+    instr = `[ROTINA AUTOMÁTICA — não é mensagem do cliente] Follow-up automático ${it.n} de 2 (depois da retomada do primeiro dia): o cliente parou de responder há ${it.dias} dia${it.dias === 1 ? '' : 's'}. Releia a conversa inteira. ${RET_ANALISE} Mande UMA mensagem curta (até 2 frases; se for a conta por escrito, pode ter as linhas da conta), natural, na voz do Djhonata: ${foco}. Nunca repita frase, pergunta, dia ou horário que já mandou (os horários antigos já passaram), nunca "e aí, pensou?", nunca cobre resposta. Responda só NO_REPLY se: ele disse que não quer, desistiu, comprou com outro, está sem perfil, combinou de retornar numa data que ainda não chegou. "Obrigado", "vou dar uma lida" ou "vou ver com meu marido e te retorno" sem dia NÃO é motivo de NO_REPLY: pergunte de leve se conseguiu ver (ou conversar com ele ou ela) e o que achou.`;
     extra = { rotina: 'retomada' };
     estado.insistir = estado.insistir || {}; estado.insistir[jid] = { base: it.p.ultCli, n: it.n, em: Date.now() };
     for (const [k, r] of Object.entries(estado.insistir)) if (Date.now() - (r.em || 0) > 10 * 864e5) delete estado.insistir[k];
@@ -3335,6 +3353,7 @@ EM DIA COM O WHATSAPP (26/11/2026, Djhonata: "o follow-up tem que estar em sinto
  - O que está na conversa do WhatsApp vale acima das anotações do CRM, que podem estar velhas. A data de hoje está no começo das instruções, e cada mensagem da conversa mostra quando foi: leia as datas.
  - Nunca responda a uma mensagem antiga do cliente como se ela tivesse chegado agora. Erro: a Inês disse em 07/11 que não vinha por causa da chuva, e o follow-up de 26/11 começou com "sem problema com a chuva". O que ele disse há dias pode ser lembrado, mas como passado.
  - Se a nossa última mensagem ficou sem resposta, a nova NÃO pode repetir a ideia dela nem com outras palavras (erro: em 17/11 mandamos "quando quiser, a gente vê com calma no escritório a troca do seu sobrado... qual dia da semana fica melhor?" e o follow-up novo repetia isso). Traga um ângulo novo e concreto: uma pergunta curta e fácil de responder (sim ou não), resolver um passo por aqui mesmo (ex.: "quer que eu te mande a conta da troca por aqui?"), uma informação nova e verdadeira do imóvel que ele gostou, ou perguntar se ele ainda está procurando.
+${RET_ANALISE}
 3) Prioridade de 1 a 5: 5 = muito quente (marcou visita, pediu simulação, perguntou de entrada ou financiamento com os dados dele, gostou de um imóvel); 3 = pediu informações e conversou; 1 = só a primeira mensagem do anúncio, sem conversa.
 Responda SOMENTE com um JSON válido, sem texto antes ou depois:
 {"decisao": "enviar|desistiu|sem_perfil|nao_cliente", "motivo": "frase curta", "analise": "1 ou 2 frases: o que ele procurava, onde parou e qual gancho você usou", "prioridade": 1, "imovel": "imóvel citado ou vazio", "mensagem": "texto da mensagem ou vazio"}`;
@@ -4973,6 +4992,20 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           let pedido = []; try { pedido = (JSON.parse(String(b.texto || '{}')).tels || []).map(x => String(x).replace(/\D/g, '').slice(-8)).filter(x => x.length === 8).slice(0, 40); } catch (e) { }
           for (const t8 of pedido) { if (out.some(o => o.tel8 === t8)) continue; try { const o = visitaSolta(t8); if (o) out.push(o); } catch (e) { } }
           return json(res, { ok: true, em: Date.now(), visitas: out });
+        }
+        else if (ac === 'retomada_diag') {   // 27/11/2026: por que cada conversa parada recebeu ou não a retomada e o follow-up dos dias seguintes
+          const agora = Date.now(), lista = [], hm = (ms) => ms ? new Date(ms - 3 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') : '';
+          for (const jid of Object.keys(chats)) { const uc = ultCli(jid); if (!uc || agora - uc > 4 * 864e5) continue;
+            const c = chats[jid] || {}, p = conversaParada(jid), motivos = [], t8 = tel8Chat(jid);
+            if (!p) motivos.push('sem conversa parada (cliente falou por último ou não há fala nossa depois)');
+            if ((estado.visitas || {})[jid]) motivos.push('visita marcada');
+            if ((estado.retornos || {})[jid]) motivos.push('retorno marcado ' + estado.retornos[jid].q);
+            if (!rotinaPermitida(jid, 'retomada')) motivos.push('rotina bloqueada: ' + [(estado.pausas[jid] || 0) > agora ? 'conversa pausada' : '', c.arquivado ? 'arquivada' : '', !podeResponder(jid, c.telefone) ? 'não pode responder' : '', t8 ? (estado.crmStatus || {})[t8] || '' : '', etiquetasDe(jid).map(e => e.nome).join('/')].filter(Boolean).join(', '));
+            try { const a = adiamentoDoCliente(jid); if (a) motivos.push('adiou: ' + (a.q || 'sem data') + ' "' + String(a.texto || '').slice(0, 60) + '"'); } catch (e) { }
+            const r = (estado.retomadas || {})[jid], s = (estado.insistir || {})[jid];
+            lista.push({ nome: chatPublico(jid).nome, tel: chatPublico(jid).telefone, ultCli: hm(uc), ultAutor: c.ultAutor, retomada: r ? hm(r.em) : '', insistir: s ? s.n + 'x ' + hm(s.em) : '', motivos });
+          }
+          return json(res, { ok: true, agora: hm(agora), lista });
         }
         else if (ac === 'rotinas') {   // o que o sistema sabe das visitas e das rotinas (para conferir)
           return json(res, { rotinas, visitas: Object.entries(estado.visitas || {}).map(([j, v]) => ({ nome: chatPublico(j).nome, telefone: chatPublico(j).telefone, quando: descreverQuando(v.q), origem: v.origem, enviados: v.enviados })), retomadas: Object.keys(estado.retomadas || {}).length, voz, ouvido, ffmpeg: temFfmpeg(), iaVazia: lerJson(path.join(DADOS, 'ia-vazia.json'), null) });
