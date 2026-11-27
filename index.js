@@ -1453,33 +1453,43 @@ async function ondaReal(ogg) {   // barrinhas da nota de voz a partir do som de 
 const FUNDO = ENV.FUNDO_AUDIO !== '0';
 const FUNDO_DB = Number(ENV.FUNDO_DB || -44);
 const FUNDO_PROMPT = ENV.FUNDO_PROMPT || 'Very quiet indoor room tone of a small office: soft air conditioner hum and faint distant street traffic through a closed window. No voices, no music, steady and constant.';
-// 27/11/2026 (Djhonata): de dia o fundo é o do escritório dele (gente conversando longe, telefone, teclado); de noite, como se estivesse em casa.
-// O dia segue o horário do escritório (seg a sex 8h às 19h, sáb 8h às 16h); fora disso é noite. Arquivo próprio na pasta _ponte
-// (fundo-dia.* / fundo-noite.*; fundo-audio.* vale para os dois) tem prioridade sobre o gerado pela ElevenLabs.
-const FUNDO_PROMPTS = {
-  dia: ENV.FUNDO_PROMPT_DIA || 'Background ambience recorded inside a small busy real estate office in Brazil during the day: one or two colleagues talking quietly and occasionally far away in another room (no clear words, mostly calm), soft keyboard typing, air conditioner hum. Calm, natural, steady, no music.',
-  noite: ENV.FUNDO_PROMPT_NOITE || 'Background ambience inside a house at night in Brazil: a television murmuring softly in another room (no clear words) and a refrigerator hum. No insects, no animals, no outdoor sounds. Very calm and steady. No music.'
+// 27/11/2026 (Djhonata): o fundo muda de um áudio para o outro, como na vida real: às vezes ele está dentro do escritório, às vezes
+// lá fora, no carro... De dia (horário do escritório: seg a sex 8h às 19h, sáb 8h às 16h) usa os ambientes de dia; fora disso, os de casa.
+// Cada cliente nunca recebe o mesmo ambiente duas vezes seguidas, e cada áudio pega um trecho diferente do som.
+// Sem grilo nem bicho (pedido do Djhonata). Arquivo próprio na pasta _ponte (fundo-<tipo>-<id>.mp3, ex.: fundo-dia-rua.mp3) vale acima do gerado.
+const FUNDO_VARIANTES = {
+  dia: [
+    { id: 'escritorio', arq: 'fundo-dia-v2.mp3', db: -39, prompt: 'Background ambience recorded inside a small busy real estate office in Brazil during the day: one or two colleagues talking quietly and occasionally far away in another room (no clear words, mostly calm), soft keyboard typing, air conditioner hum. Calm, natural, steady, no music.' },
+    { id: 'rua', db: -38, prompt: 'Background ambience recorded on a sidewalk in front of a small office in a Brazilian city during the day: light traffic, a few cars passing at moderate distance, soft breeze, a distant motorcycle once. No clear voices, no horns, no music, no animals.' },
+    { id: 'carro', db: -40, prompt: 'Background ambience recorded inside a parked car with the engine idling and the air conditioner on, quiet city outside, a car passing by now and then. No voices, no music, no radio, no animals.' },
+    { id: 'sala', db: -44, prompt: 'Very quiet ambience of a closed meeting room in an office during the day: soft air conditioner hum, a door closing far away once, faint muffled office sounds through the wall. No clear voices, no music.' }
+  ],
+  noite: [
+    { id: 'tv', arq: 'fundo-noite-v2.mp3', db: -44, prompt: 'Background ambience inside a house at night in Brazil: a television murmuring softly in another room (no clear words) and a refrigerator hum. No insects, no animals, no outdoor sounds. Very calm and steady. No music.' },
+    { id: 'cozinha', db: -45, prompt: 'Background ambience in a home kitchen at night: refrigerator hum, a few quiet dishes being put away far away, a tap running briefly once. No voices, no insects, no animals, no music. Calm and steady.' },
+    { id: 'quarto', db: -48, prompt: 'Very quiet bedroom at night: soft ceiling fan hum, almost silent house, a car passing far away outside once. No voices, no insects, no animals, no music.' }
+  ]
 };
-const FUNDO_DB_TIPO = { dia: Number(ENV.FUNDO_DB_DIA || -39), noite: Number(ENV.FUNDO_DB_NOITE || -44) };
 function fundoAgora() { const d = agoraSP(), dw = d.getDay(), hh = d.getHours(); return ((dw >= 1 && dw <= 5 && hh >= 8 && hh < 19) || (dw === 6 && hh >= 8 && hh < 16)) ? 'dia' : 'noite'; }
 let fundoGerando = {}; const ganhoFundoCache = {};
-function arquivoFundo(tipo) {
-  tipo = tipo || fundoAgora();
-  try { const p = path.join(CATALOGO, '_ponte'); const ns = fs.readdirSync(p); const f = ns.find(n => new RegExp('^fundo-' + tipo + '\\.(mp3|wav|m4a|ogg|opus|aac)$', 'i').test(n)) || ns.find(n => /^fundo-audio\.(mp3|wav|m4a|ogg|opus|aac)$/i.test(n)); if (f) return path.join(p, f); } catch (e) { }
-  // v2 (27/11/2026): menos vozes de dia, sem grilo de noite
-  const g = path.join(DADOS, 'fundo-' + tipo + '-v2.mp3'); try { if (fs.statSync(g).size > 1000) return g; } catch (e) { }
+function arqVariante(tipo, v) { return path.join(DADOS, v.arq || ('fundo-' + tipo + '-' + v.id + '.mp3')); }
+function arquivoFundo(tipo, v) {   // arquivo da variante, ou '' se ainda não existe
+  try { const p = path.join(CATALOGO, '_ponte'); const ns = fs.readdirSync(p); const f = ns.find(n => new RegExp('^fundo-' + tipo + '-' + v.id + '\\.(mp3|wav|m4a|ogg|opus|aac)$', 'i').test(n)); if (f) return path.join(p, f); } catch (e) { }
+  const g = arqVariante(tipo, v); try { if (fs.statSync(g).size > 1000) return g; } catch (e) { }
   return '';
 }
-function gerarFundo(tipo) {   // pede à ElevenLabs um som de ambiente (uma vez por tipo) e guarda no servidor
-  tipo = tipo || fundoAgora();
-  if (!fundoGerando[tipo]) fundoGerando[tipo] = (async () => {
-    const r = await fetch('https://api.elevenlabs.io/v1/sound-generation', { method: 'POST', headers: { 'xi-api-key': ELEVEN_KEY, 'content-type': 'application/json' }, body: JSON.stringify({ text: FUNDO_PROMPTS[tipo] || FUNDO_PROMPT, duration_seconds: 22, prompt_influence: 0.6 }) });
+function gerarFundo(tipo, v) {   // pede à ElevenLabs o som de ambiente da variante (uma vez) e guarda no servidor
+  const k = tipo + '-' + v.id;
+  if (!fundoGerando[k]) fundoGerando[k] = (async () => {
+    const r = await fetch('https://api.elevenlabs.io/v1/sound-generation', { method: 'POST', headers: { 'xi-api-key': ELEVEN_KEY, 'content-type': 'application/json' }, body: JSON.stringify({ text: v.prompt, duration_seconds: 22, prompt_influence: 0.6 }) });
     if (!r.ok) throw new Error('efeito sonoro ' + r.status + ' ' + (await r.text()).slice(0, 200));
     const buf = Buffer.from(await r.arrayBuffer()); if (buf.length < 1000) throw new Error('efeito sonoro vazio');
-    fs.writeFileSync(path.join(DADOS, 'fundo-' + tipo + '-v2.mp3'), buf); log('fundo do áudio (' + tipo + ') criado pela ElevenLabs');
-  })().catch(e => { voz.fundoErro = e.message; estado.fundoFalhou = Date.now(); salvarEstado(); log('fundo do áudio:', e.message); }).finally(() => { fundoGerando[tipo] = null; });
-  return fundoGerando[tipo];
+    fs.writeFileSync(arqVariante(tipo, v), buf); log('fundo do áudio (' + k + ') criado pela ElevenLabs');
+  })().catch(e => { voz.fundoErro = e.message; log('fundo do áudio:', k, e.message); }).finally(() => { fundoGerando[k] = null; });
+  return fundoGerando[k];
 }
+// cria, uma vez e em segundo plano, os ambientes que ainda não existem (um de cada vez)
+setTimeout(async () => { if (!FUNDO || !ELEVEN_KEY) return; for (const tipo of Object.keys(FUNDO_VARIANTES)) for (const v of FUNDO_VARIANTES[tipo]) { if (!arquivoFundo(tipo, v)) { await gerarFundo(tipo, v); await new Promise(r => setTimeout(r, 3000)); } } }, 20000);
 async function ganhoFundo(f, alvo) {   // volume do fundo: mede uma vez e ajusta para o alvo (dB)
   let st; try { st = fs.statSync(f); } catch (e) { return -27; }
   const k = f + '|' + st.mtimeMs + '|' + alvo;
@@ -1490,21 +1500,32 @@ async function ganhoFundo(f, alvo) {   // volume do fundo: mede uma vez e ajusta
   }
   return ganhoFundoCache[k];
 }
-async function comFundo(audio, tipoPedido, ritmoPedido) {   // devolve ogg/opus com o fundo (e o ritmo do Djhonata), ou null (sem ffmpeg ou deu erro: vai sem fundo)
+function escolherFundo(tipo, jid, pedido) {   // variante pronta, diferente da última que este cliente recebeu
+  const todas = FUNDO_VARIANTES[tipo] || FUNDO_VARIANTES.dia;
+  if (pedido) { const v = todas.find(x => x.id === pedido); if (v && arquivoFundo(tipo, v)) return v; }
+  const prontas = todas.filter(v => arquivoFundo(tipo, v)); if (!prontas.length) return null;
+  estado.fundoUlt = estado.fundoUlt || {};
+  const ult = jid ? estado.fundoUlt[jid] : '';
+  const opc = prontas.length > 1 ? prontas.filter(v => v.id !== ult) : prontas;
+  const v = opc[Math.floor(Math.random() * opc.length)];
+  if (jid) { estado.fundoUlt[jid] = v.id; const ks = Object.keys(estado.fundoUlt); if (ks.length > 3000) for (const k of ks.slice(0, 1000)) delete estado.fundoUlt[k]; }
+  return v;
+}
+async function comFundo(audio, tipoPedido, ritmoPedido, jid, variantePedida) {   // devolve ogg/opus com o fundo (e o ritmo do Djhonata), ou null (sem ffmpeg ou deu erro: vai sem fundo)
   if (!FUNDO || !temFfmpeg()) return null;
-  const tipo = tipoPedido || fundoAgora(), alvo = FUNDO_DB_TIPO[tipo];
-  let f = arquivoFundo(tipo);
-  if (!f && ELEVEN_KEY && !(estado.fundoFalhou && Date.now() - estado.fundoFalhou < 6 * 3600e3)) { await gerarFundo(tipo); f = arquivoFundo(tipo); }
+  const tipo = tipoPedido || fundoAgora();
+  const v = escolherFundo(tipo, jid, variantePedida);
+  const f = v ? arquivoFundo(tipo, v) : '';
   const args = ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0'];
   let ganho;
-  if (f) { args.push('-stream_loop', '-1', '-i', f); ganho = await ganhoFundo(f, alvo); }
-  else { args.push('-f', 'lavfi', '-i', 'anoisesrc=color=brown:amplitude=0.6:sample_rate=48000,lowpass=f=700'); ganho = alvo + 19; }   // esse ruído mede -19 dB
+  if (f) { args.push('-stream_loop', '-1', '-ss', (Math.random() * 15).toFixed(2), '-i', f); ganho = await ganhoFundo(f, v.db); }   // cada áudio começa num ponto diferente do som
+  else { args.push('-f', 'lavfi', '-i', 'anoisesrc=color=brown:amplitude=0.6:sample_rate=48000,lowpass=f=700'); ganho = (tipo === 'dia' ? -39 : -44) + 19; }   // esse ruído mede -19 dB
   // 27/11/2026 (Djhonata): o ritmo da fala dele é mais calmo que o da voz gerada (medido nos áudios dele: ~4,6 sílabas/s contra ~5,7)
   const ritmo = Math.max(0.8, Math.min(1.1, Number(ritmoPedido) || Number(vozCfg().ritmo) || 0.9));
   const graph = `[0:a]aformat=channel_layouts=mono,aresample=48000${ritmo !== 1 ? ',atempo=' + ritmo.toFixed(3) : ''},adelay=300,apad=pad_len=19200[v];[1:a]aformat=channel_layouts=mono,aresample=48000,volume=${ganho.toFixed(1)}dB[bg];[v][bg]amix=inputs=2:duration=first:dropout_transition=0,volume=2,asetpts=N/SR/TB,afade=t=in:d=0.25,areverse,afade=t=in:d=0.4,areverse[o]`;
   args.push('-filter_complex', graph, '-map', '[o]', '-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', '48k', '-f', 'ogg', 'pipe:1');
   const r = await rodarFfmpeg(args, audio);
-  if (r.status === 0 && r.stdout.length > 200 && r.stdout.slice(0, 4).toString('latin1') === 'OggS') { voz.fundo = (f ? path.basename(f) : 'ruído de sala') + ' (' + tipo + ')'; return r.stdout; }
+  if (r.status === 0 && r.stdout.length > 200 && r.stdout.slice(0, 4).toString('latin1') === 'OggS') { voz.fundo = (v ? tipo + '-' + v.id : 'ruído de sala (' + tipo + ')'); if (jid) salvarEstado(); return r.stdout; }
   log('fundo do áudio: ffmpeg falhou', String(r.stderr || '').slice(0, 200)); return null;
 }
 // ---------- jeito da voz: muda pelo CRM/Claude (voz_config) sem subir arquivo ----------
@@ -1592,7 +1613,7 @@ async function falar(texto, ajustes) {   // ajustes: { voz, modelo, stability, s
       if (r.ok) {
         const buf = Buffer.from(await r.arrayBuffer());
         voz.modelo = modelo; voz.formato = fmt;
-        const misturado = await comFundo(buf, cfg.fundo, cfg.ritmo).catch(() => null);   // voz + barulhinho de ambiente
+        const misturado = await comFundo(buf, cfg.fundo, cfg.ritmo, cfg.jid, cfg.variante).catch(() => null);   // voz + barulhinho de ambiente
         if (misturado) return { buf: misturado, mime: 'audio/ogg; codecs=opus', ptt: true, ext: 'ogg', seg: duracaoOgg(misturado) || estimarSeg(limpo), modelo, fala: limpo };
         if (buf.slice(0, 4).toString('latin1') === 'OggS') return { buf, mime: 'audio/ogg; codecs=opus', ptt: true, ext: 'ogg', seg: duracaoOgg(buf) || estimarSeg(limpo), modelo, fala: limpo };
         const ogg = paraOgg(buf);
@@ -1689,7 +1710,7 @@ async function clonarVoz() {
 async function enviarAudio(jid, fala, autor = 'ia', extra) {   // true = enviado; false = sem voz (manda texto); 'barrado' = freio de segurança
   if (!ELEVEN_KEY || !sock || !conectado) return false;
   let a;
-  try { a = await falar(fala); } catch (e) { voz.erros++; voz.ultimoErro = e.message; log('voz:', e.message); return false; }
+  try { a = await falar(fala, { jid }); } catch (e) { voz.erros++; voz.ultimoErro = e.message; log('voz:', e.message); return false; }
   try { await guardaEnvio(jid, autor, fala, 'audio', a.seg); } catch (e) { log('envio barrado', jid, e.message); return 'barrado'; }
   await mandarAudio(jid, a, fala, autor, extra);
   voz.feitas++;
@@ -4598,7 +4619,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           return json(res, { ok: true, criando: true });
         } else if (ac === 'voz_amostra') {   // 27/11/2026: áudio de teste com a voz, o ritmo e o fundo (texto = JSON { fala, tipo: dia|noite, ritmo }); volta em base64
           let p = {}; try { p = JSON.parse(String(b.texto || '{}')); } catch (e) { }
-          try { const r = await falar(String(p.fala || 'Oi, tudo bem? Aqui é o Djhonata, da Euro.').slice(0, 600), { fundo: ['dia', 'noite'].includes(p.tipo) ? p.tipo : undefined, ritmo: p.ritmo }); return json(res, { ok: true, seg: r.seg, fundo: voz.fundo, modelo: r.modelo, b64: r.buf.toString('base64') }); }
+          try { const r = await falar(String(p.fala || 'Oi, tudo bem? Aqui é o Djhonata, da Euro.').slice(0, 600), { fundo: ['dia', 'noite'].includes(p.tipo) ? p.tipo : undefined, ritmo: p.ritmo, variante: p.variante }); return json(res, { ok: true, seg: r.seg, fundo: voz.fundo, modelo: r.modelo, b64: r.buf.toString('base64') }); }
           catch (e) { return json(res, { erro: e.message }, 500); }
         } else if (ac === 'voz_config') {   // salva o jeito da voz (texto = JSON com voz, modelo, stability, similarity, style, speed, boost, tag) ou 'padrao'
           const tx = String(b.texto || '').trim();
