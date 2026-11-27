@@ -999,7 +999,7 @@ async function executar(nome, entrada, ctx) {
       if (!m) return 'Mande quando no formato AAAA-MM-DD HH:MM (horário de Joinville).';
       const q = `${m[1]}T${String(m[2]).padStart(2, '0')}:${m[3]}`, T = quandoMs(q), min = Number(m[2]) * 60 + Number(m[3]);
       if (!T || T < Date.now() + 5 * 60e3) return 'Esse horário já passou ou é daqui a menos de 5 minutos: não marque retorno, continue a conversa agora.';
-      if (T > Date.now() + 45 * 864e5) return 'Só dá para marcar retorno para os próximos 45 dias. Combine uma data dentro disso; nunca deixe para o cliente chamar.';   // 27/11/2026 (caso Duda): retorno de 8 dias virou "me manda um oi"
+      if (T > Date.now() + 400 * 864e5) return 'Só dá para marcar retorno para o próximo ano. Combine uma data dentro disso; nunca deixe para o cliente chamar.';   // 27/11/2026 (caso Duda): retorno de 8 dias virou "me manda um oi"
       if (min < minutos(ROT_INI) || min > minutos(ROT_FIM)) return `Você só chama clientes entre ${ROT_INI} e ${ROT_FIM}. Combine um horário dentro disso (ex.: amanhã às 09:00) e chame agendar_retorno de novo.`;
       estado.retornos = estado.retornos || {}; estado.retornos[ctx.jid] = { q, assunto: String(entrada.assunto || '').slice(0, 200), criado: Date.now() }; salvarEstado();
       log('retorno combinado', ctx.telefone || ctx.jid, q);
@@ -3473,6 +3473,12 @@ setTimeout(fuTrabalhar, 20e3);
 // 24/11/2026 (Djhonata): cliente que não responde não fica recebendo mensagem para sempre. Conta as tentativas nossas (dias diferentes, 12 horas ou mais
 // depois da última fala do cliente) desde que ele falou pela última vez. 3 sem resposta = pausa de 60 dias; depois 1 tentativa com novidade e, sem
 // resposta, pausa de 90 dias; depois disso só volta se ele chamar. Respondeu = zera.
+// 27/11/2026 (Djhonata): retorno combinado com o cliente é uma barreira: nada de oferta nem follow-up antes da data
+function retornoFuturo(j) {
+  const R = estado.retornos || {}; let r = R[j];
+  if (!r) { const t8 = String(j || '').replace(/\D/g, '').slice(-8); const k = Object.keys(R).find(x => t8.length === 8 && tel8De(x) === t8); if (k) r = R[k]; }
+  return r && quandoMs(r.q) > Date.now() ? r : null;
+}
 function fuPausa(jid) {
   if (!jid || !chats[jid]) return null;
   const uc = ultCli(jid) || 0, dias = new Map();
@@ -4524,6 +4530,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           }
           let caminho = String(pa.caminho || '').replace(/^[a-z]:[\\/]+users[\\/]+public[\\/]+catalogo[\\/]+/i, ''), pastaA = '';
           if (!caminho) { pastaA = pa.ref ? acharPasta(String(pa.ref)) || '' : ''; if (!pastaA) return json(res, { erro: 'imóvel não encontrado' }, 404); const mi = midiaDaOferta(pastaA); caminho = mi.video || mi.foto1 || ''; if (!caminho) return json(res, { erro: 'esse imóvel não tem vídeo nem foto na pasta' }, 404); }
+          if (pa.naoRepetir) { const rtF = retornoFuturo(jid); if (rtF) return json(res, { erro: 'este cliente já recebeu o combinado: pediu para ser chamado ' + descreverQuando(rtF.q) + '. Nada de oferta antes disso.', jaRecebeu: 1 }, 409); }
           if (pa.naoRepetir) { const jaR = jaRecebeuImovel(jid, String(pa.naoRepetir)); if (jaR) return json(res, { erro: 'este cliente já recebeu esse imóvel em ' + quandoFoi(jaR) + '. Não mandei de novo.', jaRecebeu: jaR }, 409); }   // 23/11/2026 (caso Gabriele): o mesmo imóvel não vai duas vezes para o mesmo cliente
           ofEnvCache.em = 0;
           const legendaA = String(pa.legenda || '').slice(0, 3000), rA = await enviarArquivo(jid, caminho, legendaA, 'voce', pastaA ? { oferta: pastaA } : undefined);
@@ -4761,8 +4768,9 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           if (!jidValido(jid)) return json(res, { erro: 'conversa inválida' }, 400);
           let o = {}; try { o = JSON.parse(String(b.texto || '{}')); } catch (e) { return json(res, { erro: 'texto inválido' }, 400); }
           if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(String(o.q || '')) || !(quandoMs(o.q) > Date.now())) return json(res, { erro: 'data inválida' }, 400);
-          estado.retornos = estado.retornos || {}; estado.retornos[jid] = { q: o.q, assunto: String(o.assunto || 'retorno marcado pelo Djhonata').slice(0, 200), criado: Date.now() }; salvarEstado();
-          log('retorno marcado pelo Djhonata', jid, o.q); return json(res, { ok: true, retorno: estado.retornos[jid] });
+          const jidR = chats[jid] ? jid : (Object.keys(chats).find(x => tel8De(x) === String(jid).replace(/\D/g, '').slice(-8)) || jid);   // 27/11/2026: guarda na conversa certa (@lid)
+          estado.retornos = estado.retornos || {}; if (jidR !== jid) delete estado.retornos[jid]; estado.retornos[jidR] = { q: o.q, assunto: String(o.assunto || 'retorno marcado pelo Djhonata').slice(0, 200), criado: Date.now() }; salvarEstado();
+          log('retorno marcado pelo Djhonata', jidR, o.q); return json(res, { ok: true, jid: jidR, retorno: estado.retornos[jidR] });
         } else if (ac === 'ia_conversa') {
           if (!jidValido(jid)) return json(res, { erro: 'conversa inválida' }, 400);
           if (b.on) delete estado.pausas[jid]; else { estado.pausas[jid] = Date.now() + 3650 * 864e5; filas.delete(jid); }
@@ -4950,7 +4958,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
         }
         else if (ac === 'ja_recebeu') {   // 23/11/2026: este cliente já recebeu este imóvel? jid = conversa (ou telefone); texto = nome do imóvel
           let j = String(b.jid || ''); if (j && !chats[j]) { const t8 = j.replace(/\D/g, '').slice(-8), k = Object.keys(chats).find(x => tel8De(x) === t8); if (k) j = k; }
-          return json(res, { ok: true, ja: j ? jaRecebeuImovel(j, String(b.texto || '')) : 0 });
+          return json(res, { ok: true, ja: j ? (jaRecebeuImovel(j, String(b.texto || '')) || (retornoFuturo(j) ? 1 : 0)) : 0 });
         }
         else if (ac === 'videos') {   // 23/11/2026: vídeos dos imóveis feitos das fotos. texto = JSON { ligar: true|false, ref, refazer, amostra }; sem nada devolve a situação
           let pv = {}; try { pv = JSON.parse(String(b.texto || '{}')) || {}; } catch (e) { }
