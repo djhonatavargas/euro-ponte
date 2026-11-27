@@ -1513,8 +1513,25 @@ function escolherFundo(tipo, jid, pedido) {   // variante pronta, diferente da �
 }
 // 27/11/2026 (Djhonata): soar como gravado no iPhone dele e mandado pelo WhatsApp (medido nos áudios dele: banda até ~8 kHz,
 // presença forte em 2–4 kHz, ~16–20 kbps). O filtro vai depois da mistura, porque no celular a voz e o fundo entram pelo mesmo microfone.
-const CELULAR = 'highpass=f=100,equalizer=f=2800:t=q:w=0.9:g=11,equalizer=f=6500:t=q:w=1:g=3,lowpass=f=7800,lowpass=f=7800,aecho=0.85:0.5:9|17:0.12|0.07,acompressor=threshold=-24dB:ratio=3:attack=8:release=120:makeup=4,alimiter=limit=0.89';
-async function comFundo(audio, tipoPedido, ritmoPedido, jid, variantePedida) {   // devolve ogg/opus com o fundo (e o ritmo do Djhonata), ou null (sem ffmpeg ou deu erro: vai sem fundo)
+// 27/11/2026 (Djhonata): a distância do celular muda de um áudio para o outro (às vezes mais perto da boca, às vezes mais longe, às vezes meio termo).
+// Perto: mais grave e quase sem eco da sala, fundo mais baixo. Longe: menos grave, mais eco da sala e o fundo mais presente. Cada cliente nunca recebe a mesma distância duas vezes seguidas.
+const DIST_BG = { perto: -3, meio: 0, longe: 4 };
+function celular(d) {
+  const r = (b) => (b + Math.random() * 2 - 1).toFixed(1);   // pequena variação natural a cada áudio
+  if (d === 'perto') return 'highpass=f=80,equalizer=f=160:t=q:w=1:g=' + r(3) + ',equalizer=f=2800:t=q:w=0.9:g=' + r(10) + ',equalizer=f=6500:t=q:w=1:g=3,lowpass=f=7800,lowpass=f=7800,aecho=0.9:0.4:7|13:0.06|0.03,acompressor=threshold=-24dB:ratio=3:attack=8:release=120:makeup=4,alimiter=limit=0.89';
+  if (d === 'longe') return 'highpass=f=170,equalizer=f=2800:t=q:w=0.9:g=' + r(9) + ',equalizer=f=6500:t=q:w=1:g=1,lowpass=f=7200,lowpass=f=7200,aecho=0.8:0.7:23|41|67:0.28|0.18|0.1,acompressor=threshold=-28dB:ratio=3.5:attack=8:release=150:makeup=6,alimiter=limit=0.89';
+  return 'highpass=f=100,equalizer=f=2800:t=q:w=0.9:g=' + r(11) + ',equalizer=f=6500:t=q:w=1:g=3,lowpass=f=7800,lowpass=f=7800,aecho=0.85:0.5:9|17:0.12|0.07,acompressor=threshold=-24dB:ratio=3:attack=8:release=120:makeup=4,alimiter=limit=0.89';
+}
+function escolherDist(jid, pedido) {
+  if (DIST_BG[pedido] !== undefined) return pedido;
+  estado.distUlt = estado.distUlt || {};
+  const ult = jid ? estado.distUlt[jid] : '';
+  const opc = Object.keys(DIST_BG).filter(d => d !== ult);
+  const d = opc[Math.floor(Math.random() * opc.length)];
+  if (jid) { estado.distUlt[jid] = d; const ks = Object.keys(estado.distUlt); if (ks.length > 3000) for (const k of ks.slice(0, 1000)) delete estado.distUlt[k]; }
+  return d;
+}
+async function comFundo(audio, tipoPedido, ritmoPedido, jid, variantePedida, distPedida) {   // devolve ogg/opus com o fundo (e o ritmo do Djhonata), ou null (sem ffmpeg ou deu erro: vai sem fundo)
   if (!FUNDO || !temFfmpeg()) return null;
   const tipo = tipoPedido || fundoAgora();
   const v = escolherFundo(tipo, jid, variantePedida);
@@ -1524,11 +1541,12 @@ async function comFundo(audio, tipoPedido, ritmoPedido, jid, variantePedida) {  
   if (f) { args.push('-stream_loop', '-1', '-ss', (Math.random() * 15).toFixed(2), '-i', f); ganho = await ganhoFundo(f, v.db); }   // cada áudio começa num ponto diferente do som
   else { args.push('-f', 'lavfi', '-i', 'anoisesrc=color=brown:amplitude=0.6:sample_rate=48000,lowpass=f=700'); ganho = (tipo === 'dia' ? -39 : -44) + 19; }   // esse ruído mede -19 dB
   // 27/11/2026 (Djhonata): o ritmo da fala dele é mais calmo que o da voz gerada (medido nos áudios dele: ~4,6 sílabas/s contra ~5,7)
+  const dist = escolherDist(jid, distPedida);
   const ritmo = Math.max(0.8, Math.min(1.1, Number(ritmoPedido) || Number(vozCfg().ritmo) || 0.9));
-  const graph = `[0:a]aformat=channel_layouts=mono,aresample=48000${ritmo !== 1 ? ',atempo=' + ritmo.toFixed(3) : ''},adelay=300,apad=pad_len=19200[v];[1:a]aformat=channel_layouts=mono,aresample=48000,volume=${ganho.toFixed(1)}dB[bg];[v][bg]amix=inputs=2:duration=first:dropout_transition=0,volume=2,asetpts=N/SR/TB,${CELULAR},afade=t=in:d=0.25,areverse,afade=t=in:d=0.4,areverse[o]`;
+  const graph = `[0:a]aformat=channel_layouts=mono,aresample=48000${ritmo !== 1 ? ',atempo=' + ritmo.toFixed(3) : ''},adelay=300,apad=pad_len=19200[v];[1:a]aformat=channel_layouts=mono,aresample=48000,volume=${(ganho + DIST_BG[dist]).toFixed(1)}dB[bg];[v][bg]amix=inputs=2:duration=first:dropout_transition=0,volume=2,asetpts=N/SR/TB,${celular(dist)},afade=t=in:d=0.25,areverse,afade=t=in:d=0.4,areverse[o]`;
   args.push('-filter_complex', graph, '-map', '[o]', '-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', '20k', '-application', 'voip', '-cutoff', '8000', '-f', 'ogg', 'pipe:1');
   const r = await rodarFfmpeg(args, audio);
-  if (r.status === 0 && r.stdout.length > 200 && r.stdout.slice(0, 4).toString('latin1') === 'OggS') { voz.fundo = (v ? tipo + '-' + v.id : 'ruído de sala (' + tipo + ')'); if (jid) salvarEstado(); return r.stdout; }
+  if (r.status === 0 && r.stdout.length > 200 && r.stdout.slice(0, 4).toString('latin1') === 'OggS') { voz.fundo = (v ? tipo + '-' + v.id : 'ruído de sala (' + tipo + ')') + ' · ' + dist; if (jid) salvarEstado(); return r.stdout; }
   log('fundo do áudio: ffmpeg falhou', String(r.stderr || '').slice(0, 200)); return null;
 }
 // ---------- jeito da voz: muda pelo CRM/Claude (voz_config) sem subir arquivo ----------
@@ -1616,7 +1634,7 @@ async function falar(texto, ajustes) {   // ajustes: { voz, modelo, stability, s
       if (r.ok) {
         const buf = Buffer.from(await r.arrayBuffer());
         voz.modelo = modelo; voz.formato = fmt;
-        const misturado = await comFundo(buf, cfg.fundo, cfg.ritmo, cfg.jid, cfg.variante).catch(() => null);   // voz + barulhinho de ambiente
+        const misturado = await comFundo(buf, cfg.fundo, cfg.ritmo, cfg.jid, cfg.variante, cfg.distancia).catch(() => null);   // voz + barulhinho de ambiente
         if (misturado) return { buf: misturado, mime: 'audio/ogg; codecs=opus', ptt: true, ext: 'ogg', seg: duracaoOgg(misturado) || estimarSeg(limpo), modelo, fala: limpo };
         if (buf.slice(0, 4).toString('latin1') === 'OggS') return { buf, mime: 'audio/ogg; codecs=opus', ptt: true, ext: 'ogg', seg: duracaoOgg(buf) || estimarSeg(limpo), modelo, fala: limpo };
         const ogg = paraOgg(buf);
@@ -4622,7 +4640,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           return json(res, { ok: true, criando: true });
         } else if (ac === 'voz_amostra') {   // 27/11/2026: áudio de teste com a voz, o ritmo e o fundo (texto = JSON { fala, tipo: dia|noite, ritmo }); volta em base64
           let p = {}; try { p = JSON.parse(String(b.texto || '{}')); } catch (e) { }
-          try { const r = await falar(String(p.fala || 'Oi, tudo bem? Aqui é o Djhonata, da Euro.').slice(0, 600), { fundo: ['dia', 'noite'].includes(p.tipo) ? p.tipo : undefined, ritmo: p.ritmo, variante: p.variante }); return json(res, { ok: true, seg: r.seg, fundo: voz.fundo, modelo: r.modelo, b64: r.buf.toString('base64') }); }
+          try { const r = await falar(String(p.fala || 'Oi, tudo bem? Aqui é o Djhonata, da Euro.').slice(0, 600), { fundo: ['dia', 'noite'].includes(p.tipo) ? p.tipo : undefined, ritmo: p.ritmo, variante: p.variante, distancia: p.distancia }); return json(res, { ok: true, seg: r.seg, fundo: voz.fundo, modelo: r.modelo, b64: r.buf.toString('base64') }); }
           catch (e) { return json(res, { erro: e.message }, 500); }
         } else if (ac === 'voz_config') {   // salva o jeito da voz (texto = JSON com voz, modelo, stability, similarity, style, speed, boost, tag) ou 'padrao'
           const tx = String(b.texto || '').trim();
