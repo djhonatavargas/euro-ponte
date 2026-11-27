@@ -3407,7 +3407,7 @@ function fuConversa(jid) {
 }
 function fuTarefa(x, conversa) {
   const c = x.crm || {};
-  const dados = [c.nome && `Nome no CRM: ${c.nome}${c.nomeProvisorio ? ' (veio do perfil do WhatsApp: pode não ser o nome real)' : ''}`, c.bairro && `Bairro de interesse: ${c.bairro}`, c.imovel && `Imóvel de interesse: ${c.imovel}`, c.proximo && `Próximo passo anotado: ${c.proximo}`, c.resumo && `Resumo da conversa (CRM): ${c.resumo}`, c.historico && `Histórico do WhatsApp (CRM): ${c.historico}`, c.obs && `Observações (CRM): ${c.obs}`].filter(Boolean).join('\n');
+  const dados = [c.nome && `Nome no CRM: ${c.nome}${c.nomeProvisorio ? ' (veio do perfil do WhatsApp: pode não ser o nome real)' : ''}`, c.bairro && `Bairro de interesse: ${c.bairro}`, c.imovel && `Imóvel de interesse: ${c.imovel}`, c.proximo && `Próximo passo anotado: ${c.proximo}`, c.resumo && `Resumo da conversa (CRM): ${c.resumo}`, c.historico && `Histórico do WhatsApp (CRM): ${c.historico}`, c.obs && `Observações (CRM): ${c.obs}`, c.perfil && `Perfil do cliente (CRM): ${c.perfil}`].filter(Boolean).join('\n');
   return `[TAREFA INTERNA DO SISTEMA — não é mensagem do cliente e nada disto vai para ele]
 ${(estado.crmStatus || {})[x.tel8] === 'novo' ? 'FOLLOW-UP DE CLIENTE EM "REMARCAR VISITA". Este cliente já marcou visita no escritório e não veio ou desmarcou. O objetivo é ele marcar de novo. Leia na conversa por que não veio (se disse) e quando foi isso.' : 'FOLLOW-UP DE CLIENTE PERDIDO. O Djhonata quer retomar o contato com este cliente, que parou de responder há mais de 7 dias (está em "Perdido" no CRM).'} A mensagem só sai depois que o Djhonata aprovar.
 
@@ -3434,6 +3434,7 @@ EM DIA COM O WHATSAPP (26/11/2026, Djhonata: "o follow-up tem que estar em sinto
  - O que está na conversa do WhatsApp vale acima das anotações do CRM, que podem estar velhas. A data de hoje está no começo das instruções, e cada mensagem da conversa mostra quando foi: leia as datas.
  - Nunca responda a uma mensagem antiga do cliente como se ela tivesse chegado agora. Erro: a Inês disse em 07/11 que não vinha por causa da chuva, e o follow-up de 26/11 começou com "sem problema com a chuva". O que ele disse há dias pode ser lembrado, mas como passado.
  - Se a nossa última mensagem ficou sem resposta, a nova NÃO pode repetir a ideia dela nem com outras palavras (erro: em 17/11 mandamos "quando quiser, a gente vê com calma no escritório a troca do seu sobrado... qual dia da semana fica melhor?" e o follow-up novo repetia isso). Traga um ângulo novo e concreto: uma pergunta curta e fácil de responder (sim ou não), resolver um passo por aqui mesmo (ex.: "quer que eu te mande a conta da troca por aqui?"), uma informação nova e verdadeira do imóvel que ele gostou, ou perguntar se ele ainda está procurando.
+OFERTA DE IMÓVEL (decisão do Djhonata, 27/11/2026; vale acima dos ganchos acima): a mensagem é sempre a oferta de UM imóvel do catálogo que caiba no perfil dele: bairro de interesse ou vizinho, o tipo e os quartos que ele pediu, e a entrada que ele tem (sinal + FGTS + carro) cobrindo a entrada do imóvel ou dando para parcelar até a entrega. Prefira um imóvel que ele ainda não recebeu nesta conversa; se nenhum couber certinho, ofereça o que chega mais perto. O vídeo do imóvel vai junto sozinho, então escreva só uma ou duas linhas, como o Djhonata: \"Lembrei de ti: saiu uma casa no Comasa, 2 quartos, que cabe na tua entrada de 30 mil. Quer que eu te mostre a conta?\". No campo imovel do JSON ponha a ref do imóvel (só o número, ex.: \"609\") ou o nome exato da pasta do catálogo.
 ${RET_ANALISE}
 3) Prioridade de 1 a 5: 5 = muito quente (marcou visita, pediu simulação, perguntou de entrada ou financiamento com os dados dele, gostou de um imóvel); 3 = pediu informações e conversou; 1 = só a primeira mensagem do anúncio, sem conversa.
 Responda SOMENTE com um JSON válido, sem texto antes ou depois:
@@ -3522,7 +3523,7 @@ async function fuEnviar(x) {   // devolve 'enviado', 'cancelado' ou 'erro'
   try { const t0 = x.geradoEm || x.criadoEm || 0; if (t0 && chats[jid] && lerEsp(jid).some(m => m.autor !== 'cliente' && m.autor !== 'aviso' && !m.followup && (m.ts || 0) > t0)) return fim('cancelado', 'você já falou com o cliente depois que este follow-up foi preparado'); } catch (e) { }
   // 16/11/2026 (Djhonata): a NOSSA mensagem também conta. Quem recebeu qualquer mensagem deste WhatsApp (sua, da assistente ou outro follow-up) há menos de 7 dias não recebe follow-up agora.
   if (!remarcar) try { let un = 0; if (chats[jid]) for (const m of lerEsp(jid)) if (m.autor !== 'cliente' && m.autor !== 'aviso' && m.tipo !== 'reacao' && (m.ts || 0) > un) un = m.ts; if (un && Date.now() - un < 7 * 864e5) return fim('cancelado', 'já recebeu mensagem nossa nos últimos 7 dias'); } catch (e) { }
-  const st = (estado.crmStatus || {})[x.tel8]; if (st && st !== 'perdido' && st !== 'novo') return fim('cancelado', 'saiu de Perdido no CRM');
+  const st = (estado.crmStatus || {})[x.tel8]; if (st && !['perdido', 'novo', 'atendimento'].includes(st)) return fim('cancelado', 'saiu de Perdido no CRM');   // 27/11/2026: quem está em Atendimento e parou há 7 dias também recebe
   { const rt = (estado.retornos || {})[jid]; if (rt && quandoMs(rt.q) > Date.now() - 6 * 3600e3) return fim('cancelado', 'o cliente pediu para ser chamado ' + descreverQuando(rt.q) + ': a assistente chama nesse dia'); }   // 24/11/2026
   // Mensagem não entregue (17/11/2026): as últimas mensagens para este número ficaram só com um tique por 2 dias ou mais. Pode ter bloqueado, trocado de número ou estar sem WhatsApp: não gasta envio.
   { const dse = semEntregaDias(jid); if (dse) return fim('cancelado', 'as últimas mensagens não foram entregues há ' + dse + ' dias (pode ter bloqueado ou trocado de número)'); }
@@ -3532,6 +3533,8 @@ async function fuEnviar(x) {   // devolve 'enviado', 'cancelado' ou 'erro'
   if (!chats[jid]) {   // nunca conversou neste WhatsApp: confere se o número tem WhatsApp
     try { const [r] = await sock.onWhatsApp(num); if (!r || !r.exists) return fim('erro', 'esse número não tem WhatsApp'); if (r.jid) jid = acharJid(r.jid); } catch (e) { return 'erro'; }
   }
+  // 27/11/2026 (Djhonata): o follow-up é oferta de imóvel: o vídeo (ou a foto) do imóvel vai antes do texto, se ele ainda não recebeu esse imóvel
+  if (x.imovel) { try { const pa = acharPasta(String(x.imovel)); if (pa && !(chats[jid] && jaRecebeuImovel(jid, pa))) { const mi = midiaDaOferta(pa), cam = mi.video || mi.foto1 || ''; if (cam) { await enviarArquivo(jid, cam, '', 'voce', { oferta: pa, followup: true }); await dorme(2500); } } } catch (e) { log('follow-up: vídeo do imóvel não foi', x.tel, e.message); } }
   try { await sock.sendPresenceUpdate('composing', jid); } catch (e) { }
   await dorme(Math.min(9000, 1200 + texto.length * acaso(25, 45)));
   const r = await sock.sendMessage(jid, { text: texto });
@@ -4838,7 +4841,7 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
             if (v && !deNovo && (['enviado', 'respondeu', 'aprovado', 'gerando'].includes(v.status) || (!p.refazer && v.status !== 'erro'))) { ignorados++; continue; }   // já tem (ou já foi): não refaz
             fu[t8] = { tel8: t8, tel: num, id: String(c.id || ''), nome: String(c.nome || '').slice(0, 80), status: 'fila', criadoEm: Date.now(), tent: 0,
               rodada: deNovo ? (v.rodada || 1) + 1 : 1, anteriorEm: deNovo ? v.enviadoEm : 0,
-              crm: { nome: String(c.nome || '').slice(0, 80), nomeProvisorio: !!c.nomeProvisorio, bairro: String(c.bairro || '').slice(0, 80), imovel: String(c.imovel || '').slice(0, 160), proximo: String(c.proximo || '').slice(0, 300), resumo: String(c.resumo || '').slice(0, 1500), historico: String(c.historico || '').slice(0, 1800), obs: String(c.obs || '').slice(-900) } };
+              crm: { nome: String(c.nome || '').slice(0, 80), nomeProvisorio: !!c.nomeProvisorio, bairro: String(c.bairro || '').slice(0, 80), imovel: String(c.imovel || '').slice(0, 160), proximo: String(c.proximo || '').slice(0, 300), resumo: String(c.resumo || '').slice(0, 1500), historico: String(c.historico || '').slice(0, 1800), obs: String(c.obs || '').slice(-900), perfil: String(c.perfil || '').slice(0, 600) } };
             novos++;
           }
           salvarFu(); setTimeout(fuTrabalhar, 200);
@@ -4869,14 +4872,15 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
             if (p.acao === 'aprovar' && ['pronto', 'cancelado', 'erro'].includes(x.status) && x.mensagem) { Object.assign(x, { status: 'aprovado', aprovadoEm: Date.now(), erro: '' }); n++; }
             else if (p.acao === 'cancelar' && ['fila', 'pronto', 'aprovado', 'erro'].includes(x.status)) { Object.assign(x, { status: 'cancelado', erro: 'cancelado por você' }); n++; }
             else if (p.acao === 'desaprovar' && x.status === 'aprovado') { x.status = 'pronto'; n++; }
+            else if (p.acao === 'remover' && x.status !== 'enviando') { delete fu[t]; n++; continue; }   // 27/11/2026: desistiu / sem perfil saem da lista de vez
             else if (p.acao === 'refazer' && ['pronto', 'aprovado', 'cancelado', 'erro', 'desistiu'].includes(x.status)) {   // 23/11/2026: o Djhonata pede para a IA reescrever com a conversa de agora
-              if (p.crm && typeof p.crm === 'object') x.crm = Object.assign({}, x.crm || {}, { nome: String(p.crm.nome || '').slice(0, 80), bairro: String(p.crm.bairro || '').slice(0, 80), imovel: String(p.crm.imovel || '').slice(0, 160), proximo: String(p.crm.proximo || '').slice(0, 300), resumo: String(p.crm.resumo || '').slice(0, 1500), historico: String(p.crm.historico || '').slice(0, 1800), obs: String(p.crm.obs || '').slice(-900) });
+              if (p.crm && typeof p.crm === 'object') x.crm = Object.assign({}, x.crm || {}, { nome: String(p.crm.nome || '').slice(0, 80), bairro: String(p.crm.bairro || '').slice(0, 80), imovel: String(p.crm.imovel || '').slice(0, 160), proximo: String(p.crm.proximo || '').slice(0, 300), resumo: String(p.crm.resumo || '').slice(0, 1500), historico: String(p.crm.historico || '').slice(0, 1800), obs: String(p.crm.obs || '').slice(-900), perfil: String(p.crm.perfil || '').slice(0, 600) });
               Object.assign(x, { status: 'fila', tent: 0, erro: '', criadoEm: Date.now() }); n++; setTimeout(fuTrabalhar, 300); }
             else if (!p.acao) n++;
           }
           salvarFu();
           const prev = fuPrevisoes();
-          return json(res, Object.assign({ ok: true, alterados: n, itens: tels.map(t => fuPublico(fu[t], prev)) }, fuResumo()));
+          return json(res, Object.assign({ ok: true, alterados: n, itens: tels.filter(t => fu[t]).map(t => fuPublico(fu[t], prev)) }, fuResumo()));
         }
         else if (ac === 'pulso') {   // 24/11/2026 (Djhonata, economia no Make): eventos + quem escreveu por último + sem resposta + mapa do follow-up + últimas mensagens numa chamada só
           let linhas = []; try { linhas = fs.readFileSync(path.join(DADOS, 'eventos-crm.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean); } catch (e) { }
