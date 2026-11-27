@@ -1801,7 +1801,7 @@ function revisorFixo(t, jaConversando) {   // consertos que não precisam da IA;
     y = y.replace(/(?<!pr[oó]pri[oa] )\b(?:o )?Djhonata (?:j[aá] )?(te |lhe )?(mostra|explica|responde|retorna|liga|chama|passa|confirma|manda|fala|atende|v[eê])(?!\p{L})/giu, (m, te, v) => { marca('terceira pessoa'); return 'eu ' + (te ? 'te ' : '') + (CONJ[semAcento(v).toLowerCase()] || v); });
     y = y.replace(/(?<!pr[oó]pri[oa] )\b(?:o )?Djhonata vai (te |lhe )?/giu, (m, te) => { marca('terceira pessoa'); return 'eu vou ' + (te ? 'te ' : ''); });
     const semChamar = y.replace(/[^.!?\n✅]*(?:(?<!\p{L})[eé] s[oó] (?:me )?(?:chamar|falar|avisar|mandar mensagem)\b|\bqualquer coisa,? (?:(?<!\p{L})[eé] s[oó] )?me (?:fala|chama|avisa|manda mensagem)(?: aqui| por aqui)?(?!\p{L}))[^.!?\n]*[.!?]*[ \t]*/giu, '');
-    if (semChamar !== y && semChamar.trim().length >= 8) { y = semChamar.trimEnd(); if (!/\?/.test(y)) y += ' Que dia eu te chamo pra saber o que achou?'; marca('"é só me chamar"'); }
+    if (semChamar !== y && semChamar.trim().length >= 8) { y = semChamar.trimEnd(); marca('"é só me chamar"'); }
     return y !== x ? RV_MAIUSC(y) : x; });
   return { texto: t, feitos };
 }
@@ -3086,7 +3086,7 @@ async function verificarRotinas() {
       if (!janela || !rotinaPermitida(jid, 'lembrete')) continue;
       v.enviados = v.enviados || {};
       if (!v.enviados.l24 && agora >= T - 24 * 3600e3 && agora <= T - 12 * 3600e3 && (v.criado || 0) <= T - 22 * 3600e3 && agora - (v.criado || 0) >= 6 * 3600e3) fila.push({ jid, tipo: 'l24', v });   // 16/11/2026: visita marcada há menos de 6 horas não recebe o lembrete da véspera (o Salomão marcou às 18h15 e recebeu o lembrete às 18h16); fica só o do dia
-      else if (v.q.includes('T') && !v.enviados.l2 && agora >= T - 3 * 3600e3 && agora <= T - 50 * 60e3) fila.push({ jid, tipo: 'l2', v });
+      else if (v.q.includes('T') && !v.enviados.l2 && agora >= (() => { const d = new Date(T - 3 * 3600e3), h = d.getUTCHours(); return h >= 13 ? Math.min(T - 3 * 3600e3, T - ((h - 9) * 3600e3 + d.getUTCMinutes() * 60e3)) : T - 3 * 3600e3; })() && agora <= T - 50 * 60e3) fila.push({ jid, tipo: 'l2', v });   // 27/11/2026 (Djhonata): visita de tarde recebe a confirmação do dia já de manhã (a partir das 9h)
     }
     // 23/11/2026 (Djhonata): quem recebeu o pedido de confirmação e não respondeu até ~1h antes vira aviso no WhatsApp do Djhonata (ligar ou liberar o horário).
     for (const [jid, v] of Object.entries(estado.visitas || {})) { const T = quandoMs(v.q); if (!T || !v.pediuConf || v.avisoSemConf || agora < T - 70 * 60e3 || agora > T) continue;
