@@ -49,7 +49,8 @@ const DONO = ENV.DONO || '554799043294';          // WhatsApp pessoal do Djhonat
 const PAUSA_HORAS = Number(ENV.PAUSA_HORAS || 0);  // 0 = quando o Djhonata escreve, a assistente continua junto (lendo o que ele mandou)
 const SENHA = ENV.SENHA || '';                     // senha do painel (além do TOKEN)
 const ESPERA_MS = Number(ENV.ESPERA_MS || 18000);  // espera o cliente terminar de digitar (ele costuma mandar várias mensagens seguidas)
-const ESPERA_CURTA_MS = 26000;                      // mensagem curta e sem pergunta ("tranquilo", "mas", "então"): quase sempre vem outra logo depois
+const ESPERA_CURTA_MS = 26000;
+const digitandoCli = new Map();   // jid -> quando o cliente foi visto digitando (27/11/2026)                      // mensagem curta e sem pergunta ("tranquilo", "mas", "então"): quase sempre vem outra logo depois
 // mensagem que chegou atrasada (WhatsApp caiu e voltou, servidor reiniciou) ainda é respondida até este tempo
 const JANELA_ATRASADA = Number(ENV.JANELA_ATRASADA_HORAS || 12) * 3600e3;
 const HORA_INI = ENV.HORA_INI || '08:00';
@@ -2198,6 +2199,7 @@ async function aoReceber(m, tipoUpsert) {
   if (x.audioMessage) f.audio = true;
   f.ultTs = Math.max(f.ultTs || 0, ts);
   deverResposta(jid, ts);
+  if (!dono && sock) { try { const ps = sock.presenceSubscribe(jid); if (ps && ps.catch) ps.catch(() => { }); } catch (e) { } }   // para ver os "3 pontinhos" dele
   clearTimeout(f.timer);
   // cada mensagem nova zera a espera; assim a assistente lê tudo que ele mandou antes de responder uma vez só
   const txtAgora = String(x.conversation || (x.extendedTextMessage && x.extendedTextMessage.text) || '').trim();
@@ -2434,6 +2436,8 @@ async function processar(jid) {
   if ((estado.pausas[jid] || 0) > Date.now()) { filas.delete(jid); quitarResposta(jid); return; } // assistente desligada nessa conversa
   if (!dentroDoHorario() && !f.dono && !emTeste) { return; }                // fica na fila até abrir o horário
   if (ocupado.has(jid)) { f.timer = setTimeout(() => processar(jid).catch(e => log('erro processar', e.message)), 3000); return; }
+  // cliente digitando (ou gravando áudio): espera ele terminar, até 2 minutos depois da última mensagem dele
+  { const dg = digitandoCli.get(jid) || 0; if (!f.dono && Date.now() - dg < 25000 && Date.now() - (f.ultTs || 0) < 120000) { f.timer = setTimeout(() => processar(jid).catch(e => log('erro processar', e.message)), 5000); return; } }
   if (!sock || !conectado) { f.timer = setTimeout(() => processar(jid).catch(e => log('erro processar', e.message)), 15e3); return; }   // WhatsApp caindo: espera voltar
   // o Djhonata respondeu (celular ou CRM) depois da última mensagem do cliente: a conversa é dele agora
   const conv = lerConv(jid), ultConv = conv[conv.length - 1];
@@ -2444,7 +2448,7 @@ async function processar(jid) {
   ocupado.add(jid);
   if (f.liberar24h) liberado24h.add(jid);   // "responder agora" pedido pelo Djhonata
   emitir('digitando', { jid, on: true });
-  try { await responder(f); if (!f.refazer) quitarResposta(jid, f.ultTs); }
+  try { await responder(f); if (f.adiado) { f.adiado = false; } else if (!f.refazer) quitarResposta(jid, f.ultTs); }
   catch (e) { falhouResposta(jid, f, e); throw e; }
   finally { if (f.liberar24h) liberado24h.delete(jid); ocupado.delete(jid); emitir('digitando', { jid, on: false }); }
 }
@@ -2782,6 +2786,8 @@ async function responder(f) {
         if (segura3p) continue;
         // o Djhonata pode ter desligado a assistente nessa conversa enquanto ela pensava
         if (!podeResponder(f.jid, f.telefone) && !ctx.autoTrava) { log('resposta descartada (pausada no meio)', f.jid); return; }
+        // começou a digitar enquanto ela pensava: segura a resposta (uma vez) e responde quando ele terminar
+        if (!f.dono && !f.rotina && !saida.length && !f.esperouDig && Date.now() - (digitandoCli.get(f.jid) || 0) < 15000) { f.esperouDig = true; f.adiado = true; const f2 = filas.get(f.jid); if (!f2) { f.timer = setTimeout(() => processar(f.jid).catch(e => log('erro processar', e.message)), 8000); filas.set(f.jid, f); } log('resposta segurada: o cliente está digitando', f.telefone || f.jid); return; }
         if (!f.dono && !f.rotina && !saida.length && ((lerEsp(f.jid).filter(m => m.autor === 'cliente').pop() || {}).ts || 0) > iniResp) { log('resposta adiada: o cliente escreveu enquanto ela pensava', f.telefone || f.jid); return; }
         saida.push(...await enviarSaida(f.jid, await revisarSaida(f, tirarMarcacao(t)), 'ia', f.extra));   // 26/11/2026: tira pedaço de código que a IA às vezes deixa no texto
       } else if (bloco.type === 'tool_use') {
@@ -3622,6 +3628,8 @@ async function iniciarWhatsApp() {
     });
     s.ev.on('messages.update', (ups) => { for (const u of ups || []) { try { if (u && u.key && u.key.fromMe && u.update && Number(u.update.status) >= 3) entregaConfirmar(u.key.id); } catch (e) { } } });
     s.ev.on('message-receipt.update', (ups) => { for (const u of ups || []) { try { if (u && u.key && u.key.fromMe) entregaConfirmar(u.key.id); } catch (e) { } } });
+    // 27/11/2026 (Djhonata: "consegue ver os 3 pontinhos?"): guarda quando o cliente está digitando ou gravando áudio
+    s.ev.on('presence.update', ({ id, presences }) => { try { for (const [k, p] of Object.entries(presences || {})) { const st = p && p.lastKnownPresence; for (const j of new Set([id, k].filter(Boolean))) { if (st === 'composing' || st === 'recording') digitandoCli.set(j, Date.now()); else if (st === 'paused' || st === 'available' || st === 'unavailable') digitandoCli.delete(j); } } } catch (e) { } });
     s.ev.on('messages.upsert', async ({ messages, type }) => {
       for (const m of messages) { try { await aoReceber(m, type); } catch (e) { log('erro mensagem', e.message); } }
     });
