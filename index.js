@@ -1862,6 +1862,8 @@ async function revisarSaida(f, t) {
         if (f._direto) { if (/direto com a gente|intermediari|nao paga comissao/.test(st)) return ''; }
         else if (!/caixa|banco|financiamento|financiad/.test(st)) { f._direto = true; t = 'Direto com a construtora fica só a entrada. O restante é financiado pela Caixa: todo imóvel nosso passa pelo financiamento em algum momento. Quer que eu te mostre como fica a entrada?'; log('revisor: pagamento direto com a construtora, resposta corrigida', f.telefone || f.jid); }
       } } } catch (e) { }
+    // 27/11/2026 (caso Bruno: em 25/11 ela ofereceu "terça, dia 17"): dia que já passou não sai; a frase sai e fica a pergunta do dia
+    try { for (let k = 0; k < 3; k++) { const mm = /já passou \(([^)]+)\)/.exec(problemaNoRascunho(t) || ''); if (!mm) break; const esc = mm[1].replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&'); const sem = String(t).replace(new RegExp('[^.!?\\n]*' + esc + '[^.!?\\n]*[.!?]*[ \\t]*', 'g'), ''); if (sem === t || sem.trim().length < 8) break; t = sem.trimEnd(); if (!/\?/.test(t)) t += ' Qual dia da semana fica melhor pra ti?'; log('revisor: dia que já passou tirado', f.telefone || f.jid, mm[1]); } } catch (e) { }
     if (/📋/.test(t)) return t;
     const ja = jaFalouCom(f.jid), conversando = !!(ja && Date.now() - (ja.ts || 0) < 6 * 3600e3);
     const r = revisorFixo(t, conversando); let novo = r.texto; const feitos = r.feitos.slice();
@@ -3066,7 +3068,8 @@ function conversaParada(jid) {   // última mensagem (sem contar avisos internos
     if (!ult) ult = m;
     if (m.autor === 'ia' && /make\.com|marque seu hor[aá]rio/i.test(m.texto || '')) agenda = true;
   }
-  return ult && ult.autor === 'ia' && ultCli && ult.ts > ultCli ? { ultIa: ack || ult.ts, ultCli: ack || ultCli, agenda, jaRetomou: !ack && !!ult.rotina } : null;
+  return ult && ['ia', 'voce'].includes(ult.autor) && ultCli && ult.ts > ultCli ?   // 27/11/2026: mensagem mandada pelo painel/CRM também conta como nossa
+    { ultIa: ack || ult.ts, ultCli: ack || ultCli, agenda, jaRetomou: !ack && !!ult.rotina } : null;
 }
 async function verificarRotinas() {
   if (!ROTINAS || rotinas.rodando || !sock || !conectado || !API_KEY) return;
@@ -3105,7 +3108,7 @@ async function verificarRotinas() {
     if (janela && dentroRetomada()) {
       for (const jid of Object.keys(chats)) {
         const c = chats[jid];
-        if (!(['ia', 'aviso'].includes(c.ultAutor) || (c.ultAutor === 'cliente' && RE_ACK(semAcento(String(c.ultTexto || '')).trim()))) || !c.ult || agora - c.ult > 22 * 3600e3 || agora - c.ult < 2 * 3600e3) continue;
+        if (!(['ia', 'aviso', 'voce'].includes(c.ultAutor) || (c.ultAutor === 'cliente' && RE_ACK(semAcento(String(c.ultTexto || '')).trim()))) || !c.ult || agora - c.ult > 22 * 3600e3 || agora - c.ult < 2 * 3600e3) continue;
         if ((estado.visitas || {})[jid]) continue;            // tem visita marcada: quem cuida são os lembretes
         if ((estado.retornos || {})[jid]) continue;           // tem retorno combinado: ela chama na hora marcada, não antes
         const p = conversaParada(jid); if (!p || p.jaRetomou) continue;
@@ -3122,7 +3125,7 @@ async function verificarRotinas() {
       // Sem resposta, para: daí em diante é com ele (CRM, oferta e, depois de 7 dias, o follow-up com aprovação).
       const INSISTIR_DIAS = [1, 2];
       for (const jid of Object.keys(chats)) {
-        const c = chats[jid]; if (!c || !c.ult || !(['ia', 'aviso'].includes(c.ultAutor) || (c.ultAutor === 'cliente' && RE_ACK(semAcento(String(c.ultTexto || '')).trim())))) continue;   // 27/11/2026: "obrigado" do cliente não encerra o follow-up
+        const c = chats[jid]; if (!c || !c.ult || !(['ia', 'aviso', 'voce'].includes(c.ultAutor) || (c.ultAutor === 'cliente' && RE_ACK(semAcento(String(c.ultTexto || '')).trim())))) continue;   // 27/11/2026: "obrigado" do cliente não encerra o follow-up
         if ((estado.visitas || {})[jid] || (estado.retornos || {})[jid]) continue;
         const p = conversaParada(jid); if (!p) continue;
         const dias = (agora - p.ultCli) / 864e5; if (dias < 1 || dias >= 3) continue;   // só nos 2 dias seguintes; quem já passou disso é com o Djhonata
