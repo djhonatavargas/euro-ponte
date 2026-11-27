@@ -1500,7 +1500,7 @@ async function comFundo(audio, tipoPedido, ritmoPedido) {   // devolve ogg/opus 
   else { args.push('-f', 'lavfi', '-i', 'anoisesrc=color=brown:amplitude=0.6:sample_rate=48000,lowpass=f=700'); ganho = alvo + 19; }   // esse ruído mede -19 dB
   // 27/11/2026 (Djhonata): o ritmo da fala dele é mais calmo que o da voz gerada (medido nos áudios dele: ~4,6 sílabas/s contra ~5,7)
   const ritmo = Math.max(0.8, Math.min(1.1, Number(ritmoPedido) || Number(vozCfg().ritmo) || 0.9));
-  const graph = `[0:a]aformat=channel_layouts=mono,aresample=48000${ritmo !== 1 ? ',atempo=' + ritmo.toFixed(3) : ''},adelay=300,apad=pad_len=19200[v];[1:a]aformat=channel_layouts=mono,aresample=48000,volume=${ganho.toFixed(1)}dB[bg];[v][bg]amix=inputs=2:duration=first:dropout_transition=0,volume=2,afade=t=in:d=0.25,areverse,afade=t=in:d=0.4,areverse[o]`;
+  const graph = `[0:a]aformat=channel_layouts=mono,aresample=48000${ritmo !== 1 ? ',atempo=' + ritmo.toFixed(3) : ''},adelay=300,apad=pad_len=19200[v];[1:a]aformat=channel_layouts=mono,aresample=48000,volume=${ganho.toFixed(1)}dB[bg];[v][bg]amix=inputs=2:duration=first:dropout_transition=0,volume=2,asetpts=N/SR/TB,afade=t=in:d=0.25,areverse,afade=t=in:d=0.4,areverse[o]`;
   args.push('-filter_complex', graph, '-map', '[o]', '-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', '48k', '-f', 'ogg', 'pipe:1');
   const r = await rodarFfmpeg(args, audio);
   if (r.status === 0 && r.stdout.length > 200 && r.stdout.slice(0, 4).toString('latin1') === 'OggS') { voz.fundo = (f ? path.basename(f) : 'ruído de sala') + ' (' + tipo + ')'; return r.stdout; }
