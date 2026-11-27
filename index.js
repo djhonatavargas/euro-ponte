@@ -940,6 +940,8 @@ async function executar(nome, entrada, ctx) {
       // 23/11/2026 (Djhonata): foto do imóvel que não é a da oferta = o cliente quer ver as fotos. Vão todas de uma vez, sem legenda (a assistente não enxerga a foto, então não descreve).
       if (pasta && !extra && !EXT_VID.test(caminho.split('?')[0])) {
         ctx.fotosTodas = ctx.fotosTodas || {};
+        // 27/11/2026 (caso João Nillson: pediu a conta e recebeu 8 fotos): as fotos todas só vão quando o cliente pediu fotos ou respondeu sim a uma oferta de fotos
+        if (!ctx.dono) { const ultM = lerEsp(ctx.jid).filter(m => m.autor !== 'cliente' && m.autor !== 'aviso').slice(-1)[0]; const ofereceuF = ultM && /foto/i.test(String(ultM.texto || '')); if (!clientePediuFotos(ctx.jid) && !ofereceuF) return 'Não enviado: o cliente não pediu fotos deste imóvel e a oferta dele já foi. Siga a conversa só com texto; mais fotos só se ele pedir.'; }
         if (ctx.fotosTodas[pasta]) return 'Não enviado: todas as fotos deste imóvel já foram agora. Não chame enviar_arquivo de novo para fotos dele.';
         // 24/11/2026 (Djhonata): cliente pediu fotos = vai primeiro o VÍDEO do imóvel (ele junta todas as fotos). Só se o cliente insistir nas fotos depois do vídeo é que vão todas as fotos.
         { const vRel = pasta + '/video-whatsapp.mp4', vRef = 'c/' + vRel;
@@ -1779,7 +1781,7 @@ async function reagir(jid, emoji) {
 // e fazer duas ou três perguntas na mesma mensagem. O servidor confere a resposta pronta e conserta antes de ela ir para o cliente.
 const RV_MAIUSC = (t) => t.replace(/^(\s*)(\p{Ll})/u, (m, e, c) => e + c.toUpperCase());
 const RV_ABRE = /^(\s*)(?:entendi|entendo|compreendo|faz sentido(?: sim)?|certo,? entendi|perfeito,? entendi|ah,? entendi)(?:,?\s+\p{Lu}[\p{L}]{1,20})?\s*(?:[.!]+\s+|,\s+|\s*\n+)/iu;
-const RV_OI = /^(\s*)(?:oi+|ol[áa]|opa|bom dia|boa tarde|boa noite)(?:,?\s+\p{Lu}[\p{L}]{1,20})?\s*[!,.]+\s*(?:tudo bem\??\s*)?/iu;
+const RV_OI = /^(\s*)(?:oi+|ol[áa]|opa|bom dia|boa tarde|boa noite)(?:,?\s+\p{Lu}[\p{L}]{1,20})?\s*[!,.]+\s*(?:tudo bem\??(?:,?\s*e (?:contigo|com voc[eê]|voc[eê]|tu)\??)?\s*)?/iu;   // 27/11/2026: não deixa sobrar ", e contigo?" no começo (caso Gabriel)
 function revisorFixo(t, jaConversando) {   // consertos que não precisam da IA; devolve { texto, feitos }
   const feitos = [];
   const emPartes = (fn) => { t = t.replace(/(\[\[tts:)([\s\S]*?)(\]\])/g, (m, a, meio, z) => a + fn(meio) + z); if (!/^\s*\[\[tts:/.test(t)) t = fn(t); };
