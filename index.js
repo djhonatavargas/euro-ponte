@@ -1466,7 +1466,8 @@ let fundoGerando = {}; const ganhoFundoCache = {};
 function arquivoFundo(tipo) {
   tipo = tipo || fundoAgora();
   try { const p = path.join(CATALOGO, '_ponte'); const ns = fs.readdirSync(p); const f = ns.find(n => new RegExp('^fundo-' + tipo + '\\.(mp3|wav|m4a|ogg|opus|aac)$', 'i').test(n)) || ns.find(n => /^fundo-audio\.(mp3|wav|m4a|ogg|opus|aac)$/i.test(n)); if (f) return path.join(p, f); } catch (e) { }
-  const g = path.join(DADOS, 'fundo-' + tipo + '-v2.mp3');   // v2 (27/11/2026): menos vozes de dia, sem grilo de noite try { if (fs.statSync(g).size > 1000) return g; } catch (e) { }
+  // v2 (27/11/2026): menos vozes de dia, sem grilo de noite
+  const g = path.join(DADOS, 'fundo-' + tipo + '-v2.mp3'); try { if (fs.statSync(g).size > 1000) return g; } catch (e) { }
   return '';
 }
 function gerarFundo(tipo) {   // pede à ElevenLabs um som de ambiente (uma vez por tipo) e guarda no servidor
