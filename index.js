@@ -1459,15 +1459,15 @@ const FUNDO_PROMPT = ENV.FUNDO_PROMPT || 'Very quiet indoor room tone of a small
 // Sem grilo nem bicho (pedido do Djhonata). Arquivo próprio na pasta _ponte (fundo-<tipo>-<id>.mp3, ex.: fundo-dia-rua.mp3) vale acima do gerado.
 const FUNDO_VARIANTES = {
   dia: [
-    { id: 'escritorio', arq: 'fundo-dia-v2.mp3', db: -39, prompt: 'Background ambience recorded inside a small busy real estate office in Brazil during the day: one or two colleagues talking quietly and occasionally far away in another room (no clear words, mostly calm), soft keyboard typing, air conditioner hum. Calm, natural, steady, no music.' },
-    { id: 'rua', db: -38, prompt: 'Background ambience recorded on a sidewalk in front of a small office in a Brazilian city during the day: light traffic, a few cars passing at moderate distance, soft breeze, a distant motorcycle once. No clear voices, no horns, no music, no animals.' },
-    { id: 'carro', db: -40, prompt: 'Background ambience recorded inside a parked car with the engine idling and the air conditioner on, quiet city outside, a car passing by now and then. No voices, no music, no radio, no animals.' },
-    { id: 'sala', db: -44, prompt: 'Very quiet ambience of a closed meeting room in an office during the day: soft air conditioner hum, a door closing far away once, faint muffled office sounds through the wall. No clear voices, no music.' }
+    { id: 'escritorio', arq: 'fundo-dia-v3.mp3', db: -37, prompt: 'Background ambience inside a small real estate office in Brazil during the day: only ONE person talking softly far away in another room now and then (no clear words, long pauses with no voice), soft keyboard typing, a chair moving once, air conditioner hum. Calm and natural, no crowd, no music.' },
+    { id: 'rua', arq: 'fundo-dia-rua-v2.mp3', db: -33, prompt: 'Background ambience recorded on a sidewalk next to a busy street in a Brazilian city during the day: cars passing close by every few seconds, a bus passing once, a motorcycle passing, tires on asphalt, light wind. No clear voices, no horns, no music, no animals.' },
+    { id: 'carro', db: -38, prompt: 'Background ambience recorded inside a parked car with the engine idling and the air conditioner on, quiet city outside, a car passing by now and then. No voices, no music, no radio, no animals.' },
+    { id: 'sala', db: -42, prompt: 'Very quiet ambience of a closed meeting room in an office during the day: soft air conditioner hum, a door closing far away once, faint muffled office sounds through the wall. No clear voices, no music.' }
   ],
   noite: [
-    { id: 'tv', arq: 'fundo-noite-v2.mp3', db: -44, prompt: 'Background ambience inside a house at night in Brazil: a television murmuring softly in another room (no clear words) and a refrigerator hum. No insects, no animals, no outdoor sounds. Very calm and steady. No music.' },
-    { id: 'cozinha', db: -45, prompt: 'Background ambience in a home kitchen at night: refrigerator hum, a few quiet dishes being put away far away, a tap running briefly once. No voices, no insects, no animals, no music. Calm and steady.' },
-    { id: 'quarto', db: -48, prompt: 'Very quiet bedroom at night: soft ceiling fan hum, almost silent house, a car passing far away outside once. No voices, no insects, no animals, no music.' }
+    { id: 'tv', arq: 'fundo-noite-v2.mp3', db: -42, prompt: 'Background ambience inside a house at night in Brazil: a television murmuring softly in another room (no clear words) and a refrigerator hum. No insects, no animals, no outdoor sounds. Very calm and steady. No music.' },
+    { id: 'cozinha', db: -43, prompt: 'Background ambience in a home kitchen at night: refrigerator hum, a few quiet dishes being put away far away, a tap running briefly once. No voices, no insects, no animals, no music. Calm and steady.' },
+    { id: 'quarto', db: -46, prompt: 'Very quiet bedroom at night: soft ceiling fan hum, almost silent house, a car passing far away outside once. No voices, no insects, no animals, no music.' }
   ]
 };
 function fundoAgora() { const d = agoraSP(), dw = d.getDay(), hh = d.getHours(); return ((dw >= 1 && dw <= 5 && hh >= 8 && hh < 19) || (dw === 6 && hh >= 8 && hh < 16)) ? 'dia' : 'noite'; }
@@ -1511,6 +1511,9 @@ function escolherFundo(tipo, jid, pedido) {   // variante pronta, diferente da �
   if (jid) { estado.fundoUlt[jid] = v.id; const ks = Object.keys(estado.fundoUlt); if (ks.length > 3000) for (const k of ks.slice(0, 1000)) delete estado.fundoUlt[k]; }
   return v;
 }
+// 27/11/2026 (Djhonata): soar como gravado no iPhone dele e mandado pelo WhatsApp (medido nos áudios dele: banda até ~8 kHz,
+// presença forte em 2–4 kHz, ~16–20 kbps). O filtro vai depois da mistura, porque no celular a voz e o fundo entram pelo mesmo microfone.
+const CELULAR = 'highpass=f=100,equalizer=f=2800:t=q:w=0.9:g=11,equalizer=f=6500:t=q:w=1:g=3,lowpass=f=7800,lowpass=f=7800,aecho=0.85:0.5:9|17:0.12|0.07,acompressor=threshold=-24dB:ratio=3:attack=8:release=120:makeup=4,alimiter=limit=0.89';
 async function comFundo(audio, tipoPedido, ritmoPedido, jid, variantePedida) {   // devolve ogg/opus com o fundo (e o ritmo do Djhonata), ou null (sem ffmpeg ou deu erro: vai sem fundo)
   if (!FUNDO || !temFfmpeg()) return null;
   const tipo = tipoPedido || fundoAgora();
@@ -1522,8 +1525,8 @@ async function comFundo(audio, tipoPedido, ritmoPedido, jid, variantePedida) {  
   else { args.push('-f', 'lavfi', '-i', 'anoisesrc=color=brown:amplitude=0.6:sample_rate=48000,lowpass=f=700'); ganho = (tipo === 'dia' ? -39 : -44) + 19; }   // esse ruído mede -19 dB
   // 27/11/2026 (Djhonata): o ritmo da fala dele é mais calmo que o da voz gerada (medido nos áudios dele: ~4,6 sílabas/s contra ~5,7)
   const ritmo = Math.max(0.8, Math.min(1.1, Number(ritmoPedido) || Number(vozCfg().ritmo) || 0.9));
-  const graph = `[0:a]aformat=channel_layouts=mono,aresample=48000${ritmo !== 1 ? ',atempo=' + ritmo.toFixed(3) : ''},adelay=300,apad=pad_len=19200[v];[1:a]aformat=channel_layouts=mono,aresample=48000,volume=${ganho.toFixed(1)}dB[bg];[v][bg]amix=inputs=2:duration=first:dropout_transition=0,volume=2,asetpts=N/SR/TB,afade=t=in:d=0.25,areverse,afade=t=in:d=0.4,areverse[o]`;
-  args.push('-filter_complex', graph, '-map', '[o]', '-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', '48k', '-f', 'ogg', 'pipe:1');
+  const graph = `[0:a]aformat=channel_layouts=mono,aresample=48000${ritmo !== 1 ? ',atempo=' + ritmo.toFixed(3) : ''},adelay=300,apad=pad_len=19200[v];[1:a]aformat=channel_layouts=mono,aresample=48000,volume=${ganho.toFixed(1)}dB[bg];[v][bg]amix=inputs=2:duration=first:dropout_transition=0,volume=2,asetpts=N/SR/TB,${CELULAR},afade=t=in:d=0.25,areverse,afade=t=in:d=0.4,areverse[o]`;
+  args.push('-filter_complex', graph, '-map', '[o]', '-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', '20k', '-application', 'voip', '-cutoff', '8000', '-f', 'ogg', 'pipe:1');
   const r = await rodarFfmpeg(args, audio);
   if (r.status === 0 && r.stdout.length > 200 && r.stdout.slice(0, 4).toString('latin1') === 'OggS') { voz.fundo = (v ? tipo + '-' + v.id : 'ruído de sala (' + tipo + ')'); if (jid) salvarEstado(); return r.stdout; }
   log('fundo do áudio: ffmpeg falhou', String(r.stderr || '').slice(0, 200)); return null;
