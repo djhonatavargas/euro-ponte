@@ -1457,16 +1457,16 @@ const FUNDO_PROMPT = ENV.FUNDO_PROMPT || 'Very quiet indoor room tone of a small
 // O dia segue o horário do escritório (seg a sex 8h às 19h, sáb 8h às 16h); fora disso é noite. Arquivo próprio na pasta _ponte
 // (fundo-dia.* / fundo-noite.*; fundo-audio.* vale para os dois) tem prioridade sobre o gerado pela ElevenLabs.
 const FUNDO_PROMPTS = {
-  dia: ENV.FUNDO_PROMPT_DIA || 'Background ambience recorded inside a small busy real estate office in Brazil during the day: several people talking indistinctly at a distance (no clear words), a phone ringing far away once, soft keyboard typing, chairs moving, air conditioner hum. Natural, steady, no music.',
-  noite: ENV.FUNDO_PROMPT_NOITE || 'Background ambience inside a house at night in Brazil: a television murmuring softly in another room (no clear words), refrigerator hum, faint crickets outside the window, very calm and steady. No music.'
+  dia: ENV.FUNDO_PROMPT_DIA || 'Background ambience recorded inside a small busy real estate office in Brazil during the day: one or two colleagues talking quietly and occasionally far away in another room (no clear words, mostly calm), soft keyboard typing, air conditioner hum. Calm, natural, steady, no music.',
+  noite: ENV.FUNDO_PROMPT_NOITE || 'Background ambience inside a house at night in Brazil: a television murmuring softly in another room (no clear words) and a refrigerator hum. No insects, no animals, no outdoor sounds. Very calm and steady. No music.'
 };
-const FUNDO_DB_TIPO = { dia: Number(ENV.FUNDO_DB_DIA || -36), noite: Number(ENV.FUNDO_DB_NOITE || -44) };
+const FUNDO_DB_TIPO = { dia: Number(ENV.FUNDO_DB_DIA || -39), noite: Number(ENV.FUNDO_DB_NOITE || -44) };
 function fundoAgora() { const d = agoraSP(), dw = d.getDay(), hh = d.getHours(); return ((dw >= 1 && dw <= 5 && hh >= 8 && hh < 19) || (dw === 6 && hh >= 8 && hh < 16)) ? 'dia' : 'noite'; }
 let fundoGerando = {}; const ganhoFundoCache = {};
 function arquivoFundo(tipo) {
   tipo = tipo || fundoAgora();
   try { const p = path.join(CATALOGO, '_ponte'); const ns = fs.readdirSync(p); const f = ns.find(n => new RegExp('^fundo-' + tipo + '\\.(mp3|wav|m4a|ogg|opus|aac)$', 'i').test(n)) || ns.find(n => /^fundo-audio\.(mp3|wav|m4a|ogg|opus|aac)$/i.test(n)); if (f) return path.join(p, f); } catch (e) { }
-  const g = path.join(DADOS, 'fundo-' + tipo + '.mp3'); try { if (fs.statSync(g).size > 1000) return g; } catch (e) { }
+  const g = path.join(DADOS, 'fundo-' + tipo + '-v2.mp3');   // v2 (27/11/2026): menos vozes de dia, sem grilo de noite try { if (fs.statSync(g).size > 1000) return g; } catch (e) { }
   return '';
 }
 function gerarFundo(tipo) {   // pede à ElevenLabs um som de ambiente (uma vez por tipo) e guarda no servidor
@@ -1475,7 +1475,7 @@ function gerarFundo(tipo) {   // pede à ElevenLabs um som de ambiente (uma vez 
     const r = await fetch('https://api.elevenlabs.io/v1/sound-generation', { method: 'POST', headers: { 'xi-api-key': ELEVEN_KEY, 'content-type': 'application/json' }, body: JSON.stringify({ text: FUNDO_PROMPTS[tipo] || FUNDO_PROMPT, duration_seconds: 22, prompt_influence: 0.6 }) });
     if (!r.ok) throw new Error('efeito sonoro ' + r.status + ' ' + (await r.text()).slice(0, 200));
     const buf = Buffer.from(await r.arrayBuffer()); if (buf.length < 1000) throw new Error('efeito sonoro vazio');
-    fs.writeFileSync(path.join(DADOS, 'fundo-' + tipo + '.mp3'), buf); log('fundo do áudio (' + tipo + ') criado pela ElevenLabs');
+    fs.writeFileSync(path.join(DADOS, 'fundo-' + tipo + '-v2.mp3'), buf); log('fundo do áudio (' + tipo + ') criado pela ElevenLabs');
   })().catch(e => { voz.fundoErro = e.message; estado.fundoFalhou = Date.now(); salvarEstado(); log('fundo do áudio:', e.message); }).finally(() => { fundoGerando[tipo] = null; });
   return fundoGerando[tipo];
 }
