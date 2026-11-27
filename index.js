@@ -999,7 +999,7 @@ async function executar(nome, entrada, ctx) {
       if (!m) return 'Mande quando no formato AAAA-MM-DD HH:MM (horário de Joinville).';
       const q = `${m[1]}T${String(m[2]).padStart(2, '0')}:${m[3]}`, T = quandoMs(q), min = Number(m[2]) * 60 + Number(m[3]);
       if (!T || T < Date.now() + 5 * 60e3) return 'Esse horário já passou ou é daqui a menos de 5 minutos: não marque retorno, continue a conversa agora.';
-      if (T > Date.now() + 7 * 864e5) return 'Só dá para marcar retorno para os próximos 7 dias. Combine uma data mais perto ou diga que ele pode chamar quando quiser.';
+      if (T > Date.now() + 45 * 864e5) return 'Só dá para marcar retorno para os próximos 45 dias. Combine uma data dentro disso; nunca deixe para o cliente chamar.';   // 27/11/2026 (caso Duda): retorno de 8 dias virou "me manda um oi"
       if (min < minutos(ROT_INI) || min > minutos(ROT_FIM)) return `Você só chama clientes entre ${ROT_INI} e ${ROT_FIM}. Combine um horário dentro disso (ex.: amanhã às 09:00) e chame agendar_retorno de novo.`;
       estado.retornos = estado.retornos || {}; estado.retornos[ctx.jid] = { q, assunto: String(entrada.assunto || '').slice(0, 200), criado: Date.now() }; salvarEstado();
       log('retorno combinado', ctx.telefone || ctx.jid, q);
