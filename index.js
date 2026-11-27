@@ -589,7 +589,7 @@ function simularFluxo(e) {
     if (posLinha) L.push(posLinha);   // na ordem em que o cliente paga: entrega das chaves e, depois, as parcelas pós-chaves
     if (resto >= 1) { L.push(`✅ Falta combinar: ${brl(resto)} (${posTxt ? 'a gente vê junto como fica' : 'dá para parcelar depois das chaves'})`); falta = resto; }
     q = nBal + (naEntrega >= 1 ? 1 : 0);
-    if (temResto && q && parcSem <= 3000) alt = `Sem reforço, a parcela mensal fica em ${brl(parcSem)}.`;   // só quando é uma opção de verdade (com poucos meses passa de R$ 3 mil e só confunde)
+    if (temResto && q && parcSem <= 3000) alt = `Se preferir sem reforço: ${n}x de ${brl(parcSem)} por mês (até ${mesRot(n)}), sem nada nas chaves.`;   // 27/11/2026 (Djhonata): a frase antiga parecia a parcela da Caixa   // só quando é uma opção de verdade (com poucos meses passa de R$ 3 mil e só confunde)
   }
   const parcFin = parcelaEstimada(financ);
   L.push(`🏦 Financiamento pela Caixa: ${brl(financ)}${obra ? ' (começa quando o imóvel ficar pronto)' : ''}`);
@@ -876,8 +876,8 @@ async function executar(nome, entrada, ctx) {
       salvarEstado();
       if (repetida) {
         // A linha "Sem reforço, a parcela mensal..." é OUTRA forma de pagar. Em 12/11/2026 a IA leu esse valor como "a parcela" e somou com os reforços (conta da Luana): agora vai rotulada.
-        const consulta = r.texto.split('\n').map(l => /^\s*Sem reforço, a parcela mensal/i.test(l) ? '- OUTRA FORMA DE PAGAR (no lugar do reforço, NUNCA junto com ele): s' + l.trim().slice(1) : l.replace(/^\s*📋\s*\*?/, 'Conta atualizada: ').replace(/\*\s*$/, '').replace(/^\s*(💰|✅|🏦|💵)\s*/, '- ')).join('\n');
-        const avisoParcela = /Sem reforço, a parcela mensal/i.test(r.texto) ? ' ATENÇÃO: a parcela mensal dele é a da linha "Entrada parcelada" e ela continua igual quando existe reforço. A linha "OUTRA FORMA DE PAGAR" é uma segunda opção (parcela maior e nenhum reforço): nunca diga esse valor como "a parcela" junto com os reforços.' : '';
+        const consulta = r.texto.split('\n').map(l => /^\s*(?:Sem reforço, a parcela mensal|Se preferir sem reforço)/i.test(l) ? '- OUTRA FORMA DE PAGAR (no lugar do reforço, NUNCA junto com ele): ' + l.trim() : l.replace(/^\s*📋\s*\*?/, 'Conta atualizada: ').replace(/\*\s*$/, '').replace(/^\s*(💰|✅|🏦|💵)\s*/, '- ')).join('\n');
+        const avisoParcela = /(?:Sem reforço, a parcela mensal|Se preferir sem reforço)/i.test(r.texto) ? ' ATENÇÃO: a parcela mensal dele é a da linha "Entrada parcelada" e ela continua igual quando existe reforço. A linha "OUTRA FORMA DE PAGAR" é uma segunda opção (parcela maior e nenhum reforço): nunca diga esse valor como "a parcela" junto com os reforços.' : '';
         return `NÃO mande o bloco da simulação de novo: o cliente já recebeu a conta completa deste imóvel nesta conversa. Responda em 1 a 3 linhas, com as suas palavras, SÓ o que mudou em relação à conta que você já mandou (ex.: "com 40 mil de sinal a parcela cai para R$ 800 por mês"), usando os valores abaixo. Só mande a conta completa outra vez se o cliente PEDIR: nesse caso chame simular_fluxo de novo com completo = true. Depois, na mesma resposta, ${depois}.${fecho}${avisoParcela}\n\nVALORES ATUALIZADOS (só para você consultar; NÃO envie esta lista):\n${consulta}`;
       }
       ms.perg = ms.perg || {};   // 27/11/2026: "completo" não pula a pergunta da entrada antes de ela ter sido feita
