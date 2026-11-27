@@ -1839,6 +1839,8 @@ async function reagir(jid, emoji) {
 const RV_MAIUSC = (t) => t.replace(/^(\s*)(\p{Ll})/u, (m, e, c) => e + c.toUpperCase());
 const RV_ABRE = /^(\s*)(?:entendi|entendo|compreendo|faz sentido(?: sim)?|certo,? entendi|perfeito,? entendi|ah,? entendi)(?:,?\s+\p{Lu}[\p{L}]{1,20})?\s*(?:[.!]+\s+|,\s+|\s*\n+)/iu;
 const RV_OI = /^(\s*)(?:oi+|ol[áa]|opa|bom dia|boa tarde|boa noite)(?:,?\s+\p{Lu}[\p{L}]{1,20})?\s*[!,.]+\s*(?:tudo bem\??(?:,?\s*e (?:contigo|com voc[eê]|voc[eê]|tu)\??)?\s*)?/iu;   // 27/11/2026: não deixa sobrar ", e contigo?" no começo (caso Gabriel)
+// 27/11/2026: correção anunciada sai também da mensagem que leva a simulação (📋), que o revisor não mexe (caso Magda)
+function tiraCorrecao(x) { return String(x).replace(/(^|[.!?]\s+|\n\s*)(\p{Lu}[\p{L}]{1,20}(?: \p{Lu}[\p{L}]{1,20}){0,2},\s*)?(?:e\s+)?(?:corrigindo(?: (?:o que|a conta que) (?:eu )?te (?:passei|falei|disse|mandei)(?: antes)?)?\s*[:,]\s*|(?:uma|só uma|e uma) corre[cç][aã]o(?: minha)?\s*[:,]\s*|pensando melhor\s*[:,]\s*)(\p{L})/giu, (m, a, n, l) => a + (n || '') + (n ? l : l.toUpperCase())).replace(/,\s*(?:e\s+)?n[ãa]o (?:de )?[^,.!?\n]{1,30} como (?:eu )?(?:te )?(?:tinha )?(?:falei|disse|passei|mandei)(?: antes)?/giu, ''); }
 function revisorFixo(t, jaConversando) {   // consertos que não precisam da IA; devolve { texto, feitos }
   const feitos = [];
   const emPartes = (fn) => { t = t.replace(/(\[\[tts:)([\s\S]*?)(\]\])/g, (m, a, meio, z) => a + fn(meio) + z); if (!/^\s*\[\[tts:/.test(t)) t = fn(t); };
@@ -1931,6 +1933,7 @@ async function revisarSaida(f, t) {
       } } } catch (e) { }
     // 27/11/2026 (caso Bruno: em 25/11 ela ofereceu "terça, dia 17"): dia que já passou não sai; a frase sai e fica a pergunta do dia
     try { for (let k = 0; k < 3; k++) { const mm = /já passou \(([^)]+)\)/.exec(problemaNoRascunho(t) || ''); if (!mm) break; const esc = mm[1].replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&'); const sem = String(t).replace(new RegExp('[^.!?\\n]*' + esc + '[^.!?\\n]*[.!?]*[ \\t]*', 'g'), ''); if (sem === t || sem.trim().length < 8) break; t = sem.trimEnd(); if (!/\?/.test(t)) t += ' Qual dia da semana fica melhor pra ti?'; log('revisor: dia que já passou tirado', f.telefone || f.jid, mm[1]); } } catch (e) { }
+    t = tiraCorrecao(t);
     if (/📋/.test(t)) return t;
     const ja = jaFalouCom(f.jid), conversando = !!(ja && Date.now() - (ja.ts || 0) < 6 * 3600e3);
     const r = revisorFixo(t, conversando); let novo = r.texto; const feitos = r.feitos.slice();
