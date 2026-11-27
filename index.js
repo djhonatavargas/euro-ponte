@@ -1800,7 +1800,7 @@ function revisorFixo(t, jaConversando) {   // consertos que não precisam da IA;
     y = y.replace(/\b(?:vou|deixa eu|preciso) (?:ver|confirmar|checar|conferir|falar|conversar)(?: isso)? com o Djhonata\b/giu, () => { marca('terceira pessoa'); return 'vou ver isso'; });
     y = y.replace(/(?<!pr[oó]pri[oa] )\b(?:o )?Djhonata (?:j[aá] )?(te |lhe )?(mostra|explica|responde|retorna|liga|chama|passa|confirma|manda|fala|atende|v[eê])(?!\p{L})/giu, (m, te, v) => { marca('terceira pessoa'); return 'eu ' + (te ? 'te ' : '') + (CONJ[semAcento(v).toLowerCase()] || v); });
     y = y.replace(/(?<!pr[oó]pri[oa] )\b(?:o )?Djhonata vai (te |lhe )?/giu, (m, te) => { marca('terceira pessoa'); return 'eu vou ' + (te ? 'te ' : ''); });
-    const semChamar = y.replace(/[^.!?\n]*(?<!\p{L})[eé] s[oó] (?:me )?(?:chamar|falar|avisar|mandar mensagem)\b[^.!?\n]*[.!?]*[ \t]*/giu, '');
+    const semChamar = y.replace(/[^.!?\n✅]*(?:(?<!\p{L})[eé] s[oó] (?:me )?(?:chamar|falar|avisar|mandar mensagem)\b|\bqualquer coisa,? (?:(?<!\p{L})[eé] s[oó] )?me (?:fala|chama|avisa|manda mensagem)(?: aqui| por aqui)?(?!\p{L}))[^.!?\n]*[.!?]*[ \t]*/giu, '');
     if (semChamar !== y && semChamar.trim().length >= 8) { y = semChamar.trimEnd(); if (!/\?/.test(y)) y += ' Que dia eu te chamo pra saber o que achou?'; marca('"é só me chamar"'); }
     return y !== x ? RV_MAIUSC(y) : x; });
   return { texto: t, feitos };
@@ -2285,7 +2285,7 @@ async function rodarEnsaio(p) {
       messages.push({ role: 'assistant', content: (resp.content || []).length ? resp.content : [{ type: 'text', text: '(sem resposta)' }] });
       const resultados = [];
       for (const bl of resp.content || []) {
-        if (bl.type === 'text') { const t = tirarMarcacao(bl.text || ''); if (t && !/^NO_REPLY\b/.test(t)) ensaio.saida.push({ autor: 'ia', texto: t }); }
+        if (bl.type === 'text') { let t = tirarMarcacao(bl.text || ''); try { if (t && !/📋/.test(t)) t = revisorFixo(t, true).texto; } catch (e) { } if (t && !/^NO_REPLY\b/.test(t)) ensaio.saida.push({ autor: 'ia', texto: t }); }   // 27/11/2026: o ensaio passa pelos mesmos consertos fixos do revisor
         else if (bl.type === 'tool_use') {
           const r = await ensaioFerramenta(bl.name, bl.input || {}, ctx);
           ensaio.saida.push({ autor: 'ferramenta', texto: bl.name + ' ' + JSON.stringify(bl.input || {}).slice(0, 300) + ' => ' + String(r).slice(0, 400) });
