@@ -287,7 +287,7 @@ function sistema(ctx) {
   const d = agoraSP();
   const dia = d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
   const hora = d.toTimeString().slice(0, 5);
-  const comercialEsc = (() => { const dw = d.getDay(), hh = d.getHours(); return (dw >= 1 && dw <= 5 && hh >= 8 && hh < 18) || (dw === 6 && hh >= 8 && hh < 12); })();   // 26/11/2026 (Djhonata): tu é o Djhonata; no horário comercial ele está no escritório
+  const comercialEsc = (() => { const dw = d.getDay(), hh = d.getHours(); return (dw >= 1 && dw <= 5 && hh >= 8 && hh < 19) || (dw === 6 && hh >= 8 && hh < 16); })();   // 27/11/2026: igual ao horário das visitas   // 26/11/2026 (Djhonata): tu é o Djhonata; no horário comercial ele está no escritório
   let din = `Agora: ${dia}, ${hora} (horário de Joinville). ${comercialEsc ? 'Horário comercial: fale "aqui no escritório".' : 'Fora do horário comercial: fale "lá no escritório eu te mostro", nunca "aqui no escritório".'} Tu é o Djhonata: nunca fale dele em terceira pessoa (nada de "avisei o Djhonata").\nConversa com: ${ctx.nome || 'nome não informado'} — WhatsApp ${ctx.telefone ? formatoBR(ctx.telefone) : 'desconhecido'}.`;
   din += `\nRegra de segurança do número: escreva cada resposta com suas palavras para este cliente; não copie textos prontos idênticos aos de outras conversas (varie saudação e frases). Mensagens curtas, uma ideia por mensagem, sem excesso de links.`;
   if (!ELEVEN_KEY) din += `\nÁudio com a voz do Djhonata: indisponível agora. Responda só em texto (não use [[tts:...]]).`;
