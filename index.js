@@ -1840,7 +1840,7 @@ async function revisarSaida(f, t) {
       const l = lerEsp(f.jid), fala = []; for (let i = l.length - 1; i >= 0 && fala.length < 4; i--) { const m = l[i]; if (m.autor === 'aviso' || m.tipo === 'reacao') continue; if (m.autor === 'cliente') fala.push(String(m.texto || '')); else break; }   // 24/11/2026: o texto do áudio transcrito está em m.texto (m.transc é só a marca)
       const cli = semAcento(fala.join(' ').toLowerCase());
       if (cli && /\b(vou ver com|vou falar com|vou conversar com|vejo com|vou ver aqui e|te retorno|te dou um retorno|te dou retorno|te aviso|te falo|retorno pra voce|retorno para voce)/.test(cli) && !/\?|que horas|qual horario|horario/.test(cli) && /\b\d{1,2}h\b|\bas \d{1,2}\b/.test(semAcento(String(t).toLowerCase()))) {
-        t = 'Combinado ✅ Fico no aguardo do seu retorno. Qualquer dúvida, é só me chamar.'; log('revisor: cliente vai dar retorno, horário segurado', f.telefone || f.jid);
+        t = 'Combinado ✅ Que dia eu te chamo pra saber o que vocês acharam?'; log('revisor: cliente vai dar retorno, horário segurado (27/11/2026: pergunta quando chamar)', f.telefone || f.jid);
       }
       // 24/11/2026 (Djhonata, caso Joseane: "esse valor dá pra fazer direto com a construtora?"): pergunta sobre o PAGAMENTO do imóvel. Direto com a
       // construtora fica só a entrada; o restante é pela Caixa. Se a IA responder sem falar do financiamento ("é direto com a gente"), sai a resposta certa.
