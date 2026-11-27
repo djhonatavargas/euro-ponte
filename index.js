@@ -1258,6 +1258,7 @@ function resumoMsg(m) {
 function registrarEspelho(jid, m, { silencioso = false } = {}) {
   if (!jid) return;
   jid = acharJid(jid);
+  try { if (m && m.autor === 'cliente' && !/@g\.us$/.test(jid)) perfilFila.set(jid, Date.now()); } catch (e) { }   // 27/11/2026: perfil do cliente atualizado pelo servidor
   const lista = lerEsp(jid);
   if (m.id) {
     const i = lista.findIndex(x => x.id === m.id);
@@ -3415,9 +3416,60 @@ function fuConversa(jid) {
   const t = l.map(m => `${quandoFoi(m.ts)} — ${quem[m.autor] || m.autor}: ${m.tipo && m.tipo !== 'text' && !m.transc ? '[' + m.tipo + '] ' : ''}${String(m.texto || '').replace(/\s+/g, ' ').slice(0, 400)}`).join('\n');
   return t.length > 9000 ? t.slice(-9000) : t;
 }
+// ---- 27/11/2026 (Djhonata: "a gente não pode perder essas informações"): perfil financeiro e de interesse lido das conversas pelo servidor, 24h ----
+// Guardado em perfis.json (nunca apaga: o que a IA não achou agora mantém o que já tinha). Se a API falhar (sem crédito), fica na fila e tenta de novo.
+const PERFIS_F = path.join(DADOS, 'perfis.json');
+let perfis = {}; try { perfis = JSON.parse(fs.readFileSync(PERFIS_F, 'utf8')) || {}; } catch (e) { perfis = {}; }
+const perfilFila = new Map();
+let perfilVarrido = false, perfilErroAte = 0;
+function perfilTexto(t8) {
+  const p = perfis[t8]; if (!p) return '';
+  const f = p.fin || {}, i = p.int || {}, r = (v) => 'R$ ' + Number(v || 0).toLocaleString('pt-BR');
+  return [(i.bairros || []).length && 'bairros: ' + i.bairros.join(', '), i.tipo && 'tipo: ' + i.tipo, i.prazo && 'prazo: ' + i.prazo, i.quartos && 'quartos: ' + i.quartos, i.vagas && 'vagas: ' + i.vagas, i.outros && 'outros: ' + i.outros,
+    f.sinal && 'sinal: ' + r(f.sinal), f.fgts && 'FGTS: ' + r(f.fgts), f.carro > 1 && 'carro: ' + r(f.carro), f.parcela && 'parcela que cabe: ' + r(f.parcela), f.renda && 'renda: ' + r(f.renda), f.aluguel && 'aluguel hoje: ' + r(f.aluguel), f.obs && 'obs: ' + f.obs].filter(Boolean).join('; ');
+}
+function perfilJuntar(ant, novo) {
+  const num = (v) => { const n = Math.round(Number(v) || 0); return n > 0 && n < 5e7 ? n : 0; };
+  const fA = ant.fin || {}, iA = ant.int || {}, f = novo.fin || {}, i = novo.int || {};
+  const fin = {}; for (const k of ['sinal', 'fgts', 'carro', 'parcela', 'renda', 'aluguel']) fin[k] = num(f[k]) || num(fA[k]);
+  fin.fgtsTem = !!(f.fgtsTem || fA.fgtsTem || fin.fgts); fin.conjuge = !!(f.conjuge || fA.conjuge); fin.obs = String(f.obs || fA.obs || '').slice(0, 300);
+  const int = {}; int.bairros = [...new Set([...(Array.isArray(iA.bairros) ? iA.bairros : []), ...(Array.isArray(i.bairros) ? i.bairros : [])].map(s => String(s).trim().slice(0, 40)).filter(Boolean))].slice(0, 8);
+  for (const k of ['tipo', 'prazo', 'anuncio', 'outros']) int[k] = String(i[k] || iA[k] || '').slice(0, k === 'outros' ? 300 : 80);
+  for (const k of ['quartos', 'suites', 'vagas']) int[k] = (num(i[k]) || num(iA[k])) % 10;
+  return { fin, int };
+}
+async function perfilExtrair(jid) {
+  const t8 = tel8Chat(jid); if (!t8 || t8.length !== 8) return true;
+  const ms = lerEsp(jid).filter(m => m.texto && !/^🔒/.test(m.texto)).slice(-80);
+  if (!ms.some(m => m.autor === 'cliente')) return true;
+  const linhas = ms.map(m => new Date(m.ts || 0).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' }) + ' [' + (m.autor === 'cliente' ? 'cliente' : 'corretor') + '] ' + String(m.texto).replace(/\s+/g, ' ').slice(0, 400)).join('\n').slice(-9000);
+  const ant = perfis[t8] || {};
+  const pedido = 'Leia a conversa de WhatsApp de um cliente com o corretor Djhonata (casas geminadas em Joinville) e anote SÓ o que o CLIENTE disse ou confirmou, sem chutar.\nfin: sinal = dinheiro que tem para entrada/sinal (R$); fgts = saldo de FGTS (R$); fgtsTem = true se disse que tem FGTS sem valor; carro = valor do carro/moto para dar na entrada (1 se só disse que tem); parcela = parcela mensal que consegue pagar (R$); renda = renda da família (R$); aluguel = quanto paga de aluguel hoje (R$); conjuge = true se compra com cônjuge; obs = frase curta com outro dado financeiro importante (nome sujo, autônomo, aprovado na Caixa...).\nint: bairros = bairros que quer, na ordem em que falou; tipo = geminado, casa, apartamento, terreno ou vazio; prazo = pronto, planta ou tanto faz; quartos, suites, vagas = números mínimos; anuncio = imóvel que o trouxe; outros = frase curta com exigências e o que ele não gostou (ex.: "não gostou do X por ser sobrado").\nUse 0, false, "" ou [] para o que ele não disse. Valores inteiros (50 mil = 50000).\nPerfil já salvo antes (só para referência): ' + JSON.stringify({ fin: ant.fin || {}, int: ant.int || {} }) + '\n\nConversa:\n' + linhas + '\n\nResponda só JSON: {"fin": {...}, "int": {...}}';
+  const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: jsonLimpo({ model: MODELO, max_tokens: 900, messages: [{ role: 'user', content: pedido }] }) });
+  if (!r.ok) throw new Error('API ' + r.status);
+  const j = await r.json(); const txt = (j.content || []).filter(b => b.type === 'text').map(b => b.text).join(''); const mm = txt.match(/\{[\s\S]*\}/);
+  if (!mm) return true;
+  let novo = {}; try { novo = JSON.parse(mm[0]); } catch (e) { return true; }
+  perfis[t8] = Object.assign(perfilJuntar(ant, novo), { em: Date.now(), jid });
+  gravarJson(PERFIS_F, perfis);
+  return true;
+}
+async function perfilTrabalhar() {
+  if (Date.now() < perfilErroAte) return;
+  if (!perfilVarrido) { perfilVarrido = true; try { for (const jid of Object.keys(chats)) { if (/@g\.us$/.test(jid)) continue; const t8 = tel8Chat(jid), em = (perfis[t8] || {}).em || 0; const uc = lerEsp(jid).filter(m => m.autor === 'cliente').pop(); if (uc && (uc.ts || 0) > em && Date.now() - (uc.ts || 0) < 150 * 864e5) perfilFila.set(jid, uc.ts || 0); } log('perfis: na fila para ler', perfilFila.size); } catch (e) { log('perfis varredura', e.message); } }
+  let n = 0;
+  for (const [jid, ts] of [...perfilFila]) {
+    if (n >= 6) break;
+    if (Date.now() - ts < 8 * 60e3) continue;   // espera a conversa assentar
+    n++;
+    try { await perfilExtrair(jid); perfilFila.delete(jid); }
+    catch (e) { log('perfis: não leu agora, tenta de novo depois', tel8Chat(jid), e.message); perfilErroAte = Date.now() + 20 * 60e3; break; }   // sem crédito ou API fora: fica na fila
+  }
+}
+setInterval(() => perfilTrabalhar().catch(e => log('perfis', e.message)), 2 * 60e3);
 function fuTarefa(x, conversa) {
   const c = x.crm || {};
-  const dados = [c.nome && `Nome no CRM: ${c.nome}${c.nomeProvisorio ? ' (veio do perfil do WhatsApp: pode não ser o nome real)' : ''}`, c.bairro && `Bairro de interesse: ${c.bairro}`, c.imovel && `Imóvel de interesse: ${c.imovel}`, c.proximo && `Próximo passo anotado: ${c.proximo}`, c.resumo && `Resumo da conversa (CRM): ${c.resumo}`, c.historico && `Histórico do WhatsApp (CRM): ${c.historico}`, c.obs && `Observações (CRM): ${c.obs}`, c.perfil && `Perfil do cliente (CRM): ${c.perfil}`].filter(Boolean).join('\n');
+  const dados = [c.nome && `Nome no CRM: ${c.nome}${c.nomeProvisorio ? ' (veio do perfil do WhatsApp: pode não ser o nome real)' : ''}`, c.bairro && `Bairro de interesse: ${c.bairro}`, c.imovel && `Imóvel de interesse: ${c.imovel}`, c.proximo && `Próximo passo anotado: ${c.proximo}`, c.resumo && `Resumo da conversa (CRM): ${c.resumo}`, c.historico && `Histórico do WhatsApp (CRM): ${c.historico}`, c.obs && `Observações (CRM): ${c.obs}`, c.perfil && `Perfil do cliente (CRM): ${c.perfil}`, perfilTexto(x.tel8) && `Perfil do cliente (lido das conversas pelo servidor): ${perfilTexto(x.tel8)}`].filter(Boolean).join('\n');
   return `[TAREFA INTERNA DO SISTEMA — não é mensagem do cliente e nada disto vai para ele]
 ${(estado.crmStatus || {})[x.tel8] === 'novo' ? 'FOLLOW-UP DE CLIENTE EM "REMARCAR VISITA". Este cliente já marcou visita no escritório e não veio ou desmarcou. O objetivo é ele marcar de novo. Leia na conversa por que não veio (se disse) e quando foi isso.' : 'FOLLOW-UP DE CLIENTE PERDIDO. O Djhonata quer retomar o contato com este cliente, que parou de responder há mais de 7 dias (está em "Perdido" no CRM).'} A mensagem só sai depois que o Djhonata aprovar.
 
@@ -4841,6 +4893,11 @@ Responda SOMENTE com a mensagem final, sem aspas e sem comentários.${jeito ? '\
           log('atualizado pelo CRM; reiniciando');
           json(res, { ok: true, reiniciando: true });
           return setTimeout(() => process.exit(0), 800);
+        }
+        else if (ac === 'perfis') {   // 27/11/2026: o CRM puxa o perfil lido pelo servidor ({desde: ms})
+          let p = {}; try { p = JSON.parse(b.texto || '{}'); } catch (e) { }
+          const desde = Number(p.desde) || 0, out = {}; for (const [k, v] of Object.entries(perfis)) if ((v.em || 0) > desde) out[k] = { fin: v.fin, int: v.int, em: v.em };
+          return json(res, { ok: true, perfis: out, fila: perfilFila.size });
         }
         else if (ac === 'followup_gerar') {   // o CRM manda os clientes em Perdido (lote); a IA prepara a mensagem de cada um
           let p = {}; try { p = JSON.parse(b.texto || '{}'); } catch (e) { }
