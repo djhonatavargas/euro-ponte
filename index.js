@@ -1898,6 +1898,10 @@ function retornoDaFrase(t, agora) {
 async function revisarSaida(f, t) {
   try {
     if (!t || f.dono) return t;
+    // 27/11/2026 (parte técnica: "abertura do anúncio sem Oi e sem nome"): quando o vídeo do anúncio sai primeiro, a primeira fala às vezes começa
+    // direto em "Aqui é o Djhonata". Na primeira mensagem de texto da conversa, o servidor põe o "Oi, Nome! Tudo bem?" (nome só se o CRM tiver).
+    try { if (!f.rotina && f.jid && /^\s*(?:desculpa a demora[^\n]{0,12}?\s*)?aqui é o djhonata/i.test(t) && !lerEsp(f.jid).some(m => ['ia', 'voce', 'celular'].includes(m.autor) && (!m.tipo || m.tipo === 'text'))) {
+      const nm = primeiroNome(nomeDoCrm(f.jid) || ''); t = t.replace(/^\s*/, 'Oi' + (nm ? ', ' + nm : '') + '! Tudo bem? '); } } catch (e) { }
     // Mensagem em dobro (16/11/2026): a mesma resposta, ou quase, que já saiu para este cliente nos últimos 4 minutos não sai de novo.
     try { const pal = (x) => new Set(semAcento(String(x)).replace(/\[\[tts:|\]\]/g, ' ').split(/[^a-z0-9]+/).filter(w => w.length >= 4));
       const A = pal(t); const ultCli = (lerEsp(f.jid).filter(x => x.autor === 'cliente').pop() || {}).ts || 0;   // 27/11/2026 (caso Frank): se o cliente escreveu depois, a resposta não é segurada (ficar sem resposta é pior)
@@ -2740,6 +2744,7 @@ const AVISO_3P = '(sistema) O texto que você escreveu agora NÃO foi enviado ao
 // Ela fala como o Djhonata (homem): "obrigada" vira "obrigado" antes de sair, em texto e em áudio.
 const generoDoDono = (t) => String(t || '').replace(/\b([Oo])brigada\b/g, '$1brigado').replace(/\bOBRIGADA\b/g, 'OBRIGADO');
 async function responder(f) {
+  const iniResp = Date.now();   // 27/11/2026 (caso Maia): cliente que escreve enquanto ela pensa recebe uma resposta só, lendo tudo
   const ctx = { jid: f.jid, telefone: f.telefone, nome: f.nome, dono: f.dono, notas: [], audioAgora: !!f.audio, rotina: (f.extra && f.extra.rotina) || '' };
   const system = sistema(ctx);
   const tIniResp = Date.now();   // o que o cliente mandar depois disto chegou no meio da resposta
@@ -2774,6 +2779,7 @@ async function responder(f) {
         if (segura3p) continue;
         // o Djhonata pode ter desligado a assistente nessa conversa enquanto ela pensava
         if (!podeResponder(f.jid, f.telefone) && !ctx.autoTrava) { log('resposta descartada (pausada no meio)', f.jid); return; }
+        if (!f.dono && !f.rotina && !saida.length && ((lerEsp(f.jid).filter(m => m.autor === 'cliente').pop() || {}).ts || 0) > iniResp) { log('resposta adiada: o cliente escreveu enquanto ela pensava', f.telefone || f.jid); return; }
         saida.push(...await enviarSaida(f.jid, await revisarSaida(f, tirarMarcacao(t)), 'ia', f.extra));   // 26/11/2026: tira pedaço de código que a IA às vezes deixa no texto
       } else if (bloco.type === 'tool_use') {
         usouFerramenta = true;
